@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
-import { WEEKLY_USAGE } from '@/data/software.mock';
 import type { Software } from '@/types';
 import type { DailyUsageStat } from '@/types/electron';
 
@@ -53,13 +52,6 @@ const PERIOD_DAYS: Record<StatsPeriod, number> = {
   week: 7,
   month: 30,
   all: 30,
-};
-
-const PERIOD_FACTOR: Record<StatsPeriod, number> = {
-  day: 0.05,
-  week: 0.22,
-  month: 0.65,
-  all: 1,
 };
 
 function dateKey(d: Date): string {
@@ -132,35 +124,6 @@ function buildRealStats(rows: DailyUsageStat[], software: Software[], period: St
   return finalize(ranking, trend, period, true);
 }
 
-function buildMockStats(software: Software[], period: StatsPeriod): UsageStats {
-  const factor = PERIOD_FACTOR[period];
-
-  const ranking: RankItem[] = software
-    .map((sw) => ({
-      software: sw,
-      minutes: Math.round(sw.usageMinutes * factor),
-      launches: Math.round(sw.launchCount * factor),
-    }))
-    .filter((item) => item.minutes > 0)
-    .sort((a, b) => b.minutes - a.minutes);
-
-  const totalForPeriod = ranking.reduce((sum, item) => sum + item.minutes, 0);
-  const range = buildDateRange(period);
-  const trend: TrendPoint[] = range.map((d, i) => {
-    const base = WEEKLY_USAGE[i % WEEKLY_USAGE.length]?.hours ?? 6;
-    const hours = Math.round(base * (period === 'all' ? 1 : 1) * 10) / 10;
-    return {
-      date: dateKey(d),
-      label: trendLabel(d, period),
-      minutes: Math.round(hours * 60),
-      hours,
-      launches: Math.round((totalForPeriod / range.length / 30) || 0),
-    };
-  });
-
-  return finalize(ranking, trend, period, false);
-}
-
 function finalize(ranking: RankItem[], trend: TrendPoint[], period: StatsPeriod, isReal: boolean): UsageStats {
   const totalMinutes = ranking.reduce((sum, item) => sum + item.minutes, 0);
   const totalLaunches = ranking.reduce((sum, item) => sum + item.launches, 0);
@@ -221,15 +184,9 @@ export function useUsageStats(period: StatsPeriod): UsageStats {
   }, [period, isElectron]);
 
   return useMemo(() => {
-    if (!isElectron) {
-      return buildMockStats(software, period);
-    }
-    if (period === 'all') {
-      return buildRealStats([], software, period);
-    }
-    if (rows === null) {
-      return { ...buildMockStats(software, period), loading };
+    if (period === 'all' || rows === null) {
+      return { ...buildRealStats([], software, period), loading };
     }
     return { ...buildRealStats(rows, software, period), loading };
-  }, [software, isElectron, period, rows, loading]);
+  }, [software, period, rows, loading]);
 }

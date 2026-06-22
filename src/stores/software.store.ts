@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { Software, Workflow, SoftwareCategory } from '@/types';
-import { MOCK_SOFTWARE, MOCK_WORKFLOWS } from '@/data/software.mock';
 
 export interface WorkflowLaunchResult {
   total: number;
@@ -47,8 +46,8 @@ const WORKFLOW_COLORS = ['#00d4aa', '#a371f7', '#58a6ff', '#d29922', '#f85149', 
 const hasBridge = typeof window !== 'undefined' && !!window.softdesk;
 
 export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
-  software: MOCK_SOFTWARE,
-  workflows: MOCK_WORKFLOWS,
+  software: [],
+  workflows: [],
   selectedCategory: 'all',
   searchQuery: '',
   sortBy: 'recent',
