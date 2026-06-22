@@ -22,6 +22,7 @@ interface SoftwareStore {
   setSelectedCategory: (cat: SoftwareCategory | 'all') => void;
   setSearchQuery: (q: string) => void;
   setSortBy: (sort: 'name' | 'usage' | 'recent' | 'size') => void;
+  setElectronReady: (ready: boolean) => void;
   scanSoftware: () => Promise<void>;
   launchSoftware: (id: string) => void;
   launchWorkflow: (id: string) => Promise<WorkflowLaunchResult>;
@@ -58,6 +59,7 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
   setSelectedCategory: (cat) => set({ selectedCategory: cat }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setSortBy: (sort) => set({ sortBy: sort }),
+  setElectronReady: (ready) => set({ isElectron: ready }),
 
   scanSoftware: async () => {
     if (!window.softdesk) {

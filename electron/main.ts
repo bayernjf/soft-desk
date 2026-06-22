@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
+import fsSync from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { scanInstalledApps } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
@@ -16,6 +17,23 @@ process.env.APP_ROOT = path.join(__dirname, '..');
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 
+const PRELOAD_SOURCE = `"use strict";
+const { contextBridge, ipcRenderer } = require("electron");
+contextBridge.exposeInMainWorld("softdesk", {
+  scanSoftware: () => ipcRenderer.invoke("software:scan"),
+  launchSoftware: (appPath, softwareId) => ipcRenderer.invoke("software:launch", appPath, softwareId),
+  launchBatch: (appPaths) => ipcRenderer.invoke("software:launchBatch", appPaths),
+  getUsageStats: (period) => ipcRenderer.invoke("usage:getStats", period),
+  toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
+});
+`;
+
+function ensurePreload(): string {
+  const preloadPath = path.join(__dirname, 'preload.runtime.cjs');
+  fsSync.writeFileSync(preloadPath, PRELOAD_SOURCE, 'utf-8');
+  return preloadPath;
+}
+
 app.commandLine.appendSwitch('no-sandbox');
 app.setPath('userData', path.join(process.env.APP_ROOT, '.electron-data'));
 
@@ -30,7 +48,7 @@ function createWindow() {
     backgroundColor: '#0d1117',
     titleBarStyle: 'hiddenInset',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: ensurePreload(),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -46,7 +64,12 @@ function createWindow() {
 
 ipcMain.handle('software:scan', async () => {
   const apps = await scanInstalledApps();
-  const summary = getUsageSummary();
+  let summary: ReturnType<typeof getUsageSummary> = [];
+  try {
+    summary = getUsageSummary();
+  } catch (dbErr) {
+    console.error('[softdesk] getUsageSummary failed:', dbErr);
+  }
   const byId = new Map(summary.map((s) => [s.softwareId, s]));
   return apps.map((appItem) => {
     const usage = byId.get(appItem.id);

@@ -1,4 +1,5 @@
 import { ArrowUpRight, Clock, Sparkles, TrendingUp } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
@@ -11,7 +12,7 @@ function StatCard({
   hint,
   color,
 }: {
-  icon: any;
+  icon: LucideIcon;
   title: string;
   value: string;
   hint: string;
@@ -89,9 +90,17 @@ export function Dashboard() {
         <StatCard
           icon={ArrowUpRight}
           title="最近活跃"
-          value={`${Math.round(
-            software.filter((s) => new Date(s.lastUsed).getTime() > Date.now() - 3 * 24 * 60 * 60 * 1000).length / software.length * 100
-          )}%`}
+          value={`${
+            software.length === 0
+              ? 0
+              : Math.round(
+                  (software.filter(
+                    (s) => new Date(s.lastUsed).getTime() > Date.now() - 3 * 24 * 60 * 60 * 1000
+                  ).length /
+                    software.length) *
+                    100
+                )
+          }%`}
           hint="3 天内使用过"
           color="#10b981"
         />
@@ -137,7 +146,7 @@ export function Dashboard() {
                       </div>
                     </div>
                     <div className="text-xs text-slate-500 tabular-nums">
-                      {Math.round(sw.usageMinutes / totalMinutes * 100)}%
+                      {totalMinutes === 0 ? 0 : Math.round((sw.usageMinutes / totalMinutes) * 100)}%
                     </div>
                   </div>
                 ))}
@@ -155,7 +164,7 @@ export function Dashboard() {
                 const usage = software
                   .filter((s) => s.category === cat.id)
                   .reduce((sum, s) => sum + s.usageMinutes, 0);
-                const percent = Math.round((usage / totalMinutes) * 100);
+                const percent = totalMinutes === 0 ? 0 : Math.round((usage / totalMinutes) * 100);
                 if (count === 0) return null;
                 return (
                   <div key={cat.id}>

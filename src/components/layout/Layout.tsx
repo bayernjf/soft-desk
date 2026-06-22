@@ -8,13 +8,30 @@ import { cn } from '@/lib/utils';
 
 export function Layout() {
   const location = useLocation();
-  const { isElectron, isScanning, scanSoftware } = useSoftwareStore();
+  const { isScanning, scanError, scanSoftware, setElectronReady } = useSoftwareStore();
 
   useEffect(() => {
-    if (isElectron) {
-      scanSoftware();
-    }
-  }, [isElectron, scanSoftware]);
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 20;
+
+    const tryScan = () => {
+      if (cancelled) return;
+      if (window.softdesk) {
+        setElectronReady(true);
+        scanSoftware();
+        return;
+      }
+      if (attempts++ < maxAttempts) {
+        setTimeout(tryScan, 100);
+      }
+    };
+
+    tryScan();
+    return () => {
+      cancelled = true;
+    };
+  }, [scanSoftware, setElectronReady]);
 
   return (
     <div className="h-screen flex flex-col bg-[#0a0a0f] text-slate-100 font-sans antialiased overflow-hidden">
@@ -40,6 +57,11 @@ export function Layout() {
             <div className="flex items-center gap-2 px-8 py-2 text-xs text-violet-300 bg-violet-500/10 border-b border-violet-500/20">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
               正在扫描本机已安装的软件...
+            </div>
+          )}
+          {!isScanning && scanError && (
+            <div className="px-8 py-2 text-xs text-rose-300 bg-rose-500/10 border-b border-rose-500/20">
+              扫描失败:{scanError}
             </div>
           )}
           <div className="flex-1 overflow-y-auto">
