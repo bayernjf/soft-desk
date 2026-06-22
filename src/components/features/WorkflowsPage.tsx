@@ -5,6 +5,7 @@ import { useSoftwareStore } from '@/stores/software.store';
 import { formatTimeAgo } from '@/services/software.service';
 import { cn } from '@/lib/utils';
 import { WorkflowEditorModal } from './WorkflowEditorModal';
+import { AppIcon } from './AppIcon';
 
 interface WorkflowCardProps {
   workflow: Workflow;
@@ -161,10 +162,9 @@ function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
                 <div
                   key={sw.id}
                   className={cn(
-                    'w-9 h-9 rounded-xl border-2 border-slate-900 flex items-center justify-center text-xs font-semibold',
+                    'rounded-xl border-2 border-slate-900',
                     (sw.uninstalled || sw.deleted) && 'grayscale opacity-50'
                   )}
-                  style={{ backgroundColor: sw.color + '30', color: sw.color }}
                   title={
                     sw.deleted
                       ? `${sw.name}（已从本地电脑删除）`
@@ -173,7 +173,7 @@ function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
                         : sw.name
                   }
                 >
-                  {sw.name.slice(0, 2)}
+                  <AppIcon software={sw} size={36} rounded="rounded-[10px]" />
                 </div>
               ) : null
             )}

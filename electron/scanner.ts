@@ -3,8 +3,68 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { app } from 'electron';
 
 const execFileAsync = promisify(execFile);
+
+function iconCacheDir(): string {
+  return path.join(app.getPath('userData'), 'icon-cache');
+}
+
+function safeFileName(id: string): string {
+  return id.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+async function extractIcon(appPath: string, id: string, iconFile?: string): Promise<string | null> {
+  try {
+    const cacheDir = iconCacheDir();
+    await fs.mkdir(cacheDir, { recursive: true });
+    const outPng = path.join(cacheDir, `${safeFileName(id)}.png`);
+
+    const toDataUrl = async (): Promise<string> => {
+      const buf = await fs.readFile(outPng);
+      return `data:image/png;base64,${buf.toString('base64')}`;
+    };
+
+    try {
+      await fs.access(outPng);
+      return await toDataUrl();
+    } catch {
+      // not cached yet, continue to extract
+    }
+
+    const resourcesDir = path.join(appPath, 'Contents', 'Resources');
+    let icnsPath: string | undefined;
+
+    if (iconFile) {
+      const name = iconFile.endsWith('.icns') ? iconFile : `${iconFile}.icns`;
+      const candidate = path.join(resourcesDir, name);
+      try {
+        await fs.access(candidate);
+        icnsPath = candidate;
+      } catch {
+        // fall through to directory search
+      }
+    }
+
+    if (!icnsPath) {
+      try {
+        const entries = await fs.readdir(resourcesDir);
+        const icns = entries.find((e) => e.endsWith('.icns'));
+        if (icns) icnsPath = path.join(resourcesDir, icns);
+      } catch {
+        // no resources dir
+      }
+    }
+
+    if (!icnsPath) return null;
+
+    await execFileAsync('sips', ['-s', 'format', 'png', '-Z', '128', icnsPath, '--out', outPng]);
+    return await toDataUrl();
+  } catch {
+    return null;
+  }
+}
 
 export type ScannedCategory =
   | 'dev-tools'
@@ -91,6 +151,7 @@ async function readInfoPlist(appPath: string): Promise<Record<string, string>> {
     'CFBundleIdentifier',
     'LSApplicationCategoryType',
     'CFBundleName',
+    'CFBundleIconFile',
   ];
   for (const key of keys) {
     try {
@@ -137,11 +198,14 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
     const installDate = stat.birthtime.toISOString().slice(0, 10);
     const lastUsed = stat.atime.toISOString();
 
+    const id = plist['CFBundleIdentifier'] || appPath;
+    const iconData = await extractIcon(appPath, id, plist['CFBundleIconFile']);
+
     return {
-      id: plist['CFBundleIdentifier'] || appPath,
+      id,
       name: baseName,
       description: plist['CFBundleName'] || baseName,
-      icon: 'AppWindow',
+      icon: iconData ?? 'AppWindow',
       category,
       version: plist['CFBundleShortVersionString'],
       publisher: publisherFromBundleId(plist['CFBundleIdentifier']),

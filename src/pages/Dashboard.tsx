@@ -4,6 +4,7 @@ import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
+import { AppIcon } from '@/components/features/AppIcon';
 import { cn } from '@/lib/utils';
 
 function StatCard({
@@ -144,12 +145,7 @@ export function Dashboard() {
                     }}
                   >
                     <div className="w-6 text-xs text-slate-600 tabular-nums">{String(idx + 1).padStart(2, '0')}</div>
-                    <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
-                      style={{ backgroundColor: sw.color + '25', color: sw.color }}
-                    >
-                      {sw.name.slice(0, 2)}
-                    </div>
+                    <AppIcon software={sw} size={32} rounded="rounded-lg" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-slate-200 truncate">
                         {sw.name}

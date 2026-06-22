@@ -4,6 +4,7 @@ import { CATEGORIES } from '@/data/categories';
 import type { Software } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
+import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
 
 interface SoftwareCardProps {
@@ -218,12 +219,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
             inactive && 'grayscale opacity-50 hover:opacity-70'
           )}
         >
-          <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-base font-semibold shrink-0"
-            style={{ backgroundColor: software.color + '25', color: software.color }}
-          >
-            {software.name.slice(0, 2)}
-          </div>
+          <AppIcon software={software} size={36} rounded="rounded-lg" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-slate-100 truncate">{software.name}</div>
             <div className="text-xs text-slate-500 truncate">
@@ -250,12 +246,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
           )}
         >
           <div className="flex items-start gap-4">
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold shrink-0"
-              style={{ backgroundColor: software.color + '25', color: software.color }}
-            >
-              {software.name.slice(0, 2)}
-            </div>
+            <AppIcon software={software} size={48} rounded="rounded-xl" />
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -319,12 +310,12 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
         )}
       >
         <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-semibold shrink-0 transition-transform duration-200 group-hover:scale-105"
-            style={{ backgroundColor: software.color + '25', color: software.color }}
-          >
-            {software.name.slice(0, 2)}
-          </div>
+          <AppIcon
+            software={software}
+            size={40}
+            rounded="rounded-xl"
+            className="transition-transform duration-200 group-hover:scale-105"
+          />
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-slate-100 truncate">
               {software.name}
