@@ -1,23 +1,26 @@
 import { useMemo } from 'react';
-import { AlertCircle, Trash2, HardDrive, Search } from 'lucide-react';
+import { AlertCircle, Trash2, HardDrive, Search, Download } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { formatMinutes, formatTimeAgo, formatSize } from '@/services/software.service';
 import { cn } from '@/lib/utils';
 
 export function Uninstall() {
-  const { software, uninstallSoftware } = useSoftwareStore();
+  const { software, uninstallSoftware, removeSoftware, reinstallSoftware } = useSoftwareStore();
 
-  const bySize = useMemo(() => [...software].sort((a, b) => b.size - a.size).slice(0, 6), [software]);
+  const active = useMemo(() => software.filter((s) => !s.uninstalled), [software]);
+  const uninstalled = useMemo(() => software.filter((s) => s.uninstalled), [software]);
+
+  const bySize = useMemo(() => [...active].sort((a, b) => b.size - a.size).slice(0, 6), [active]);
   const unused = useMemo(
     () =>
-      [...software]
+      [...active]
         .filter((s) => new Date(s.lastUsed).getTime() < Date.now() - 7 * 24 * 60 * 60 * 1000)
         .sort((a, b) => a.usageMinutes - b.usageMinutes),
-    [software]
+    [active]
   );
-  const largeSize = useMemo(() => software.filter((s) => s.size >= 500), [software]);
+  const largeSize = useMemo(() => active.filter((s) => s.size >= 500), [active]);
 
-  const totalSize = software.reduce((sum, s) => sum + s.size, 0);
+  const totalSize = active.reduce((sum, s) => sum + s.size, 0);
   const potentialFree = unused.reduce((sum, s) => sum + s.size, 0);
 
   return (
@@ -121,6 +124,54 @@ export function Uninstall() {
               )}
             </div>
           </section>
+
+          {uninstalled.length > 0 && (
+            <section className="p-5 rounded-2xl bg-slate-900/40 border border-slate-800/60">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <Trash2 className="w-4 h-4 text-slate-400" />
+                  <h2 className="text-sm font-semibold text-slate-200">已卸载</h2>
+                </div>
+                <span className="text-xs text-slate-500">{uninstalled.length} 个软件</span>
+              </div>
+              <div className="space-y-2.5">
+                {uninstalled.map((sw) => (
+                  <div
+                    key={sw.id}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/20 hover:bg-slate-800/40 transition-colors group"
+                  >
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 grayscale opacity-60"
+                      style={{ backgroundColor: sw.color + '25', color: sw.color }}
+                    >
+                      {sw.name.slice(0, 2)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-400 truncate">
+                        {sw.name}
+                        <span className="ml-2 text-xs text-slate-600">已卸载</span>
+                      </div>
+                      <div className="text-xs text-slate-600 mt-0.5">{formatSize(sw.size)}</div>
+                    </div>
+                    <button
+                      onClick={() => reinstallSoftware(sw.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      下载
+                    </button>
+                    <button
+                      onClick={() => removeSoftware(sw.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      移除
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
 
         <aside className="space-y-4">
@@ -166,10 +217,13 @@ export function Uninstall() {
           </section>
 
           <button
+            onClick={() => unused.forEach((sw) => uninstallSoftware(sw.id))}
+            disabled={unused.length === 0}
             className={cn(
               'w-full py-3.5 rounded-2xl text-sm font-semibold transition-all',
               'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white',
-              'hover:shadow-lg hover:shadow-violet-500/20 active:scale-[0.99]'
+              'hover:shadow-lg hover:shadow-violet-500/20 active:scale-[0.99]',
+              'disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100'
             )}
           >
             {unused.length > 0 ? `一键清理 ${unused.length} 个未使用应用` : '暂无待清理项'}
