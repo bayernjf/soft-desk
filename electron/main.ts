@@ -55,6 +55,34 @@ ipcMain.handle('software:launch', async (_event, appPath: string) => {
   return { success: true };
 });
 
+ipcMain.handle('software:launchBatch', async (_event, appPaths: string[]) => {
+  if (!Array.isArray(appPaths)) {
+    return { results: [], launched: 0, failed: 0 };
+  }
+
+  const results: { path: string; success: boolean; error?: string }[] = [];
+
+  for (let i = 0; i < appPaths.length; i++) {
+    const appPath = appPaths[i];
+    if (!appPath || typeof appPath !== 'string') {
+      results.push({ path: String(appPath), success: false, error: 'invalid path' });
+      continue;
+    }
+    const error = await shell.openPath(appPath);
+    results.push(error ? { path: appPath, success: false, error } : { path: appPath, success: true });
+
+    if (i < appPaths.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+  }
+
+  return {
+    results,
+    launched: results.filter((r) => r.success).length,
+    failed: results.filter((r) => !r.success).length,
+  };
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

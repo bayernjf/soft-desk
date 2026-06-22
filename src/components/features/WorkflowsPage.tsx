@@ -1,8 +1,7 @@
-import { useMemo } from 'react';
-import { Star, Clock, Play } from 'lucide-react';
+import { useState } from 'react';
+import { Star, Clock, Play, Loader2, Check, AlertCircle } from 'lucide-react';
 import type { Workflow } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
-import { CATEGORIES } from '@/data/categories';
 import { formatTimeAgo } from '@/services/software.service';
 import { cn } from '@/lib/utils';
 
@@ -10,12 +9,42 @@ interface WorkflowCardProps {
   workflow: Workflow;
 }
 
+type LaunchPhase =
+  | { status: 'idle' }
+  | { status: 'launching' }
+  | { status: 'success'; message: string }
+  | { status: 'error'; message: string };
+
 function WorkflowCard({ workflow }: WorkflowCardProps) {
   const { software, launchWorkflow, toggleWorkflowFavorite } = useSoftwareStore();
+  const [phase, setPhase] = useState<LaunchPhase>({ status: 'idle' });
   const workflowSoftware = workflow.softwareIds
     .map((id) => software.find((s) => s.id === id))
     .filter(Boolean)
     .slice(0, 4);
+
+  const handleLaunch = async () => {
+    if (phase.status === 'launching') return;
+    setPhase({ status: 'launching' });
+    const result = await launchWorkflow(workflow.id);
+
+    if (!result.isElectron) {
+      setPhase({ status: 'error', message: result.error ?? '当前环境无法启动' });
+    } else if (result.failed > 0) {
+      setPhase({
+        status: 'error',
+        message: `${result.launched}/${result.total} 已启动，${result.failed} 个失败`,
+      });
+    } else {
+      const missingNote = result.missing > 0 ? `（${result.missing} 个软件缺失）` : '';
+      setPhase({
+        status: 'success',
+        message: `已启动 ${result.launched} 个应用${missingNote}`,
+      });
+    }
+
+    setTimeout(() => setPhase({ status: 'idle' }), 3000);
+  };
 
   return (
     <div
@@ -46,17 +75,45 @@ function WorkflowCard({ workflow }: WorkflowCardProps) {
             <p className="text-xs text-slate-500 mt-1">{workflow.description}</p>
           </div>
           <button
-            onClick={() => launchWorkflow(workflow.id)}
+            onClick={handleLaunch}
+            disabled={phase.status === 'launching'}
             className={cn(
               'px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-1.5',
               'bg-white text-slate-900 hover:bg-slate-100 shadow-lg shadow-slate-900/20',
-              'active:scale-95'
+              'active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100'
             )}
           >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            启动
+            {phase.status === 'launching' ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                启动中
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 fill-current" />
+                启动
+              </>
+            )}
           </button>
         </div>
+
+        {(phase.status === 'success' || phase.status === 'error') && (
+          <div
+            className={cn(
+              'flex items-center gap-1.5 mb-3 text-xs rounded-lg px-2.5 py-1.5',
+              phase.status === 'success'
+                ? 'bg-emerald-500/10 text-emerald-300'
+                : 'bg-rose-500/10 text-rose-300'
+            )}
+          >
+            {phase.status === 'success' ? (
+              <Check className="w-3.5 h-3.5" />
+            ) : (
+              <AlertCircle className="w-3.5 h-3.5" />
+            )}
+            {phase.message}
+          </div>
+        )}
 
         <div className="flex items-center justify-between">
           <div className="flex items-center -space-x-2">

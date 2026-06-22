@@ -2,6 +2,15 @@ import { create } from 'zustand';
 import type { Software, Workflow, SoftwareCategory } from '@/types';
 import { MOCK_SOFTWARE, MOCK_WORKFLOWS } from '@/data/software.mock';
 
+export interface WorkflowLaunchResult {
+  total: number;
+  launched: number;
+  failed: number;
+  missing: number;
+  isElectron: boolean;
+  error?: string;
+}
+
 interface SoftwareStore {
   software: Software[];
   workflows: Workflow[];
@@ -16,7 +25,7 @@ interface SoftwareStore {
   setSortBy: (sort: 'name' | 'usage' | 'recent' | 'size') => void;
   scanSoftware: () => Promise<void>;
   launchSoftware: (id: string) => void;
-  launchWorkflow: (id: string) => void;
+  launchWorkflow: (id: string) => Promise<WorkflowLaunchResult>;
   toggleWorkflowFavorite: (id: string) => void;
   uninstallSoftware: (id: string) => void;
 }
@@ -67,20 +76,57 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
     set({ software });
   },
 
-  launchWorkflow: (id) => {
+  launchWorkflow: async (id) => {
     const wf = get().workflows.find((w) => w.id === id);
-    if (window.softdesk && wf) {
-      for (const sid of wf.softwareIds) {
-        const sw = get().software.find((s) => s.id === sid);
-        if (sw?.path) window.softdesk.launchSoftware(sw.path);
-      }
+    if (!wf) {
+      return { total: 0, launched: 0, failed: 0, missing: 0, isElectron: get().isElectron };
     }
-    const workflows = get().workflows.map((w) =>
-      w.id === id
-        ? { ...w, usageCount: w.usageCount + 1, lastUsed: new Date().toISOString() }
-        : w
-    );
-    set({ workflows });
+
+    const matched = wf.softwareIds.map((sid) => get().software.find((s) => s.id === sid));
+    const paths = matched.filter((s): s is Software => !!s?.path).map((s) => s.path);
+    const missing = wf.softwareIds.length - paths.length;
+
+    const updateStats = () => {
+      const workflows = get().workflows.map((w) =>
+        w.id === id
+          ? { ...w, usageCount: w.usageCount + 1, lastUsed: new Date().toISOString() }
+          : w
+      );
+      set({ workflows });
+    };
+
+    if (!window.softdesk) {
+      updateStats();
+      return {
+        total: wf.softwareIds.length,
+        launched: 0,
+        failed: 0,
+        missing,
+        isElectron: false,
+        error: '当前不在 Electron 环境，无法实际启动软件',
+      };
+    }
+
+    try {
+      const { launched, failed } = await window.softdesk.launchBatch(paths);
+      updateStats();
+      return {
+        total: wf.softwareIds.length,
+        launched,
+        failed,
+        missing,
+        isElectron: true,
+      };
+    } catch (err) {
+      return {
+        total: wf.softwareIds.length,
+        launched: 0,
+        failed: paths.length,
+        missing,
+        isElectron: true,
+        error: err instanceof Error ? err.message : '批量启动失败',
+      };
+    }
   },
 
   toggleWorkflowFavorite: (id) => {
