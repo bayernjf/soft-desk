@@ -16,6 +16,7 @@ export interface SoftdeskBridge {
   scanSoftware: () => Promise<Software[]>;
   launchSoftware: (appPath: string) => Promise<{ success: boolean; error?: string }>;
   launchBatch: (appPaths: string[]) => Promise<BatchLaunchResult>;
+  toggleMaximize: () => Promise<{ maximized: boolean }>;
 }
 
 declare global {

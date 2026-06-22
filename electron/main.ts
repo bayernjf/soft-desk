@@ -44,6 +44,17 @@ ipcMain.handle('software:scan', async () => {
   return scanInstalledApps();
 });
 
+// 切换窗口最大化/还原(maximize 是填满工作区,非全屏 fullscreen),供顶部拖拽区双击调用
+ipcMain.handle('window:toggleMaximize', () => {
+  if (!win) return { maximized: false };
+  if (win.isMaximized()) {
+    win.unmaximize();
+    return { maximized: false };
+  }
+  win.maximize();
+  return { maximized: true };
+});
+
 ipcMain.handle('software:launch', async (_event, appPath: string) => {
   if (!appPath || typeof appPath !== 'string') {
     return { success: false, error: 'invalid path' };
