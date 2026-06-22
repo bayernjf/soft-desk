@@ -133,9 +133,6 @@ export function Statistics() {
           <h1 className="text-2xl font-bold text-white tracking-tight">统计分析</h1>
           <p className="text-sm text-slate-500 mt-1">
             深入了解你的软件使用习惯与效率趋势
-            {!stats.isReal && (
-              <span className="ml-2 text-amber-500/80">· 示例数据</span>
-            )}
           </p>
         </div>
 

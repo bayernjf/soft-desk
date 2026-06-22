@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Play, Clock, HardDrive, Download, Trash2 } from 'lucide-react';
+import { Play, Clock, HardDrive, Download, Trash2, RotateCcw } from 'lucide-react';
 import { CATEGORIES } from '@/data/categories';
 import type { Software } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
@@ -9,63 +9,138 @@ import { cn } from '@/lib/utils';
 interface SoftwareCardProps {
   software: Software;
   variant?: 'default' | 'compact' | 'large';
+  context?: 'library' | 'uninstall';
 }
 
-export function SoftwareCard({ software, variant = 'default' }: SoftwareCardProps) {
+export function SoftwareCard({ software, variant = 'default', context = 'library' }: SoftwareCardProps) {
   const launchSoftware = useSoftwareStore((s) => s.launchSoftware);
   const removeSoftware = useSoftwareStore((s) => s.removeSoftware);
   const reinstallSoftware = useSoftwareStore((s) => s.reinstallSoftware);
+  const uninstallSoftware = useSoftwareStore((s) => s.uninstallSoftware);
   const categoryMeta = CATEGORIES.find((c) => c.id === software.category);
 
   const isUninstalled = !!software.uninstalled;
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [prompt, setPrompt] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!prompt) return;
     const handle = (e: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
+        setPrompt(false);
       }
     };
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
-  }, [menuOpen]);
+  }, [prompt]);
 
   const handleClick = () => {
+    if (context === 'uninstall') {
+      setPrompt((v) => !v);
+      return;
+    }
     if (isUninstalled) {
-      setMenuOpen((v) => !v);
+      setPrompt((v) => !v);
     } else {
       launchSoftware(software.id);
     }
   };
 
-  const menu = isUninstalled && menuOpen && (
-    <div className="absolute right-2 top-2 z-20 w-32 rounded-xl bg-slate-800 border border-slate-700 shadow-xl shadow-black/40 overflow-hidden py-1">
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          reinstallSoftware(software.id);
-          setMenuOpen(false);
-        }}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-slate-700/60 transition-colors"
-      >
-        <Download className="w-3.5 h-3.5" />
-        下载
-      </button>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          removeSoftware(software.id);
-          setMenuOpen(false);
-        }}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-400 hover:bg-slate-700/60 transition-colors"
-      >
-        <Trash2 className="w-3.5 h-3.5" />
-        移除
-      </button>
-    </div>
-  );
+  const close = () => setPrompt(false);
+
+  let overlay: React.ReactNode = null;
+  if (prompt) {
+    if (context === 'library' && isUninstalled) {
+      overlay = (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-sm px-4">
+          <p className="text-xs text-slate-300 text-center">
+            重新安装「{software.name}」？
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                close();
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                reinstallSoftware(software.id);
+                close();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              确认安装
+            </button>
+          </div>
+        </div>
+      );
+    } else if (context === 'uninstall' && isUninstalled) {
+      overlay = (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-sm px-4">
+          <p className="text-xs text-slate-300 text-center truncate max-w-full">{software.name}</p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                reinstallSoftware(software.id);
+                close();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              重新安装
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                removeSoftware(software.id);
+                close();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              移除软件库
+            </button>
+          </div>
+        </div>
+      );
+    } else if (context === 'uninstall' && !isUninstalled) {
+      overlay = (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-sm px-4">
+          <p className="text-xs text-slate-300 text-center">
+            卸载「{software.name}」？
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                uninstallSoftware(software.id);
+                close();
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              确认卸载
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                close();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      );
+    }
+  }
 
   if (variant === 'compact') {
     return (
@@ -92,7 +167,7 @@ export function SoftwareCard({ software, variant = 'default' }: SoftwareCardProp
           </div>
           <Play className="w-3.5 h-3.5 text-slate-500 shrink-0" />
         </button>
-        {menu}
+        {overlay}
       </div>
     );
   }
@@ -163,7 +238,7 @@ export function SoftwareCard({ software, variant = 'default' }: SoftwareCardProp
             </div>
           </div>
         </button>
-        {menu}
+        {overlay}
       </div>
     );
   }
@@ -199,10 +274,18 @@ export function SoftwareCard({ software, variant = 'default' }: SoftwareCardProp
               <span>{formatMinutes(software.usageMinutes)}</span>
             </div>
           </div>
-          <Play className="w-4 h-4 text-slate-600 group-hover:text-violet-400 transition-colors shrink-0" />
+          {context === 'uninstall' ? (
+            isUninstalled ? (
+              <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors shrink-0" />
+            ) : (
+              <Trash2 className="w-4 h-4 text-slate-600 group-hover:text-rose-400 transition-colors shrink-0" />
+            )
+          ) : (
+            <Play className="w-4 h-4 text-slate-600 group-hover:text-violet-400 transition-colors shrink-0" />
+          )}
         </div>
       </button>
-      {menu}
+      {overlay}
     </div>
   );
 }

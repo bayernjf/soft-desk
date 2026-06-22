@@ -36,7 +36,6 @@ export interface UsageStats {
   totalLaunches: number;
   activeCount: number;
   avgMinutes: number;
-  isReal: boolean;
   loading: boolean;
 }
 
@@ -121,10 +120,10 @@ function buildRealStats(rows: DailyUsageStat[], software: Software[], period: St
     };
   });
 
-  return finalize(ranking, trend, period, true);
+  return finalize(ranking, trend);
 }
 
-function finalize(ranking: RankItem[], trend: TrendPoint[], period: StatsPeriod, isReal: boolean): UsageStats {
+function finalize(ranking: RankItem[], trend: TrendPoint[]): UsageStats {
   const totalMinutes = ranking.reduce((sum, item) => sum + item.minutes, 0);
   const totalLaunches = ranking.reduce((sum, item) => sum + item.launches, 0);
   const activeCount = ranking.length;
@@ -149,7 +148,6 @@ function finalize(ranking: RankItem[], trend: TrendPoint[], period: StatsPeriod,
     totalLaunches,
     activeCount,
     avgMinutes,
-    isReal,
     loading: false,
   };
 }
