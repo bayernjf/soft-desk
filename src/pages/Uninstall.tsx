@@ -8,22 +8,24 @@ import type { SoftwareCategory } from '@/types';
 import { cn } from '@/lib/utils';
 
 export function Uninstall() {
-  const { software, uninstallSoftware } = useSoftwareStore();
+  const { software, uninstallSoftware, reinstallSoftware } = useSoftwareStore();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<SoftwareCategory | 'all'>('all');
   const [confirmClean, setConfirmClean] = useState(false);
+  const [cleanedIds, setCleanedIds] = useState<string[]>([]);
 
   const active = useMemo(() => software.filter((s) => !s.uninstalled), [software]);
   const unused = useMemo(
     () =>
-      active.filter(
-        (s) =>
-          new Date(s.lastUsed).getTime() < Date.now() - 30 * 24 * 60 * 60 * 1000 &&
-          s.size >= 1024
-      ),
+      active
+        .filter(
+          (s) =>
+            new Date(s.lastUsed).getTime() < Date.now() - 30 * 24 * 60 * 60 * 1000 &&
+            s.size >= 1024
+        )
+        .sort((a, b) => b.size - a.size),
     [active]
   );
-  const largeSize = useMemo(() => active.filter((s) => s.size >= 500), [active]);
 
   const totalSize = active.reduce((sum, s) => sum + s.size, 0);
   const potentialFree = unused.reduce((sum, s) => sum + s.size, 0);
@@ -145,7 +147,7 @@ export function Uninstall() {
               <div>
                 <h3 className="text-sm font-semibold text-slate-200">清理建议</h3>
                 <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                  检测到 {unused.length} 个软件超过一个月未使用且体积大于 1GB，建议优先清理以释放更多空间。
+                  检测到 {unused.length} 个软件超过一个月未使用且体积大于 1GB，建议优先弃用以释放更多空间。
                 </p>
               </div>
             </div>
@@ -156,25 +158,22 @@ export function Uninstall() {
               <HardDrive className="w-4 h-4 text-rose-400" />
               <h3 className="text-sm font-semibold text-slate-200">大体积应用</h3>
             </div>
-            <div className="text-xs text-slate-500 mb-3">{largeSize.length} 个应用 ≥ 500MB</div>
-            <div className="space-y-2">
-              {largeSize.length > 0 ? (
-                largeSize
-                  .sort((a, b) => b.size - a.size)
-                  .slice(0, 8)
-                  .map((sw) => (
-                    <div key={sw.id} className="flex items-center gap-2.5 text-xs">
-                      <span
-                        className="px-2 py-0.5 rounded-md font-medium tabular-nums shrink-0"
-                        style={{ backgroundColor: sw.color + '20', color: sw.color }}
-                      >
-                        {formatSize(sw.size)}
-                      </span>
-                      <span className="text-slate-400 truncate">{sw.name}</span>
-                    </div>
-                  ))
+            <div className="text-xs text-slate-500 mb-3">{unused.length} 个应用 ≥ 1GB 且超一个月未用</div>
+            <div className="space-y-2 max-h-[17.5rem] overflow-y-auto pr-1">
+              {unused.length > 0 ? (
+                unused.map((sw) => (
+                  <div key={sw.id} className="flex items-center gap-2.5 text-xs h-5">
+                    <span
+                      className="px-2 py-0.5 rounded-md font-medium tabular-nums shrink-0"
+                      style={{ backgroundColor: sw.color + '20', color: sw.color }}
+                    >
+                      {formatSize(sw.size)}
+                    </span>
+                    <span className="text-slate-400 truncate">{sw.name}</span>
+                  </div>
+                ))
               ) : (
-                <div className="text-xs text-slate-600">暂无大体积应用</div>
+                <div className="text-xs text-slate-600">暂无符合条件的应用</div>
               )}
             </div>
           </section>
@@ -182,17 +181,19 @@ export function Uninstall() {
           {confirmClean ? (
             <div className="w-full p-4 rounded-2xl bg-slate-900/60 border border-rose-500/30 space-y-3">
               <p className="text-xs text-slate-300 text-center">
-                确认卸载这 {unused.length} 个未使用应用？
+                确认弃用这 {unused.length} 个未使用应用？
               </p>
               <div className="flex items-center justify-center gap-2">
                 <button
                   onClick={() => {
-                    unused.forEach((sw) => uninstallSoftware(sw.id));
+                    const ids = unused.map((sw) => sw.id);
+                    ids.forEach((id) => uninstallSoftware(id));
+                    setCleanedIds(ids);
                     setConfirmClean(false);
                   }}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
                 >
-                  确认卸载
+                  确认弃用
                 </button>
                 <button
                   onClick={() => setConfirmClean(false)}
@@ -202,6 +203,20 @@ export function Uninstall() {
                 </button>
               </div>
             </div>
+          ) : cleanedIds.length > 0 ? (
+            <button
+              onClick={() => {
+                cleanedIds.forEach((id) => reinstallSoftware(id));
+                setCleanedIds([]);
+              }}
+              className={cn(
+                'w-full py-3.5 rounded-2xl text-sm font-semibold transition-all',
+                'bg-gradient-to-r from-emerald-500 to-teal-500 text-white',
+                'hover:shadow-lg hover:shadow-emerald-500/20 active:scale-[0.99]'
+              )}
+            >
+              一键重新使用 {cleanedIds.length} 个应用
+            </button>
           ) : (
             <button
               onClick={() => setConfirmClean(true)}
@@ -213,7 +228,7 @@ export function Uninstall() {
                 'disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100'
               )}
             >
-              {unused.length > 0 ? `一键清理 ${unused.length} 个未使用应用` : '暂无待清理项'}
+              {unused.length > 0 ? `一键弃用 ${unused.length} 个未使用应用` : '暂无待清理项'}
             </button>
           )}
         </aside>

@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("softdesk", {
   scanSoftware: () => ipcRenderer.invoke("software:scan"),
   launchSoftware: (appPath, softwareId) => ipcRenderer.invoke("software:launch", appPath, softwareId),
   launchBatch: (appPaths) => ipcRenderer.invoke("software:launchBatch", appPaths),
+  removeSoftware: (appPath) => ipcRenderer.invoke("software:remove", appPath),
   getUsageStats: (period) => ipcRenderer.invoke("usage:getStats", period),
   toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
 });
@@ -138,6 +139,18 @@ ipcMain.handle('software:launchBatch', async (_event, appPaths: string[]) => {
     launched: results.filter((r) => r.success).length,
     failed: results.filter((r) => !r.success).length,
   };
+});
+
+ipcMain.handle('software:remove', async (_event, appPath: string) => {
+  if (!appPath || typeof appPath !== 'string') {
+    return { success: false, error: '无效的软件路径' };
+  }
+  try {
+    await shell.trashItem(appPath);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : '移到废纸篓失败' };
+  }
 });
 
 app.whenReady().then(() => {

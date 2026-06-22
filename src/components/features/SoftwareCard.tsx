@@ -20,7 +20,9 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
   const categoryMeta = CATEGORIES.find((c) => c.id === software.category);
 
   const isUninstalled = !!software.uninstalled;
+  const uninstalledLabel = '已弃用';
   const [prompt, setPrompt] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -28,6 +30,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
     const handle = (e: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
         setPrompt(false);
+        setRemoveError(null);
       }
     };
     document.addEventListener('mousedown', handle);
@@ -46,7 +49,19 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
     }
   };
 
-  const close = () => setPrompt(false);
+  const close = () => {
+    setPrompt(false);
+    setRemoveError(null);
+  };
+
+  const handleRemove = async () => {
+    const result = await removeSoftware(software.id);
+    if (result.success) {
+      close();
+    } else {
+      setRemoveError(result.error ?? '移除失败');
+    }
+  };
 
   let overlay: React.ReactNode = null;
   if (prompt) {
@@ -54,7 +69,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
       overlay = (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-sm px-4">
           <p className="text-xs text-slate-300 text-center">
-            重新安装「{software.name}」？
+            重新使用「{software.name}」？
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -75,7 +90,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              确认安装
+              确认重新使用
             </button>
           </div>
         </div>
@@ -94,27 +109,29 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              重新安装
+              重新使用
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                removeSoftware(software.id);
-                close();
+                void handleRemove();
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              移除软件库
+              移到废纸篓
             </button>
           </div>
+          {removeError && (
+            <p className="text-[11px] text-rose-400 text-center leading-snug">{removeError}</p>
+          )}
         </div>
       );
     } else if (context === 'uninstall' && !isUninstalled) {
       overlay = (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-sm px-4">
           <p className="text-xs text-slate-300 text-center">
-            卸载「{software.name}」？
+            弃用「{software.name}」？
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -125,7 +142,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
               }}
               className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
             >
-              确认卸载
+              确认弃用
             </button>
             <button
               onClick={(e) => {
@@ -162,7 +179,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-slate-100 truncate">{software.name}</div>
             <div className="text-xs text-slate-500 truncate">
-              {isUninstalled ? '已卸载' : categoryMeta?.name}
+              {isUninstalled ? uninstalledLabel : categoryMeta?.name}
             </div>
           </div>
           <Play className="w-3.5 h-3.5 text-slate-500 shrink-0" />
@@ -197,7 +214,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
                   <h3 className="text-base font-semibold text-white truncate group-hover:text-white">
                     {software.name}
                     {isUninstalled && (
-                      <span className="ml-2 text-xs font-medium text-slate-500">已卸载</span>
+                      <span className="ml-2 text-xs font-medium text-slate-500">{uninstalledLabel}</span>
                     )}
                   </h3>
                   <p className="text-sm text-slate-500 mt-0.5 truncate">{software.description}</p>
@@ -264,7 +281,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
             <h3 className="text-sm font-semibold text-slate-100 truncate">
               {software.name}
               {isUninstalled && (
-                <span className="ml-2 text-xs font-medium text-slate-500">已卸载</span>
+                <span className="ml-2 text-xs font-medium text-slate-500">{uninstalledLabel}</span>
               )}
             </h3>
             <p className="text-xs text-slate-500 truncate mt-0.5">{software.description}</p>

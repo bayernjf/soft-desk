@@ -26,6 +26,7 @@ export interface SoftdeskBridge {
     softwareId?: string
   ) => Promise<{ success: boolean; error?: string }>;
   launchBatch: (appPaths: string[]) => Promise<BatchLaunchResult>;
+  removeSoftware: (appPath: string) => Promise<{ success: boolean; error?: string }>;
   getUsageStats: (period: 'day' | 'week' | 'month') => Promise<DailyUsageStat[]>;
   toggleMaximize: () => Promise<{ maximized: boolean }>;
 }

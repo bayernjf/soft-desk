@@ -31,7 +31,7 @@ interface SoftwareStore {
   updateWorkflow: (id: string, data: WorkflowInput) => void;
   deleteWorkflow: (id: string) => void;
   uninstallSoftware: (id: string) => void;
-  removeSoftware: (id: string) => void;
+  removeSoftware: (id: string) => Promise<{ success: boolean; error?: string }>;
   reinstallSoftware: (id: string) => void;
 }
 
@@ -194,9 +194,16 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
     set({ software });
   },
 
-  removeSoftware: (id) => {
-    const software = get().software.filter((s) => s.id !== id);
-    set({ software });
+  removeSoftware: async (id) => {
+    const target = get().software.find((s) => s.id === id);
+    if (window.softdesk && target?.path) {
+      const result = await window.softdesk.removeSoftware(target.path);
+      if (!result.success) {
+        return { success: false, error: result.error ?? '移除失败' };
+      }
+    }
+    set({ software: get().software.filter((s) => s.id !== id) });
+    return { success: true };
   },
 
   reinstallSoftware: (id) => {
