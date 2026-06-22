@@ -11,8 +11,6 @@ const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 
 app.commandLine.appendSwitch('no-sandbox');
-app.commandLine.appendSwitch('disable-gpu');
-app.disableHardwareAcceleration();
 app.setPath('userData', path.join(process.env.APP_ROOT, '.electron-data'));
 
 let win: BrowserWindow | null = null;
