@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Monitor, Bell, Database, Shield, Sparkles } from 'lucide-react';
+import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type TabId = 'appearance' | 'notifications' | 'data' | 'privacy' | 'ai';
+type TabId = 'appearance' | 'notifications' | 'data' | 'privacy' | 'ai' | 'help';
 
 const tabs = [
   { id: 'appearance' as TabId, icon: Monitor, label: '外观' },
@@ -10,6 +10,7 @@ const tabs = [
   { id: 'data' as TabId, icon: Database, label: '数据与存储' },
   { id: 'privacy' as TabId, icon: Shield, label: '隐私安全' },
   { id: 'ai' as TabId, icon: Sparkles, label: 'AI 功能' },
+  { id: 'help' as TabId, icon: LifeBuoy, label: '帮助' },
 ];
 
 interface ToggleProps {
@@ -215,6 +216,63 @@ export function Settings() {
                 label="工作流建议"
                 description="基于使用习惯，为你推荐常用的软件组合"
               />
+            </div>
+          )}
+
+          {activeTab === 'help' && (
+            <div className="space-y-6 max-w-xl">
+              <div>
+                <h2 className="text-base font-semibold text-slate-100 mb-1">帮助与常见问题</h2>
+                <p className="text-sm text-slate-500">遇到问题？这里是常见情况的解决办法</p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-800/40 border border-slate-800 overflow-hidden">
+                <div className="flex items-start gap-3 p-4 border-b border-slate-800/80">
+                  <div className="w-9 h-9 rounded-xl bg-rose-500/15 text-rose-400 flex items-center justify-center shrink-0">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-slate-200">
+                      移到废纸篓时提示「没有访问许可 / 没有权限」
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      这是 macOS 的安全限制：系统默认不允许 SoftDesk 删除其他应用。授予一次权限后即可正常使用，属于一次性设置。
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <FolderCog className="w-4 h-4 text-violet-400" />
+                      <h4 className="text-sm font-medium text-slate-200">解决步骤</h4>
+                    </div>
+                    <ol className="space-y-2 text-xs text-slate-400 leading-relaxed list-none">
+                      {[
+                        '打开「系统设置」→「隐私与安全性」。',
+                        '找到并进入「App 管理」（App Management）。',
+                        '在列表中打开 SoftDesk 的开关；若没有 SoftDesk，点「+」手动添加。',
+                        '如果仍失败，改为开启「完全磁盘访问权限」（Full Disk Access）中的 SoftDesk。',
+                        '完全退出并重新启动 SoftDesk，再次尝试移到废纸篓。',
+                      ].map((step, i) => (
+                        <li key={i} className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-violet-500/15 text-violet-300 flex items-center justify-center shrink-0 text-[11px] font-semibold tabular-nums">
+                            {i + 1}
+                          </span>
+                          <span className="pt-0.5">{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-3">
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      💡 <span className="text-slate-300">替代方案</span>
+                      ：你也可以直接在「访达 / 启动台」中手动把目标应用拖入废纸篓，效果相同。开发调试模式下权限申请对象为 Electron，建议在打包后的正式版中授权。
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </main>

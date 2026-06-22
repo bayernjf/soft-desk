@@ -149,7 +149,14 @@ ipcMain.handle('software:remove', async (_event, appPath: string) => {
     await shell.trashItem(appPath);
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : '移到废纸篓失败' };
+    const raw = err instanceof Error ? err.message : String(err);
+    const isPermission = /permission|许可|权限|not permitted|operation not permitted/i.test(raw);
+    return {
+      success: false,
+      error: isPermission
+        ? '没有系统权限移到废纸篓。请到「设置 → 帮助」按步骤为 SoftDesk 开启「App 管理 / 完全磁盘访问」权限。'
+        : `移到废纸篓失败：${raw}`,
+    };
   }
 });
 

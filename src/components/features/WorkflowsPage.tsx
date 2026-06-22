@@ -160,9 +160,18 @@ function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
               sw ? (
                 <div
                   key={sw.id}
-                  className="w-9 h-9 rounded-xl border-2 border-slate-900 flex items-center justify-center text-xs font-semibold"
+                  className={cn(
+                    'w-9 h-9 rounded-xl border-2 border-slate-900 flex items-center justify-center text-xs font-semibold',
+                    (sw.uninstalled || sw.deleted) && 'grayscale opacity-50'
+                  )}
                   style={{ backgroundColor: sw.color + '30', color: sw.color }}
-                  title={sw.name}
+                  title={
+                    sw.deleted
+                      ? `${sw.name}（已从本地电脑删除）`
+                      : sw.uninstalled
+                        ? `${sw.name}（已弃用）`
+                        : sw.name
+                  }
                 >
                   {sw.name.slice(0, 2)}
                 </div>

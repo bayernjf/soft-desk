@@ -33,6 +33,7 @@ interface SoftwareStore {
   uninstallSoftware: (id: string) => void;
   removeSoftware: (id: string) => Promise<{ success: boolean; error?: string }>;
   reinstallSoftware: (id: string) => void;
+  purgeSoftware: (id: string) => void;
 }
 
 export interface WorkflowInput {
@@ -69,7 +70,26 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
     set({ isScanning: true, scanError: null });
     try {
       const apps = await window.softdesk.scanSoftware();
-      set({ software: apps, isScanning: false });
+      const prev = get().software;
+      const scannedById = new Map(apps.map((a) => [a.id, a]));
+      const prevById = new Map(prev.map((s) => [s.id, s]));
+
+      const merged: Software[] = apps.map((app) => {
+        const old = prevById.get(app.id);
+        return {
+          ...app,
+          uninstalled: old?.uninstalled ?? false,
+          deleted: false,
+        };
+      });
+
+      for (const old of prev) {
+        if (!scannedById.has(old.id)) {
+          merged.push({ ...old, deleted: true });
+        }
+      }
+
+      set({ software: merged, isScanning: false });
     } catch (err) {
       set({
         isScanning: false,
@@ -80,7 +100,7 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
 
   launchSoftware: (id) => {
     const target = get().software.find((s) => s.id === id);
-    if (target?.uninstalled) return;
+    if (target?.uninstalled || target?.deleted) return;
     if (window.softdesk && target?.path) {
       window.softdesk.launchSoftware(target.path, target.id);
     }
@@ -211,5 +231,9 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
       s.id === id ? { ...s, uninstalled: false } : s
     );
     set({ software });
+  },
+
+  purgeSoftware: (id) => {
+    set({ software: get().software.filter((s) => s.id !== id) });
   },
 }));

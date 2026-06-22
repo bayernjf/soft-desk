@@ -15,6 +15,7 @@ export interface Software {
   color: string;
   tags: string[];
   uninstalled?: boolean;
+  deleted?: boolean;
 }
 
 export type SoftwareCategory =

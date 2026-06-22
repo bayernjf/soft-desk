@@ -17,10 +17,14 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
   const removeSoftware = useSoftwareStore((s) => s.removeSoftware);
   const reinstallSoftware = useSoftwareStore((s) => s.reinstallSoftware);
   const uninstallSoftware = useSoftwareStore((s) => s.uninstallSoftware);
+  const purgeSoftware = useSoftwareStore((s) => s.purgeSoftware);
+  const scanSoftware = useSoftwareStore((s) => s.scanSoftware);
   const categoryMeta = CATEGORIES.find((c) => c.id === software.category);
 
+  const isDeleted = !!software.deleted;
   const isUninstalled = !!software.uninstalled;
-  const uninstalledLabel = '已弃用';
+  const inactive = isDeleted || isUninstalled;
+  const statusLabel = isDeleted ? '已从本地电脑删除' : '已弃用';
   const [prompt, setPrompt] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -38,6 +42,10 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
   }, [prompt]);
 
   const handleClick = () => {
+    if (isDeleted) {
+      setPrompt((v) => !v);
+      return;
+    }
     if (context === 'uninstall') {
       setPrompt((v) => !v);
       return;
@@ -54,7 +62,17 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
     setRemoveError(null);
   };
 
+  const handleReinstall = () => {
+    void scanSoftware();
+    close();
+  };
+
   const handleRemove = async () => {
+    if (isDeleted) {
+      purgeSoftware(software.id);
+      close();
+      return;
+    }
     const result = await removeSoftware(software.id);
     if (result.success) {
       close();
@@ -65,7 +83,37 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
 
   let overlay: React.ReactNode = null;
   if (prompt) {
-    if (context === 'library' && isUninstalled) {
+    if (isDeleted) {
+      overlay = (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-sm px-4">
+          <p className="text-xs text-slate-300 text-center truncate max-w-full">
+            {software.name}已从本地删除
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleReinstall();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              重新安装
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleRemove();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              从 SoftDesk 移除
+            </button>
+          </div>
+        </div>
+      );
+    } else if (context === 'library' && isUninstalled) {
       overlay = (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-sm px-4">
           <p className="text-xs text-slate-300 text-center">
@@ -167,7 +215,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
           className={cn(
             'w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition-all duration-200',
             'bg-slate-900/40 hover:bg-slate-800/70 border border-slate-800/60 hover:border-slate-700',
-            isUninstalled && 'grayscale opacity-50 hover:opacity-70'
+            inactive && 'grayscale opacity-50 hover:opacity-70'
           )}
         >
           <div
@@ -179,7 +227,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-slate-100 truncate">{software.name}</div>
             <div className="text-xs text-slate-500 truncate">
-              {isUninstalled ? uninstalledLabel : categoryMeta?.name}
+              {inactive ? statusLabel : categoryMeta?.name}
             </div>
           </div>
           <Play className="w-3.5 h-3.5 text-slate-500 shrink-0" />
@@ -198,7 +246,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
             'w-full p-4 rounded-2xl text-left transition-all duration-300 group',
             'bg-slate-900/50 hover:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700/60',
             'hover:shadow-lg hover:shadow-slate-900/50 hover:-translate-y-0.5',
-            isUninstalled && 'grayscale opacity-50 hover:opacity-70 hover:translate-y-0'
+            inactive && 'grayscale opacity-50 hover:opacity-70 hover:translate-y-0'
           )}
         >
           <div className="flex items-start gap-4">
@@ -213,8 +261,8 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
                 <div className="min-w-0">
                   <h3 className="text-base font-semibold text-white truncate group-hover:text-white">
                     {software.name}
-                    {isUninstalled && (
-                      <span className="ml-2 text-xs font-medium text-slate-500">{uninstalledLabel}</span>
+                    {inactive && (
+                      <span className="ml-2 text-xs font-medium text-slate-500">{statusLabel}</span>
                     )}
                   </h3>
                   <p className="text-sm text-slate-500 mt-0.5 truncate">{software.description}</p>
@@ -267,7 +315,7 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
         className={cn(
           'w-full p-3.5 rounded-2xl text-left transition-all duration-200 group',
           'bg-slate-900/40 hover:bg-slate-800/70 border border-slate-800/60 hover:border-slate-700/80',
-          isUninstalled && 'grayscale opacity-50 hover:opacity-70'
+          inactive && 'grayscale opacity-50 hover:opacity-70'
         )}
       >
         <div className="flex items-center gap-3">
@@ -280,8 +328,8 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-slate-100 truncate">
               {software.name}
-              {isUninstalled && (
-                <span className="ml-2 text-xs font-medium text-slate-500">{uninstalledLabel}</span>
+              {inactive && (
+                <span className="ml-2 text-xs font-medium text-slate-500">{statusLabel}</span>
               )}
             </h3>
             <p className="text-xs text-slate-500 truncate mt-0.5">{software.description}</p>
@@ -291,7 +339,9 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
               <span>{formatMinutes(software.usageMinutes)}</span>
             </div>
           </div>
-          {context === 'uninstall' ? (
+          {isDeleted ? (
+            <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors shrink-0" />
+          ) : context === 'uninstall' ? (
             isUninstalled ? (
               <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors shrink-0" />
             ) : (

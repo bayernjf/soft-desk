@@ -4,6 +4,7 @@ import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
+import { cn } from '@/lib/utils';
 
 function StatCard({
   icon: Icon,
@@ -126,11 +127,21 @@ export function Dashboard() {
             </div>
             <div className="p-5 rounded-2xl bg-slate-900/40 border border-slate-800/60">
               <div className="space-y-2">
-                {recentApps.map((sw, idx) => (
+                {recentApps.map((sw, idx) => {
+                  const inactive = !!sw.uninstalled || !!sw.deleted;
+                  const statusLabel = sw.deleted ? '已从本地电脑删除' : '已弃用';
+                  return (
                   <div
                     key={sw.id}
-                    className="flex items-center gap-3 py-2 first:pt-0 last:pb-0 border-b border-slate-800/40 last:border-b-0 cursor-pointer hover:pl-2 transition-all"
-                    onClick={() => useSoftwareStore.getState().launchSoftware(sw.id)}
+                    className={cn(
+                      'flex items-center gap-3 py-2 first:pt-0 last:pb-0 border-b border-slate-800/40 last:border-b-0 transition-all',
+                      inactive
+                        ? 'grayscale opacity-50 cursor-default'
+                        : 'cursor-pointer hover:pl-2'
+                    )}
+                    onClick={() => {
+                      if (!inactive) useSoftwareStore.getState().launchSoftware(sw.id);
+                    }}
                   >
                     <div className="w-6 text-xs text-slate-600 tabular-nums">{String(idx + 1).padStart(2, '0')}</div>
                     <div
@@ -140,7 +151,12 @@ export function Dashboard() {
                       {sw.name.slice(0, 2)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-slate-200 truncate">{sw.name}</div>
+                      <div className="text-sm font-medium text-slate-200 truncate">
+                        {sw.name}
+                        {inactive && (
+                          <span className="ml-2 text-xs font-medium text-slate-500">{statusLabel}</span>
+                        )}
+                      </div>
                       <div className="text-xs text-slate-500">
                         {formatMinutes(sw.usageMinutes)} · {formatTimeAgo(sw.lastUsed)}
                       </div>
@@ -149,7 +165,8 @@ export function Dashboard() {
                       {totalMinutes === 0 ? 0 : Math.round((sw.usageMinutes / totalMinutes) * 100)}%
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </section>

@@ -33,6 +33,19 @@ export function Layout() {
     };
   }, [scanSoftware, setElectronReady]);
 
+  useEffect(() => {
+    let lastScan = 0;
+    const onFocus = () => {
+      if (!window.softdesk) return;
+      const now = Date.now();
+      if (now - lastScan < 1500) return;
+      lastScan = now;
+      scanSoftware();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [scanSoftware]);
+
   return (
     <div className="h-screen flex flex-col bg-[#0a0a0f] text-slate-100 font-sans antialiased overflow-hidden">
       {/* 顶部窗口拖拽区:固定在窗口最顶部、横跨整宽、高约 1cm,透明且不占布局。
