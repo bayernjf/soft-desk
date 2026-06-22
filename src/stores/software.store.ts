@@ -27,8 +27,20 @@ interface SoftwareStore {
   launchSoftware: (id: string) => void;
   launchWorkflow: (id: string) => Promise<WorkflowLaunchResult>;
   toggleWorkflowFavorite: (id: string) => void;
+  createWorkflow: (data: WorkflowInput) => Workflow;
+  updateWorkflow: (id: string, data: WorkflowInput) => void;
+  deleteWorkflow: (id: string) => void;
   uninstallSoftware: (id: string) => void;
 }
+
+export interface WorkflowInput {
+  name: string;
+  description: string;
+  softwareIds: string[];
+  color: string;
+}
+
+const WORKFLOW_COLORS = ['#00d4aa', '#a371f7', '#58a6ff', '#d29922', '#f85149', '#ec4899'];
 
 const hasBridge = typeof window !== 'undefined' && !!window.softdesk;
 
@@ -134,6 +146,41 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
       w.id === id ? { ...w, isFavorite: !w.isFavorite } : w
     );
     set({ workflows });
+  },
+
+  createWorkflow: (data) => {
+    const existing = get().workflows;
+    const workflow: Workflow = {
+      id: `wf-${Date.now()}`,
+      name: data.name.trim(),
+      description: data.description.trim(),
+      softwareIds: data.softwareIds,
+      color: data.color || WORKFLOW_COLORS[existing.length % WORKFLOW_COLORS.length],
+      usageCount: 0,
+      lastUsed: new Date().toISOString(),
+      isFavorite: false,
+    };
+    set({ workflows: [...existing, workflow] });
+    return workflow;
+  },
+
+  updateWorkflow: (id, data) => {
+    const workflows = get().workflows.map((w) =>
+      w.id === id
+        ? {
+            ...w,
+            name: data.name.trim(),
+            description: data.description.trim(),
+            softwareIds: data.softwareIds,
+            color: data.color || w.color,
+          }
+        : w
+    );
+    set({ workflows });
+  },
+
+  deleteWorkflow: (id) => {
+    set({ workflows: get().workflows.filter((w) => w.id !== id) });
   },
 
   uninstallSoftware: (id) => {

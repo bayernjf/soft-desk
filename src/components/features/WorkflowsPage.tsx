@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { Star, Clock, Play, Loader2, Check, AlertCircle } from 'lucide-react';
+import { Star, Clock, Play, Loader2, Check, AlertCircle, Pencil, Trash2, Plus } from 'lucide-react';
 import type { Workflow } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
 import { formatTimeAgo } from '@/services/software.service';
 import { cn } from '@/lib/utils';
+import { WorkflowEditorModal } from './WorkflowEditorModal';
 
 interface WorkflowCardProps {
   workflow: Workflow;
+  onEdit: (workflow: Workflow) => void;
 }
 
 type LaunchPhase =
@@ -15,9 +17,10 @@ type LaunchPhase =
   | { status: 'success'; message: string }
   | { status: 'error'; message: string };
 
-function WorkflowCard({ workflow }: WorkflowCardProps) {
-  const { software, launchWorkflow, toggleWorkflowFavorite } = useSoftwareStore();
+function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
+  const { software, launchWorkflow, toggleWorkflowFavorite, deleteWorkflow } = useSoftwareStore();
   const [phase, setPhase] = useState<LaunchPhase>({ status: 'idle' });
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const workflowSoftware = workflow.softwareIds
     .map((id) => software.find((s) => s.id === id))
     .filter(Boolean)
@@ -71,6 +74,22 @@ function WorkflowCard({ workflow }: WorkflowCardProps) {
               >
                 <Star className={cn('w-3.5 h-3.5', workflow.isFavorite && 'fill-amber-400')} />
               </button>
+              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => onEdit(workflow)}
+                  title="编辑"
+                  className="p-1 rounded-md text-slate-500 hover:text-slate-200 hover:bg-slate-800/60 transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  title="删除"
+                  className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-slate-800/60 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
             <p className="text-xs text-slate-500 mt-1">{workflow.description}</p>
           </div>
@@ -96,6 +115,26 @@ function WorkflowCard({ workflow }: WorkflowCardProps) {
             )}
           </button>
         </div>
+
+        {confirmDelete && (
+          <div className="flex items-center justify-between gap-3 mb-3 text-xs rounded-lg px-3 py-2 bg-rose-500/10 text-rose-300">
+            <span>确定删除「{workflow.name}」？</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-2 py-1 rounded-md text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => deleteWorkflow(workflow.id)}
+                className="px-2 py-1 rounded-md bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        )}
 
         {(phase.status === 'success' || phase.status === 'error') && (
           <div
@@ -147,8 +186,20 @@ function WorkflowCard({ workflow }: WorkflowCardProps) {
 
 export function WorkflowsPage() {
   const { workflows } = useSoftwareStore();
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
   const favorite = workflows.filter((w) => w.isFavorite);
   const rest = workflows.filter((w) => !w.isFavorite);
+
+  const openCreate = () => {
+    setEditingWorkflow(null);
+    setEditorOpen(true);
+  };
+
+  const openEdit = (workflow: Workflow) => {
+    setEditingWorkflow(workflow);
+    setEditorOpen(true);
+  };
 
   return (
     <div className="space-y-8">
@@ -157,8 +208,12 @@ export function WorkflowsPage() {
           <h1 className="text-2xl font-bold text-white tracking-tight">工作流</h1>
           <p className="text-sm text-slate-500 mt-1">一键启动你的高效工作组合</p>
         </div>
-        <button className="px-4 py-2 rounded-xl bg-violet-500/20 text-violet-300 text-sm font-medium border border-violet-500/30 hover:bg-violet-500/30 transition-colors">
-          + 创建工作流
+        <button
+          onClick={openCreate}
+          className="px-4 py-2 rounded-xl bg-violet-500/20 text-violet-300 text-sm font-medium border border-violet-500/30 hover:bg-violet-500/30 transition-colors flex items-center gap-1.5"
+        >
+          <Plus className="w-4 h-4" />
+          创建工作流
         </button>
       </div>
 
@@ -169,7 +224,7 @@ export function WorkflowsPage() {
           </h2>
           <div className="grid gap-3 lg:grid-cols-2">
             {favorite.map((w) => (
-              <WorkflowCard key={w.id} workflow={w} />
+              <WorkflowCard key={w.id} workflow={w} onEdit={openEdit} />
             ))}
           </div>
         </div>
@@ -179,12 +234,25 @@ export function WorkflowsPage() {
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
           全部工作流
         </h2>
-        <div className="grid gap-3 lg:grid-cols-2">
-          {rest.map((w) => (
-            <WorkflowCard key={w.id} workflow={w} />
-          ))}
-        </div>
+        {rest.length === 0 && favorite.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-800 py-12 text-center">
+            <p className="text-sm text-slate-500">还没有工作流，点击右上角创建一个吧</p>
+          </div>
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {rest.map((w) => (
+              <WorkflowCard key={w.id} workflow={w} onEdit={openEdit} />
+            ))}
+          </div>
+        )}
       </div>
+
+      {editorOpen && (
+        <WorkflowEditorModal
+          workflow={editingWorkflow}
+          onClose={() => setEditorOpen(false)}
+        />
+      )}
     </div>
   );
 }
