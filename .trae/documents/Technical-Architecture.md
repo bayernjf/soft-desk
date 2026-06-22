@@ -161,9 +161,9 @@ softdesk/
 | 通道 | 用途 | 参数 |
 |------|------|------|
 | `software:scan` | 触发软件扫描 | 无 |
-| `software:launch` | 启动软件 | `{ path: string }` |
+| `software:launch` | 启动软件 | `(path: string, softwareId?: string)` |
 | `software:search` | 自然语言搜索 | `{ query: string }` |
-| `usage:getStats` | 获取使用统计 | `{ period: 'day' \| 'week' \| 'month' }` |
+| `usage:getStats` | 获取使用统计 | `period: 'day' \| 'week' \| 'month'` |
 | `uninstall:execute` | 执行卸载 | `{ paths: string[] }` |
 | `settings:update` | 更新设置 | `{ key: string, value: any }` |
 
@@ -397,6 +397,44 @@ class MonitorService {
 }
 ```
 
+#### 6.3.1 实际实现（macOS · 已落地）
+
+当前已实现的使用时长追踪由主进程的两个模块组成：
+
+- `electron/monitor.ts`：前台应用轮询监听器
+- `electron/database.ts`：基于 `better-sqlite3` 的持久化层
+
+**前台应用探测**
+
+最初采用 `osascript` 调用 `System Events` 枚举前台进程，但该方式需要「辅助功能」授权，未授权时会静默失败（macOS 报 -10004 权限违例），导致从不写库。因此改用 macOS 内置的 `lsappinfo`，**无需辅助功能授权**即可获取前台应用的 bundle id：
+
+```typescript
+async function getFrontmostApp(): Promise<string | null> {
+  const { stdout: asn } = await execFileAsync('lsappinfo', ['front']);
+  const asnId = asn.trim();
+  if (!asnId) return null;
+  const { stdout } = await execFileAsync('lsappinfo', ['info', '-only', 'bundleid', asnId]);
+  const match = stdout.match(/"CFBundleIdentifier"="([^"]+)"/);
+  return match ? match[1] : null;
+}
+```
+
+**计时与落库逻辑**
+
+- 每 5 秒轮询一次前台应用的 bundle id；
+- 前台应用未变化时，仅更新当前 session 的 `lastTick`；
+- 前台应用切换时，结束并 flush 上一段 session（写入 `sessions` 表），同时按天累加到 `usage_records.usage_time`；
+- 应用退出（`before-quit`）时 flush 当前 session 并关闭数据库连接。
+
+**软件标识对齐**：监听器与启动记录均以 bundle id 作为 `software_id`，与 `scanner.ts` 中扫描结果的 `id`（同样取 `CFBundleIdentifier`）一致，因此 `software:scan` 时可直接按 id 合并真实的 `usageMinutes / launchCount / lastUsed`。
+
+**懒加载**：数据库文件在首次写入（session flush / 启动记录 / 查询统计）时才创建，路径位于 `app.getPath('userData')/softdesk.db`，开启 WAL 模式。
+
+**IPC 通道**：渲染进程通过 `usage:getStats`（参数 `'day' | 'week' | 'month'`）读取按天聚合的统计数据。
+
+**原生模块处理**：`better-sqlite3` 为原生模块，需通过 `@electron/rebuild` 针对 Electron 重新编译；Vite 构建时将其列为 external，`electron-builder` 通过 `asarUnpack` 解包，确保打包后可正常加载。
+
+
 ---
 
 ## 7. 打包与发布
@@ -462,7 +500,7 @@ class MonitorService {
 | Windows | 注册表读取 | 获取软件元信息 |
 | Windows | 进程查询 | 监控使用时长 |
 | macOS | 文件系统读取 | 扫描 Applications |
-| macOS | Accessibility | 获取前台应用信息 |
+| macOS | 无需特殊授权 | 通过内置 `lsappinfo` 获取前台应用，无需「辅助功能」授权 |
 | Both | 网络（可选） | 调用云端 AI API |
 
 ---
