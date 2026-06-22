@@ -81,7 +81,7 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
     const target = get().software.find((s) => s.id === id);
     if (target?.uninstalled) return;
     if (window.softdesk && target?.path) {
-      window.softdesk.launchSoftware(target.path);
+      window.softdesk.launchSoftware(target.path, target.id);
     }
     const software = get().software.map((s) =>
       s.id === id
