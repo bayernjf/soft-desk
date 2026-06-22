@@ -14,6 +14,7 @@ export interface Software {
   path: string;
   color: string;
   tags: string[];
+  uninstalled?: boolean;
 }
 
 export type SoftwareCategory =
