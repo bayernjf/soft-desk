@@ -2,6 +2,12 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scanInstalledApps } from './scanner';
+import { startMonitor, stopMonitor } from './monitor';
+import { getStats, getUsageSummary, recordLaunch, closeDb } from './database';
+
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,7 +45,23 @@ function createWindow() {
 }
 
 ipcMain.handle('software:scan', async () => {
-  return scanInstalledApps();
+  const apps = await scanInstalledApps();
+  const summary = getUsageSummary();
+  const byId = new Map(summary.map((s) => [s.softwareId, s]));
+  return apps.map((appItem) => {
+    const usage = byId.get(appItem.id);
+    if (!usage) return appItem;
+    return {
+      ...appItem,
+      usageMinutes: Math.round(usage.usageTime / 60),
+      launchCount: usage.launchCount,
+      lastUsed: usage.lastUsed || appItem.lastUsed,
+    };
+  });
+});
+
+ipcMain.handle('usage:getStats', async (_event, period: 'day' | 'week' | 'month') => {
+  return getStats(period ?? 'week');
 });
 
 // 切换窗口最大化/还原(maximize 是填满工作区,非全屏 fullscreen),供顶部拖拽区双击调用
@@ -53,13 +75,16 @@ ipcMain.handle('window:toggleMaximize', () => {
   return { maximized: true };
 });
 
-ipcMain.handle('software:launch', async (_event, appPath: string) => {
+ipcMain.handle('software:launch', async (_event, appPath: string, softwareId?: string) => {
   if (!appPath || typeof appPath !== 'string') {
     return { success: false, error: 'invalid path' };
   }
   const error = await shell.openPath(appPath);
   if (error) {
     return { success: false, error };
+  }
+  if (softwareId) {
+    recordLaunch(softwareId, todayKey());
   }
   return { success: true };
 });
@@ -92,7 +117,15 @@ ipcMain.handle('software:launchBatch', async (_event, appPaths: string[]) => {
   };
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  startMonitor();
+});
+
+app.on('before-quit', () => {
+  stopMonitor();
+  closeDb();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -12,10 +12,21 @@ export interface BatchLaunchResult {
   failed: number;
 }
 
+export interface DailyUsageStat {
+  softwareId: string;
+  date: string;
+  launchCount: number;
+  usageTime: number;
+}
+
 export interface SoftdeskBridge {
   scanSoftware: () => Promise<Software[]>;
-  launchSoftware: (appPath: string) => Promise<{ success: boolean; error?: string }>;
+  launchSoftware: (
+    appPath: string,
+    softwareId?: string
+  ) => Promise<{ success: boolean; error?: string }>;
   launchBatch: (appPaths: string[]) => Promise<BatchLaunchResult>;
+  getUsageStats: (period: 'day' | 'week' | 'month') => Promise<DailyUsageStat[]>;
   toggleMaximize: () => Promise<{ maximized: boolean }>;
 }
 
