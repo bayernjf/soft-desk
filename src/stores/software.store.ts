@@ -31,6 +31,8 @@ interface SoftwareStore {
   updateWorkflow: (id: string, data: WorkflowInput) => void;
   deleteWorkflow: (id: string) => void;
   uninstallSoftware: (id: string) => void;
+  removeSoftware: (id: string) => void;
+  reinstallSoftware: (id: string) => void;
 }
 
 export interface WorkflowInput {
@@ -77,6 +79,7 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
 
   launchSoftware: (id) => {
     const target = get().software.find((s) => s.id === id);
+    if (target?.uninstalled) return;
     if (window.softdesk && target?.path) {
       window.softdesk.launchSoftware(target.path);
     }
@@ -184,7 +187,21 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
   },
 
   uninstallSoftware: (id) => {
+    const software = get().software.map((s) =>
+      s.id === id ? { ...s, uninstalled: true } : s
+    );
+    set({ software });
+  },
+
+  removeSoftware: (id) => {
     const software = get().software.filter((s) => s.id !== id);
+    set({ software });
+  },
+
+  reinstallSoftware: (id) => {
+    const software = get().software.map((s) =>
+      s.id === id ? { ...s, uninstalled: false } : s
+    );
     set({ software });
   },
 }));
