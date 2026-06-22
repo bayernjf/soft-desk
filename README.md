@@ -1,3 +1,11 @@
+# SoftDesk (Desktop)
+
+SoftDesk 桌面应用版,基于 Electron 打包(`electron/` + `electron-builder`),与纯网页版共享同一套 React 源码。
+
+> **命名说明**:本仓库原名 `soft-desk-electron`,现已接管主名 `soft-desk` 作为桌面版主仓库。纯网页版见 [soft-desk-web](https://github.com/bayernjf/soft-desk-web)。
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
