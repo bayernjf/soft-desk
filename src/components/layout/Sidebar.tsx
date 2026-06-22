@@ -28,7 +28,7 @@ export function Sidebar() {
 
   return (
     <aside className="w-72 shrink-0 h-screen border-r border-slate-800/60 bg-[#0d0d14]/95 backdrop-blur-sm flex flex-col">
-      <div className="p-5">
+      <div className="p-5 pt-9">
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-amber-400 flex items-center justify-center shadow-lg shadow-violet-500/20">
