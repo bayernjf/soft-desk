@@ -63,9 +63,31 @@ async function extractIcon(
       }
     }
 
-    if (!icnsPath) return null;
+    if (icnsPath) {
+      try {
+        await execFileAsync('sips', ['-s', 'format', 'png', '-Z', '128', icnsPath, '--out', outPng]);
+        return outPng;
+      } catch {
+        // sips 转换失败(如 icns 损坏),继续走系统图标回退
+      }
+    }
 
-    await execFileAsync('sips', ['-s', 'format', 'png', '-Z', '128', icnsPath, '--out', outPng]);
+    // 回退:用系统 API 取 Finder 中显示的官方图标,覆盖使用 Assets.car 资源目录、
+    // 无独立 .icns 文件的现代应用,避免退化成首字母占位图
+    return await iconFromSystem(appPath, outPng);
+  } catch {
+    return null;
+  }
+}
+
+/** 通过 Electron 系统 API 获取应用的官方图标,写入缓存 PNG;失败返回 null */
+async function iconFromSystem(appPath: string, outPng: string): Promise<string | null> {
+  try {
+    const image = await app.getFileIcon(appPath, { size: 'large' });
+    if (image.isEmpty()) return null;
+    const png = image.toPNG();
+    if (!png.length) return null;
+    await fs.writeFile(outPng, png);
     return outPng;
   } catch {
     return null;
@@ -226,8 +248,23 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
     if (cached && cached.mtimeMs === mtimeMs) {
       // app 包未变,直接复用上次解析结果,跳过 plist/du/sips 等昂贵调用;
       // 图标 data URL 从缓存的 PNG 文件路径按需读出(缓存本身不存 base64)
-      const icon = (await iconFileToDataUrl(cached.app.iconCacheFile ?? null)) ?? 'AppWindow';
-      return { ...cached.app, icon, lastUsed: stat.atime.toISOString() };
+      let iconCacheFile = cached.app.iconCacheFile ?? null;
+      let icon = await iconFileToDataUrl(iconCacheFile);
+      // 自愈:旧缓存未提取到图标(如曾退化为首字母),用系统 API 补取官方图标
+      if (!icon) {
+        const id = cached.app.id;
+        const refreshed = await extractIcon(appPath, id, mtimeMs, undefined);
+        icon = await iconFileToDataUrl(refreshed);
+        if (icon) {
+          iconCacheFile = refreshed;
+          metaCache.set(appPath, {
+            mtimeMs,
+            app: { ...cached.app, iconCacheFile: refreshed ?? undefined },
+          });
+          metaCacheDirty = true;
+        }
+      }
+      return { ...cached.app, icon: icon ?? 'AppWindow', iconCacheFile: iconCacheFile ?? undefined, lastUsed: stat.atime.toISOString() };
     }
 
     const plist = await readInfoPlist(appPath);
