@@ -1,5 +1,6 @@
 import { ArrowUpRight, Clock, Sparkles, TrendingUp } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
@@ -42,7 +43,8 @@ function StatCard({
 }
 
 export function Dashboard() {
-  const { software, workflows } = useSoftwareStore();
+  const software = useSoftwareStore((s) => s.software);
+  const workflows = useSoftwareStore((s) => s.workflows);
 
   const topApps = [...software].sort((a, b) => b.usageMinutes - a.usageMinutes).slice(0, 5);
   const recentApps = [...software]
@@ -52,12 +54,28 @@ export function Dashboard() {
   const totalMinutes = software.reduce((sum, s) => sum + s.usageMinutes, 0);
   const perDay = Math.round(totalMinutes / 7);
 
+  const greeting = (() => {
+    const h = new Date().getHours();
+    if (h < 6) return '夜深了';
+    if (h < 12) return '早上好';
+    if (h < 14) return '中午好';
+    if (h < 18) return '下午好';
+    return '晚上好';
+  })();
+
+  // 基于真实使用时长的 top 应用生成工作流建议,数据不足时不展示伪建议
+  const suggestionApps = topApps.filter((s) => s.usageMinutes > 0).slice(0, 3);
+  const suggestionText =
+    suggestionApps.length >= 2
+      ? `${suggestionApps.map((s) => s.name).join('、')} 是你使用最频繁的应用，建议创建组合工作流一键启动。`
+      : null;
+
   return (
     <div className="space-y-8 animate-in">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">
-            早上好，欢迎回来 <span className="inline-block">👋</span>
+            {greeting}，欢迎回来 <span className="inline-block">👋</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1.5">这是你的软件使用概览</p>
         </div>
@@ -201,27 +219,30 @@ export function Dashboard() {
 
           <section>
             <h2 className="text-sm font-semibold text-slate-200 mb-4">AI 建议</h2>
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-slate-900/40 to-amber-500/5 border border-violet-500/20">
-              <div className="flex items-start gap-2.5 mb-3">
-                <Sparkles className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-200">优化你的工作流</h3>
-                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                    Chrome、Notion、飞书在过去一周多次同时使用，建议创建组合工作流。
-                  </p>
+            {suggestionText ? (
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-slate-900/40 to-amber-500/5 border border-violet-500/20">
+                <div className="flex items-start gap-2.5 mb-3">
+                  <Sparkles className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-200">优化你的工作流</h3>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">{suggestionText}</p>
+                  </div>
+                </div>
+                <Link
+                  to="/workflows"
+                  className="block w-full py-2.5 rounded-xl bg-violet-500/15 text-violet-300 text-xs font-medium hover:bg-violet-500/25 transition-colors text-center"
+                >
+                  创建工作流 +
+                </Link>
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60">
+                <div className="text-xs text-slate-400 leading-relaxed">
+                  💡 <span className="text-slate-300">提示</span>
+                  ：继续使用应用，积累足够的使用数据后，这里会基于你的真实习惯给出工作流建议。
                 </div>
               </div>
-              <button className="w-full py-2.5 rounded-xl bg-violet-500/15 text-violet-300 text-xs font-medium hover:bg-violet-500/25 transition-colors">
-                创建工作流 +
-              </button>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60 mt-3">
-              <div className="text-xs text-slate-400 leading-relaxed">
-                💡 <span className="text-slate-300">提示</span>：你的生产力在周四早 9-11
-                点达到峰值，建议将重要任务安排在这个时段。
-              </div>
-            </div>
+            )}
           </section>
         </aside>
       </div>
