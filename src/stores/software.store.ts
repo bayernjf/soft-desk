@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { Software, Workflow, SoftwareCategory } from '@/types';
 
 export interface WorkflowLaunchResult {
@@ -13,6 +14,7 @@ export interface WorkflowLaunchResult {
 interface SoftwareStore {
   software: Software[];
   workflows: Workflow[];
+  uninstalledIds: string[];
   selectedCategory: SoftwareCategory | 'all';
   searchQuery: string;
   sortBy: 'name' | 'usage' | 'recent' | 'size';
@@ -24,6 +26,7 @@ interface SoftwareStore {
   setSortBy: (sort: 'name' | 'usage' | 'recent' | 'size') => void;
   setElectronReady: (ready: boolean) => void;
   scanSoftware: () => Promise<void>;
+  applyScannedApps: (apps: Software[]) => void;
   launchSoftware: (id: string) => void;
   launchWorkflow: (id: string) => Promise<WorkflowLaunchResult>;
   toggleWorkflowFavorite: (id: string) => void;
@@ -47,9 +50,12 @@ const WORKFLOW_COLORS = ['#00d4aa', '#a371f7', '#58a6ff', '#d29922', '#f85149', 
 
 const hasBridge = typeof window !== 'undefined' && !!window.softdesk;
 
-export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
+export const useSoftwareStore = create<SoftwareStore>()(
+  persist(
+    (set, get) => ({
   software: [],
   workflows: [],
+  uninstalledIds: [],
   selectedCategory: 'all',
   searchQuery: '',
   sortBy: 'recent',
@@ -62,6 +68,26 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
   setSortBy: (sort) => set({ sortBy: sort }),
   setElectronReady: (ready) => set({ isElectron: ready }),
 
+  applyScannedApps: (apps) => {
+    const prev = get().software;
+    const uninstalledIds = get().uninstalledIds;
+    const scannedById = new Map(apps.map((a) => [a.id, a]));
+
+    const merged: Software[] = apps.map((app) => ({
+      ...app,
+      uninstalled: uninstalledIds.includes(app.id),
+      deleted: false,
+    }));
+
+    for (const old of prev) {
+      if (!scannedById.has(old.id)) {
+        merged.push({ ...old, deleted: true });
+      }
+    }
+
+    set({ software: merged });
+  },
+
   scanSoftware: async () => {
     if (!window.softdesk) {
       set({ scanError: '当前不在 Electron 环境，使用示例数据' });
@@ -70,26 +96,8 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
     set({ isScanning: true, scanError: null });
     try {
       const apps = await window.softdesk.scanSoftware();
-      const prev = get().software;
-      const scannedById = new Map(apps.map((a) => [a.id, a]));
-      const prevById = new Map(prev.map((s) => [s.id, s]));
-
-      const merged: Software[] = apps.map((app) => {
-        const old = prevById.get(app.id);
-        return {
-          ...app,
-          uninstalled: old?.uninstalled ?? false,
-          deleted: false,
-        };
-      });
-
-      for (const old of prev) {
-        if (!scannedById.has(old.id)) {
-          merged.push({ ...old, deleted: true });
-        }
-      }
-
-      set({ software: merged, isScanning: false });
+      get().applyScannedApps(apps);
+      set({ isScanning: false });
     } catch (err) {
       set({
         isScanning: false,
@@ -211,7 +219,10 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
     const software = get().software.map((s) =>
       s.id === id ? { ...s, uninstalled: true } : s
     );
-    set({ software });
+    const uninstalledIds = get().uninstalledIds.includes(id)
+      ? get().uninstalledIds
+      : [...get().uninstalledIds, id];
+    set({ software, uninstalledIds });
   },
 
   removeSoftware: async (id) => {
@@ -230,10 +241,22 @@ export const useSoftwareStore = create<SoftwareStore>((set, get) => ({
     const software = get().software.map((s) =>
       s.id === id ? { ...s, uninstalled: false } : s
     );
-    set({ software });
+    set({ software, uninstalledIds: get().uninstalledIds.filter((x) => x !== id) });
   },
 
   purgeSoftware: (id) => {
-    set({ software: get().software.filter((s) => s.id !== id) });
+    set({
+      software: get().software.filter((s) => s.id !== id),
+      uninstalledIds: get().uninstalledIds.filter((x) => x !== id),
+    });
   },
-}));
+}),
+    {
+      name: 'softdesk-store',
+      partialize: (state) => ({
+        workflows: state.workflows,
+        uninstalledIds: state.uninstalledIds,
+      }),
+    }
+  )
+);

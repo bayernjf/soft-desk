@@ -1,8 +1,8 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage } from 'electron';
 import path from 'node:path';
 import fsSync from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { scanInstalledApps } from './scanner';
+import { scanInstalledApps, startAppWatcher, stopAppWatcher, type ScannedApp } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
 import { getStats, getUsageSummary, recordLaunch, closeDb } from './database';
 
@@ -24,8 +24,19 @@ contextBridge.exposeInMainWorld("softdesk", {
   launchSoftware: (appPath, softwareId) => ipcRenderer.invoke("software:launch", appPath, softwareId),
   launchBatch: (appPaths) => ipcRenderer.invoke("software:launchBatch", appPaths),
   removeSoftware: (appPath) => ipcRenderer.invoke("software:remove", appPath),
+  openUserData: () => ipcRenderer.invoke("app:openUserData"),
   getUsageStats: (period) => ipcRenderer.invoke("usage:getStats", period),
   toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
+  onOpenLauncher: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on("launcher:open", handler);
+    return () => ipcRenderer.removeListener("launcher:open", handler);
+  },
+  onSoftwareChanged: (callback) => {
+    const handler = (_e, apps) => callback(apps);
+    ipcRenderer.on("software:changed", handler);
+    return () => ipcRenderer.removeListener("software:changed", handler);
+  },
 });
 `;
 
@@ -39,6 +50,60 @@ app.commandLine.appendSwitch('no-sandbox');
 app.setPath('userData', path.join(process.env.APP_ROOT, '.electron-data'));
 
 let win: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+
+const TRAY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 32 32" fill="none">
+  <path d="M10 12L16 8L22 12L16 16L10 12Z" fill="black"/>
+  <path d="M10 16L16 20L22 16" stroke="black" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <circle cx="16" cy="16" r="2" fill="black"/>
+</svg>`;
+
+function createTrayIcon(): Electron.NativeImage {
+  const img = nativeImage.createFromDataURL(
+    `data:image/svg+xml;base64,${Buffer.from(TRAY_ICON_SVG).toString('base64')}`
+  );
+  img.setTemplateImage(true);
+  return img;
+}
+
+function showWindow(): void {
+  if (!win) {
+    createWindow();
+    return;
+  }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function openLauncher(): void {
+  showWindow();
+  win?.webContents.send('launcher:open');
+}
+
+function buildTrayMenu(): Electron.Menu {
+  return Menu.buildFromTemplate([
+    { label: '显示 SoftDesk', click: showWindow },
+    { label: '快速启动…', accelerator: 'CmdOrCtrl+Shift+Space', click: openLauncher },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+}
+
+function createTray(): void {
+  if (tray) return;
+  tray = new Tray(createTrayIcon());
+  tray.setToolTip('SoftDesk');
+  tray.setContextMenu(buildTrayMenu());
+  tray.on('click', showWindow);
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -61,9 +126,19 @@ function createWindow() {
   } else {
     win.loadFile(path.join(RENDERER_DIST, 'index.html'));
   }
+
+  // 点击关闭按钮时隐藏到托盘而非退出(仅在用户未选择退出时)
+  win.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      win?.hide();
+    }
+  });
 }
 
-ipcMain.handle('software:scan', async () => {
+ipcMain.handle('software:scan', async () => scanWithUsage());
+
+async function scanWithUsage(): Promise<ScannedApp[]> {
   const apps = await scanInstalledApps();
   let summary: ReturnType<typeof getUsageSummary> = [];
   try {
@@ -82,9 +157,9 @@ ipcMain.handle('software:scan', async () => {
       lastUsed: usage.lastUsed || appItem.lastUsed,
     };
   });
-});
+}
 
-ipcMain.handle('usage:getStats', async (_event, period: 'day' | 'week' | 'month') => {
+ipcMain.handle('usage:getStats', async (_event, period: 'day' | 'week' | 'month' | 'all') => {
   return getStats(period ?? 'week');
 });
 
@@ -141,6 +216,11 @@ ipcMain.handle('software:launchBatch', async (_event, appPaths: string[]) => {
   };
 });
 
+ipcMain.handle('app:openUserData', async () => {
+  await shell.openPath(app.getPath('userData'));
+  return { success: true };
+});
+
 ipcMain.handle('software:remove', async (_event, appPath: string) => {
   if (!appPath || typeof appPath !== 'string') {
     return { success: false, error: '无效的软件路径' };
@@ -162,11 +242,25 @@ ipcMain.handle('software:remove', async (_event, appPath: string) => {
 
 app.whenReady().then(() => {
   createWindow();
+  createTray();
+  globalShortcut.register('CommandOrControl+Shift+Space', openLauncher);
   startMonitor();
+  // FSEvents 监听应用目录的安装/卸载,变化时重扫(命中缓存极快)并推送给渲染进程
+  startAppWatcher(async () => {
+    try {
+      const apps = await scanWithUsage();
+      win?.webContents.send('software:changed', apps);
+    } catch (err) {
+      console.error('[softdesk] watcher rescan failed:', err);
+    }
+  });
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
+  globalShortcut.unregisterAll();
   stopMonitor();
+  stopAppWatcher();
   closeDb();
 });
 
@@ -178,7 +272,5 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+  showWindow();
 });

@@ -50,7 +50,7 @@ const PERIOD_DAYS: Record<StatsPeriod, number> = {
   day: 1,
   week: 7,
   month: 30,
-  all: 30,
+  all: 365,
 };
 
 function dateKey(d: Date): string {
@@ -107,18 +107,43 @@ function buildRealStats(rows: DailyUsageStat[], software: Software[], period: St
     .filter((item) => item.minutes > 0 || item.launches > 0)
     .sort((a, b) => b.minutes - a.minutes);
 
-  const trend: TrendPoint[] = buildDateRange(period).map((d) => {
-    const key = dateKey(d);
-    const day = byDate.get(key);
-    const minutes = Math.round((day?.seconds ?? 0) / 60);
-    return {
-      date: key,
-      label: trendLabel(d, period),
-      minutes,
-      hours: Math.round((minutes / 60) * 10) / 10,
-      launches: day?.launches ?? 0,
-    };
-  });
+  let trend: TrendPoint[];
+  if (period === 'all') {
+    const byMonth = new Map<string, { seconds: number; launches: number }>();
+    for (const row of rows) {
+      const monthKey = row.date.slice(0, 7);
+      const m = byMonth.get(monthKey) ?? { seconds: 0, launches: 0 };
+      m.seconds += row.usageTime;
+      m.launches += row.launchCount;
+      byMonth.set(monthKey, m);
+    }
+    trend = Array.from(byMonth.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, m]) => {
+        const minutes = Math.round(m.seconds / 60);
+        const [, mm] = key.split('-');
+        return {
+          date: key,
+          label: `${parseInt(mm, 10)}月`,
+          minutes,
+          hours: Math.round((minutes / 60) * 10) / 10,
+          launches: m.launches,
+        };
+      });
+  } else {
+    trend = buildDateRange(period).map((d) => {
+      const key = dateKey(d);
+      const day = byDate.get(key);
+      const minutes = Math.round((day?.seconds ?? 0) / 60);
+      return {
+        date: key,
+        label: trendLabel(d, period),
+        minutes,
+        hours: Math.round((minutes / 60) * 10) / 10,
+        launches: day?.launches ?? 0,
+      };
+    });
+  }
 
   return finalize(ranking, trend);
 }
@@ -158,7 +183,7 @@ export function useUsageStats(period: StatsPeriod): UsageStats {
   const [loading, setLoading] = useState(isElectron);
 
   useEffect(() => {
-    if (!isElectron || !window.softdesk || period === 'all') {
+    if (!isElectron || !window.softdesk) {
       setRows(null);
       setLoading(false);
       return;
@@ -182,9 +207,6 @@ export function useUsageStats(period: StatsPeriod): UsageStats {
   }, [period, isElectron]);
 
   return useMemo(() => {
-    if (period === 'all' || rows === null) {
-      return { ...buildRealStats([], software, period), loading };
-    }
-    return { ...buildRealStats(rows, software, period), loading };
+    return { ...buildRealStats(rows ?? [], software, period), loading };
   }, [software, period, rows, loading]);
 }

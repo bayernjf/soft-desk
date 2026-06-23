@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs';
+import { promises as fs, watch, type FSWatcher } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
@@ -188,6 +188,14 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
   try {
     const baseName = path.basename(appPath, '.app');
     const stat = await fs.stat(appPath);
+
+    const cached = metaCache.get(appPath);
+    const mtimeMs = stat.mtimeMs;
+    if (cached && cached.mtimeMs === mtimeMs) {
+      // app 包未变,直接复用上次解析结果,跳过 defaults/du/sips 等昂贵调用
+      return { ...cached.app, lastUsed: stat.atime.toISOString() };
+    }
+
     const plist = await readInfoPlist(appPath);
     const size = await getDirSizeMB(appPath);
 
@@ -201,7 +209,7 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
     const id = plist['CFBundleIdentifier'] || appPath;
     const iconData = await extractIcon(appPath, id, plist['CFBundleIconFile']);
 
-    return {
+    const scanned: ScannedApp = {
       id,
       name: baseName,
       description: plist['CFBundleName'] || baseName,
@@ -218,14 +226,58 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
       color: CATEGORY_COLORS[category],
       tags: [],
     };
+
+    metaCache.set(appPath, { mtimeMs, app: scanned });
+    metaCacheDirty = true;
+    return scanned;
   } catch {
     return null;
   }
 }
 
-export async function scanInstalledApps(): Promise<ScannedApp[]> {
-  const found: string[] = [];
+interface MetaCacheEntry {
+  mtimeMs: number;
+  app: ScannedApp;
+}
 
+const metaCache = new Map<string, MetaCacheEntry>();
+let metaCacheLoaded = false;
+let metaCacheDirty = false;
+
+function metaCachePath(): string {
+  return path.join(app.getPath('userData'), 'scan-cache.json');
+}
+
+async function loadMetaCache(): Promise<void> {
+  if (metaCacheLoaded) return;
+  metaCacheLoaded = true;
+  try {
+    const raw = await fs.readFile(metaCachePath(), 'utf-8');
+    const parsed = JSON.parse(raw) as Record<string, MetaCacheEntry>;
+    for (const [key, entry] of Object.entries(parsed)) {
+      if (entry && typeof entry.mtimeMs === 'number' && entry.app) {
+        metaCache.set(key, entry);
+      }
+    }
+  } catch {
+    // no cache yet or corrupted, start fresh
+  }
+}
+
+async function persistMetaCache(): Promise<void> {
+  if (!metaCacheDirty) return;
+  metaCacheDirty = false;
+  try {
+    const obj: Record<string, MetaCacheEntry> = {};
+    for (const [key, entry] of metaCache.entries()) obj[key] = entry;
+    await fs.writeFile(metaCachePath(), JSON.stringify(obj), 'utf-8');
+  } catch {
+    // best-effort persistence, ignore failures
+  }
+}
+
+async function listAppPaths(): Promise<string[]> {
+  const found: string[] = [];
   for (const dir of SCAN_DIRS) {
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -238,9 +290,24 @@ export async function scanInstalledApps(): Promise<ScannedApp[]> {
       // directory not accessible, skip
     }
   }
+  return found;
+}
+
+export async function scanInstalledApps(): Promise<ScannedApp[]> {
+  await loadMetaCache();
+  const found = await listAppPaths();
 
   const results = await Promise.all(found.map((p) => scanOneApp(p)));
   const apps = results.filter((a): a is ScannedApp => a !== null);
+
+  // 清理已不存在应用的缓存条目
+  const foundSet = new Set(found);
+  for (const key of metaCache.keys()) {
+    if (!foundSet.has(key)) {
+      metaCache.delete(key);
+      metaCacheDirty = true;
+    }
+  }
 
   const seen = new Set<string>();
   const unique = apps.filter((a) => {
@@ -250,5 +317,52 @@ export async function scanInstalledApps(): Promise<ScannedApp[]> {
   });
 
   unique.sort((a, b) => a.name.localeCompare(b.name));
+  await persistMetaCache();
   return unique;
+}
+
+/** 用 FSEvents(fs.watch) 监听应用目录的安装/卸载,替代窗口聚焦轮询。 */
+let watchers: FSWatcher[] = [];
+let watchDebounce: NodeJS.Timeout | null = null;
+
+/**
+ * 变化经 400ms 去抖后触发回调,由调用方重新扫描(命中缓存,极快)。
+ */
+export function startAppWatcher(onChange: () => void): void {
+  stopAppWatcher();
+  // /System/Applications 为只读系统目录,基本不变,无需监听
+  const watchDirs = [
+    '/Applications',
+    path.join(os.homedir(), 'Applications'),
+  ];
+
+  for (const dir of watchDirs) {
+    try {
+      const w = watch(dir, (_eventType, filename) => {
+        // 只关心 .app 级别的增删,忽略包内部文件抖动
+        if (filename && !String(filename).endsWith('.app')) return;
+        if (watchDebounce) clearTimeout(watchDebounce);
+        watchDebounce = setTimeout(onChange, 400);
+      });
+      w.on('error', () => {});
+      watchers.push(w);
+    } catch {
+      // directory not watchable, skip
+    }
+  }
+}
+
+export function stopAppWatcher(): void {
+  if (watchDebounce) {
+    clearTimeout(watchDebounce);
+    watchDebounce = null;
+  }
+  for (const w of watchers) {
+    try {
+      w.close();
+    } catch {
+      // ignore
+    }
+  }
+  watchers = [];
 }

@@ -108,9 +108,9 @@ export function getUsageSummary(): UsageSummary[] {
   return rows;
 }
 
-export function getStats(period: 'day' | 'week' | 'month'): DailyUsage[] {
+export function getStats(period: 'day' | 'week' | 'month' | 'all'): DailyUsage[] {
   const database = getDb();
-  const days = period === 'day' ? 1 : period === 'week' ? 7 : 30;
+  const days = period === 'day' ? 1 : period === 'week' ? 7 : period === 'month' ? 30 : 365;
   const since = new Date();
   since.setDate(since.getDate() - (days - 1));
   const sinceStr = since.toISOString().slice(0, 10);

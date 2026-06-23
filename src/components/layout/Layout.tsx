@@ -1,14 +1,17 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { Sidebar } from './Sidebar';
+import { QuickLauncher } from '@/components/features/QuickLauncher';
 import { useSoftwareStore } from '@/stores/software.store';
 import { cn } from '@/lib/utils';
 
 export function Layout() {
   const location = useLocation();
-  const { isScanning, scanError, scanSoftware, setElectronReady } = useSoftwareStore();
+  const { isScanning, scanError, scanSoftware, applyScannedApps, setElectronReady } =
+    useSoftwareStore();
+  const [launcherOpen, setLauncherOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,17 +37,54 @@ export function Layout() {
   }, [scanSoftware, setElectronReady]);
 
   useEffect(() => {
-    let lastScan = 0;
-    const onFocus = () => {
-      if (!window.softdesk) return;
-      const now = Date.now();
-      if (now - lastScan < 1500) return;
-      lastScan = now;
-      scanSoftware();
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 20;
+
+    const subscribe = () => {
+      if (cancelled || !window.softdesk) return;
+      // 主进程通过 FSEvents 监听到安装/卸载后主动推送,无需窗口聚焦轮询
+      unsubscribe = window.softdesk.onSoftwareChanged((apps) => applyScannedApps(apps));
     };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [scanSoftware]);
+
+    if (window.softdesk) {
+      subscribe();
+    } else {
+      const retry = () => {
+        if (cancelled) return;
+        if (window.softdesk) {
+          subscribe();
+          return;
+        }
+        if (attempts++ < maxAttempts) setTimeout(retry, 100);
+      };
+      retry();
+    }
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [applyScannedApps]);
+
+  // 接通快速启动器:Electron 托盘/全局快捷键事件 + 应用内键盘快捷键(⌘⇧Space)
+  useEffect(() => {
+    const unsubscribe = window.softdesk?.onOpenLauncher(() => setLauncherOpen(true));
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'Space') {
+        e.preventDefault();
+        setLauncherOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      unsubscribe?.();
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-[#0a0a0f] text-slate-100 font-sans antialiased overflow-hidden">
@@ -84,6 +124,7 @@ export function Layout() {
           </div>
         </main>
       </div>
+      <QuickLauncher open={launcherOpen} onClose={() => setLauncherOpen(false)} />
     </div>
   );
 }

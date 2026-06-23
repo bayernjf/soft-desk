@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useSettingsStore } from '@/stores/settings.store';
 
 type TabId = 'appearance' | 'notifications' | 'data' | 'privacy' | 'ai' | 'help';
 
@@ -46,21 +47,14 @@ function Toggle({ checked, onChange, label, description }: ToggleProps) {
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState<TabId>('appearance');
-  const [theme, setTheme] = useState('dark');
-  const [prefs, setPrefs] = useState({
-    startMinimized: false,
-    minimizeToTray: true,
-    autoUpdates: true,
-    launchNotifications: true,
-    weeklyReport: true,
-    smartGrouping: true,
-    aiSuggestions: true,
-    sendAnalytics: false,
-    anonymizeData: true,
-    scanOnStartup: true,
-  });
+  const theme = useSettingsStore((s) => s.theme);
+  const setTheme = useSettingsStore((s) => s.setTheme);
+  const prefs = useSettingsStore((s) => s.prefs);
+  const togglePref = useSettingsStore((s) => s.togglePref);
 
-  const togglePref = (key: keyof typeof prefs) => setPrefs((p) => ({ ...p, [key]: !p[key] }));
+  const openStorage = () => {
+    window.softdesk?.openUserData?.();
+  };
 
   return (
     <div className="space-y-8">
@@ -100,11 +94,11 @@ export function Settings() {
               <div className="space-y-1">
                 <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">主题</div>
                 <div className="grid grid-cols-3 gap-2 p-1 bg-slate-800/40 rounded-xl w-fit">
-                  {[
+                  {([
                     { id: 'light', label: '浅色' },
                     { id: 'dark', label: '深色' },
                     { id: 'system', label: '跟随系统' },
-                  ].map((t) => (
+                  ] as const).map((t) => (
                     <button
                       key={t.id}
                       onClick={() => setTheme(t.id)}
@@ -173,8 +167,11 @@ export function Settings() {
               />
               <div className="p-4 rounded-xl bg-slate-800/40 mt-4">
                 <div className="text-xs font-semibold text-slate-300 mb-1">本地存储</div>
-                <div className="text-xs text-slate-500 font-mono">~/Library/Application Support/SoftDesk</div>
-                <button className="mt-3 px-3 py-1.5 rounded-lg bg-slate-700/70 text-slate-300 text-xs font-medium hover:bg-slate-700 transition-colors">
+                <div className="text-xs text-slate-500 leading-relaxed">软件使用记录与图标缓存存储在 SoftDesk 的应用数据目录中</div>
+                <button
+                  onClick={openStorage}
+                  className="mt-3 px-3 py-1.5 rounded-lg bg-slate-700/70 text-slate-300 text-xs font-medium hover:bg-slate-700 transition-colors"
+                >
                   打开存储位置
                 </button>
               </div>
