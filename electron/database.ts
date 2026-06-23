@@ -94,14 +94,21 @@ export function recordLaunch(softwareId: string, date: string): void {
 
 export function getUsageSummary(): UsageSummary[] {
   const database = getDb();
+  // 先对 sessions 一次性聚合出每个 software 的最后使用时间,再 LEFT JOIN,
+  // 避免对每个分组行执行相关子查询(行级 N 次扫描 sessions)
   const rows = database
     .prepare(
       `SELECT
          u.software_id AS softwareId,
          SUM(u.usage_time) AS usageTime,
          SUM(u.launch_count) AS launchCount,
-         (SELECT MAX(s.end_time) FROM sessions s WHERE s.software_id = u.software_id) AS lastUsed
+         last.lastUsed AS lastUsed
        FROM usage_records u
+       LEFT JOIN (
+         SELECT software_id, MAX(end_time) AS lastUsed
+         FROM sessions
+         GROUP BY software_id
+       ) last ON last.software_id = u.software_id
        GROUP BY u.software_id`
     )
     .all() as UsageSummary[];
