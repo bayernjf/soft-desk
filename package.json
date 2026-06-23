@@ -63,6 +63,7 @@
       "**/node_modules/better-sqlite3/**"
     ],
     "mac": {
+      "icon": "build/icon.icns",
       "target": [
         "dmg"
       ],
