@@ -3,6 +3,7 @@ import { Search, SlidersHorizontal, X } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
+import { LazyMount } from '@/components/features/LazyMount';
 import { cn } from '@/lib/utils';
 
 const sortOptions = [
@@ -13,15 +14,13 @@ const sortOptions = [
 ] as const;
 
 export function LibraryPage() {
-  const {
-    software,
-    selectedCategory,
-    setSelectedCategory,
-    searchQuery,
-    setSearchQuery,
-    sortBy,
-    setSortBy,
-  } = useSoftwareStore();
+  const software = useSoftwareStore((s) => s.software);
+  const selectedCategory = useSoftwareStore((s) => s.selectedCategory);
+  const setSelectedCategory = useSoftwareStore((s) => s.setSelectedCategory);
+  const searchQuery = useSoftwareStore((s) => s.searchQuery);
+  const setSearchQuery = useSoftwareStore((s) => s.setSearchQuery);
+  const sortBy = useSoftwareStore((s) => s.sortBy);
+  const setSortBy = useSoftwareStore((s) => s.setSortBy);
 
   const filtered = useMemo(() => {
     let result = software;
@@ -82,6 +81,7 @@ export function LibraryPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="搜索软件名称、描述或标签..."
+          aria-label="搜索软件"
           className={cn(
             'w-full pl-11 pr-10 py-3.5 rounded-2xl bg-slate-900/60 border border-slate-800',
             'text-sm text-slate-100 placeholder:text-slate-600',
@@ -91,6 +91,7 @@ export function LibraryPage() {
         {searchQuery && (
           <button
             onClick={() => setSearchQuery('')}
+            aria-label="清空搜索"
             className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-slate-800 text-slate-500"
           >
             <X className="w-3.5 h-3.5" />
@@ -146,7 +147,9 @@ export function LibraryPage() {
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((sw) => (
-          <SoftwareCard key={sw.id} software={sw} />
+          <LazyMount key={sw.id} estimatedHeight={96}>
+            <SoftwareCard software={sw} />
+          </LazyMount>
         ))}
         {filtered.length === 0 && (
           <div className="col-span-full py-20 text-center">

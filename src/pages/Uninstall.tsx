@@ -4,11 +4,14 @@ import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatSize } from '@/services/software.service';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
+import { LazyMount } from '@/components/features/LazyMount';
 import type { SoftwareCategory } from '@/types';
 import { cn } from '@/lib/utils';
 
 export function Uninstall() {
-  const { software, uninstallSoftware, reinstallSoftware } = useSoftwareStore();
+  const software = useSoftwareStore((s) => s.software);
+  const uninstallSoftware = useSoftwareStore((s) => s.uninstallSoftware);
+  const reinstallSoftware = useSoftwareStore((s) => s.reinstallSoftware);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<SoftwareCategory | 'all'>('all');
   const [confirmClean, setConfirmClean] = useState(false);
@@ -130,7 +133,9 @@ export function Uninstall() {
 
           <div className="grid gap-3 md:grid-cols-2">
             {filtered.map((sw) => (
-              <SoftwareCard key={sw.id} software={sw} context="uninstall" />
+              <LazyMount key={sw.id} estimatedHeight={96}>
+                <SoftwareCard software={sw} context="uninstall" />
+              </LazyMount>
             ))}
             {filtered.length === 0 && (
               <div className="col-span-full py-20 text-center">
