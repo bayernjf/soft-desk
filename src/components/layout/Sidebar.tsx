@@ -24,7 +24,9 @@ const navItems = [
 
 export function Sidebar() {
   const software = useSoftwareStore((s) => s.software);
+  const selectedCategory = useSoftwareStore((s) => s.selectedCategory);
   const location = useLocation();
+  const inLibrary = location.pathname === '/library';
 
   return (
     <aside className="w-72 shrink-0 h-screen border-r border-slate-800/60 bg-[#0d0d14]/95 backdrop-blur-sm flex flex-col">
@@ -84,25 +86,49 @@ export function Sidebar() {
             {CATEGORIES.slice(0, 5).map((cat) => {
               const count = software.filter((s) => s.category === cat.id).length;
               if (count === 0) return null;
+              const isSelected = inLibrary && selectedCategory === cat.id;
               return (
                 <NavLink
                   key={cat.id}
                   to="/library"
                   onClick={() => useSoftwareStore.getState().setSelectedCategory(cat.id)}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center gap-3 px-3.5 py-2 rounded-xl text-sm transition-all duration-200',
-                      'hover:bg-slate-800/40 hover:text-slate-200 text-slate-500',
-                      isActive && 'text-slate-300'
-                    )
+                  className={cn(
+                    'relative flex items-center gap-3 px-3.5 py-2 rounded-xl text-sm transition-all duration-200',
+                    isSelected
+                      ? 'text-white font-medium'
+                      : 'text-slate-500 hover:bg-slate-800/40 hover:text-slate-200'
+                  )}
+                  style={
+                    isSelected
+                      ? { backgroundColor: cat.color + '1f', boxShadow: `inset 0 0 0 1px ${cat.color}33` }
+                      : undefined
                   }
                 >
+                  {isSelected && (
+                    <span
+                      className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-1 rounded-r-full"
+                      style={{ backgroundColor: cat.color }}
+                    />
+                  )}
                   <div
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: cat.color }}
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full transition-all duration-200',
+                      isSelected && 'scale-150'
+                    )}
+                    style={{
+                      backgroundColor: cat.color,
+                      boxShadow: isSelected ? `0 0 8px ${cat.color}` : undefined,
+                    }}
                   />
                   <span className="flex-1 truncate">{cat.name}</span>
-                  <span className="text-xs text-slate-600 tabular-nums">{count}</span>
+                  <span
+                    className={cn(
+                      'text-xs tabular-nums transition-colors',
+                      isSelected ? 'text-slate-200' : 'text-slate-600'
+                    )}
+                  >
+                    {count}
+                  </span>
                 </NavLink>
               );
             })}

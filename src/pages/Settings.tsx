@@ -106,8 +106,10 @@ export function Settings() {
                       key={t.id}
                       onClick={() => setTheme(t.id)}
                       className={cn(
-                        'px-4 py-2 rounded-lg text-xs font-medium transition-all',
-                        theme === t.id ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-300'
+                        'px-4 py-2 rounded-lg text-xs font-medium transition-all border',
+                        theme === t.id
+                          ? 'bg-gradient-to-r from-violet-500/15 to-fuchsia-500/10 text-violet-300 border-violet-500/20'
+                          : 'text-slate-400 border-transparent hover:text-slate-300'
                       )}
                     >
                       {t.label}
