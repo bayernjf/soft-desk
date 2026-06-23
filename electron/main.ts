@@ -1,13 +1,14 @@
 import { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage } from 'electron';
 import path from 'node:path';
-import fsSync from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { scanInstalledApps, startAppWatcher, stopAppWatcher, type ScannedApp } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
 import { getStats, getUsageSummary, recordLaunch, closeDb } from './database';
 
 function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,36 +18,15 @@ process.env.APP_ROOT = path.join(__dirname, '..');
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 
-const PRELOAD_SOURCE = `"use strict";
-const { contextBridge, ipcRenderer } = require("electron");
-contextBridge.exposeInMainWorld("softdesk", {
-  scanSoftware: () => ipcRenderer.invoke("software:scan"),
-  launchSoftware: (appPath, softwareId) => ipcRenderer.invoke("software:launch", appPath, softwareId),
-  launchBatch: (appPaths) => ipcRenderer.invoke("software:launchBatch", appPaths),
-  removeSoftware: (appPath) => ipcRenderer.invoke("software:remove", appPath),
-  openUserData: () => ipcRenderer.invoke("app:openUserData"),
-  getUsageStats: (period) => ipcRenderer.invoke("usage:getStats", period),
-  toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
-  onOpenLauncher: (callback) => {
-    const handler = () => callback();
-    ipcRenderer.on("launcher:open", handler);
-    return () => ipcRenderer.removeListener("launcher:open", handler);
-  },
-  onSoftwareChanged: (callback) => {
-    const handler = (_e, apps) => callback(apps);
-    ipcRenderer.on("software:changed", handler);
-    return () => ipcRenderer.removeListener("software:changed", handler);
-  },
-});
-`;
+const PRELOAD_PATH = path.join(__dirname, 'preload.cjs');
 
-function ensurePreload(): string {
-  const preloadPath = path.join(__dirname, 'preload.runtime.cjs');
-  fsSync.writeFileSync(preloadPath, PRELOAD_SOURCE, 'utf-8');
-  return preloadPath;
+// 默认启用 Chromium 沙箱(安全基线)。仅在 OS 沙箱无法初始化的受限/虚拟化环境中,
+// 通过设置 SOFTDESK_NO_SANDBOX=1 临时关闭,避免开发时无法启动。
+const SANDBOX_DISABLED = process.env.SOFTDESK_NO_SANDBOX === '1';
+if (SANDBOX_DISABLED) {
+  app.commandLine.appendSwitch('no-sandbox');
 }
 
-app.commandLine.appendSwitch('no-sandbox');
 app.setPath('userData', path.join(process.env.APP_ROOT, '.electron-data'));
 
 let win: BrowserWindow | null = null;
@@ -114,11 +94,24 @@ function createWindow() {
     backgroundColor: '#0d1117',
     titleBarStyle: 'hiddenInset',
     webPreferences: {
-      preload: ensurePreload(),
+      preload: PRELOAD_PATH,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: !SANDBOX_DISABLED,
     },
+  });
+
+  // 禁止页面打开新窗口/外链直接交给系统浏览器,并阻止应用内导航到外部地址
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    const allowed = VITE_DEV_SERVER_URL ?? 'file://';
+    if (!url.startsWith(allowed)) {
+      event.preventDefault();
+      if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    }
   });
 
   if (VITE_DEV_SERVER_URL) {
@@ -138,8 +131,18 @@ function createWindow() {
 
 ipcMain.handle('software:scan', async () => scanWithUsage());
 
+// 维护一份合法 app 路径白名单,launch/remove 仅允许操作扫描得到的真实应用,
+// 防止渲染进程被注入后传入任意路径启动/删除文件
+const knownAppPaths = new Set<string>();
+
+function isAllowedAppPath(appPath: unknown): appPath is string {
+  return typeof appPath === 'string' && knownAppPaths.has(appPath);
+}
+
 async function scanWithUsage(): Promise<ScannedApp[]> {
   const apps = await scanInstalledApps();
+  knownAppPaths.clear();
+  for (const a of apps) knownAppPaths.add(a.path);
   let summary: ReturnType<typeof getUsageSummary> = [];
   try {
     summary = getUsageSummary();
@@ -175,15 +178,19 @@ ipcMain.handle('window:toggleMaximize', () => {
 });
 
 ipcMain.handle('software:launch', async (_event, appPath: string, softwareId?: string) => {
-  if (!appPath || typeof appPath !== 'string') {
-    return { success: false, error: 'invalid path' };
+  if (!isAllowedAppPath(appPath)) {
+    return { success: false, error: '无效或未授权的软件路径' };
   }
   const error = await shell.openPath(appPath);
   if (error) {
     return { success: false, error };
   }
-  if (softwareId) {
-    recordLaunch(softwareId, todayKey());
+  if (typeof softwareId === 'string' && softwareId.length > 0 && softwareId.length <= 256) {
+    try {
+      recordLaunch(softwareId, todayKey());
+    } catch (dbErr) {
+      console.error('[softdesk] recordLaunch failed:', dbErr);
+    }
   }
   return { success: true };
 });
@@ -197,8 +204,8 @@ ipcMain.handle('software:launchBatch', async (_event, appPaths: string[]) => {
 
   for (let i = 0; i < appPaths.length; i++) {
     const appPath = appPaths[i];
-    if (!appPath || typeof appPath !== 'string') {
-      results.push({ path: String(appPath), success: false, error: 'invalid path' });
+    if (!isAllowedAppPath(appPath)) {
+      results.push({ path: String(appPath), success: false, error: '无效或未授权的软件路径' });
       continue;
     }
     const error = await shell.openPath(appPath);
@@ -222,8 +229,8 @@ ipcMain.handle('app:openUserData', async () => {
 });
 
 ipcMain.handle('software:remove', async (_event, appPath: string) => {
-  if (!appPath || typeof appPath !== 'string') {
-    return { success: false, error: '无效的软件路径' };
+  if (!isAllowedAppPath(appPath)) {
+    return { success: false, error: '无效或未授权的软件路径' };
   }
   try {
     await shell.trashItem(appPath);
