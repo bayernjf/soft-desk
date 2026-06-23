@@ -1,6 +1,7 @@
 import { promises as fs, watch, type FSWatcher } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { app } from 'electron';
@@ -12,23 +13,28 @@ function iconCacheDir(): string {
 }
 
 function safeFileName(id: string): string {
-  return id.replace(/[^a-zA-Z0-9._-]/g, '_');
+  // 用 hash 避免不同 id(尤其退化为路径时)清洗后碰撞到同一文件名
+  return crypto.createHash('sha1').update(id).digest('hex');
 }
 
-async function extractIcon(appPath: string, id: string, iconFile?: string): Promise<string | null> {
+/**
+ * 提取应用图标到缓存目录,返回缓存 PNG 的绝对路径(失败返回 null)。
+ * 缓存文件名纳入 mtimeMs,应用升级换图标(mtime 变化)后会生成新文件,旧缓存自然失效。
+ */
+async function extractIcon(
+  appPath: string,
+  id: string,
+  mtimeMs: number,
+  iconFile?: string
+): Promise<string | null> {
   try {
     const cacheDir = iconCacheDir();
     await fs.mkdir(cacheDir, { recursive: true });
-    const outPng = path.join(cacheDir, `${safeFileName(id)}.png`);
-
-    const toDataUrl = async (): Promise<string> => {
-      const buf = await fs.readFile(outPng);
-      return `data:image/png;base64,${buf.toString('base64')}`;
-    };
+    const outPng = path.join(cacheDir, `${safeFileName(id)}-${Math.round(mtimeMs)}.png`);
 
     try {
       await fs.access(outPng);
-      return await toDataUrl();
+      return outPng;
     } catch {
       // not cached yet, continue to extract
     }
@@ -60,7 +66,18 @@ async function extractIcon(appPath: string, id: string, iconFile?: string): Prom
     if (!icnsPath) return null;
 
     await execFileAsync('sips', ['-s', 'format', 'png', '-Z', '128', icnsPath, '--out', outPng]);
-    return await toDataUrl();
+    return outPng;
+  } catch {
+    return null;
+  }
+}
+
+/** 把缓存的图标 PNG 路径读成 base64 data URL,供渲染层使用(dev 模式无法直接加载 file://) */
+async function iconFileToDataUrl(iconCacheFile: string | null): Promise<string | null> {
+  if (!iconCacheFile) return null;
+  try {
+    const buf = await fs.readFile(iconCacheFile);
+    return `data:image/png;base64,${buf.toString('base64')}`;
   } catch {
     return null;
   }
@@ -81,6 +98,8 @@ export interface ScannedApp {
   name: string;
   description: string;
   icon: string;
+  /** 图标缓存 PNG 的绝对路径(不持久化进 scan-cache.json,避免缓存文件膨胀) */
+  iconCacheFile?: string;
   category: ScannedCategory;
   version?: string;
   publisher?: string;
@@ -145,7 +164,6 @@ function inferCategoryByName(name: string): ScannedCategory {
 
 async function readInfoPlist(appPath: string): Promise<Record<string, string>> {
   const plistPath = path.join(appPath, 'Contents', 'Info.plist');
-  const result: Record<string, string> = {};
   const keys = [
     'CFBundleShortVersionString',
     'CFBundleIdentifier',
@@ -153,6 +171,20 @@ async function readInfoPlist(appPath: string): Promise<Record<string, string>> {
     'CFBundleName',
     'CFBundleIconFile',
   ];
+  const result: Record<string, string> = {};
+  // 一次性把整个 plist 转成 JSON 读取,替代逐 key 调用 defaults(原先每个 app 5 次子进程)
+  try {
+    const { stdout } = await execFileAsync('plutil', ['-convert', 'json', '-o', '-', plistPath]);
+    const parsed = JSON.parse(stdout) as Record<string, unknown>;
+    for (const key of keys) {
+      const val = parsed[key];
+      if (typeof val === 'string') result[key] = val.trim();
+      else if (typeof val === 'number') result[key] = String(val);
+    }
+    return result;
+  } catch {
+    // plutil 失败时回退到逐 key 的 defaults 读取,保证健壮性
+  }
   for (const key of keys) {
     try {
       const { stdout } = await execFileAsync('defaults', ['read', plistPath, key]);
@@ -192,8 +224,10 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
     const cached = metaCache.get(appPath);
     const mtimeMs = stat.mtimeMs;
     if (cached && cached.mtimeMs === mtimeMs) {
-      // app 包未变,直接复用上次解析结果,跳过 defaults/du/sips 等昂贵调用
-      return { ...cached.app, lastUsed: stat.atime.toISOString() };
+      // app 包未变,直接复用上次解析结果,跳过 plist/du/sips 等昂贵调用;
+      // 图标 data URL 从缓存的 PNG 文件路径按需读出(缓存本身不存 base64)
+      const icon = (await iconFileToDataUrl(cached.app.iconCacheFile ?? null)) ?? 'AppWindow';
+      return { ...cached.app, icon, lastUsed: stat.atime.toISOString() };
     }
 
     const plist = await readInfoPlist(appPath);
@@ -207,13 +241,15 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
     const lastUsed = stat.atime.toISOString();
 
     const id = plist['CFBundleIdentifier'] || appPath;
-    const iconData = await extractIcon(appPath, id, plist['CFBundleIconFile']);
+    const iconCacheFile = await extractIcon(appPath, id, mtimeMs, plist['CFBundleIconFile']);
+    const icon = (await iconFileToDataUrl(iconCacheFile)) ?? 'AppWindow';
 
     const scanned: ScannedApp = {
       id,
       name: baseName,
       description: plist['CFBundleName'] || baseName,
-      icon: iconData ?? 'AppWindow',
+      icon,
+      iconCacheFile: iconCacheFile ?? undefined,
       category,
       version: plist['CFBundleShortVersionString'],
       publisher: publisherFromBundleId(plist['CFBundleIdentifier']),
@@ -227,7 +263,8 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
       tags: [],
     };
 
-    metaCache.set(appPath, { mtimeMs, app: scanned });
+    // 缓存里只存图标文件路径,不存 base64,避免 scan-cache.json 膨胀
+    metaCache.set(appPath, { mtimeMs, app: { ...scanned, icon: '' } });
     metaCacheDirty = true;
     return scanned;
   } catch {
@@ -293,11 +330,29 @@ async function listAppPaths(): Promise<string[]> {
   return found;
 }
 
+/** 限制并发的 map,避免首扫时为每个 app 同时派生子进程(plutil/du/sips)打满句柄 */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await fn(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export async function scanInstalledApps(): Promise<ScannedApp[]> {
   await loadMetaCache();
   const found = await listAppPaths();
 
-  const results = await Promise.all(found.map((p) => scanOneApp(p)));
+  const results = await mapWithConcurrency(found, 6, (p) => scanOneApp(p));
   const apps = results.filter((a): a is ScannedApp => a !== null);
 
   // 清理已不存在应用的缓存条目
@@ -318,7 +373,27 @@ export async function scanInstalledApps(): Promise<ScannedApp[]> {
 
   unique.sort((a, b) => a.name.localeCompare(b.name));
   await persistMetaCache();
+  await pruneOrphanIcons();
   return unique;
+}
+
+/** 删除 icon-cache 中不再被任何缓存条目引用的 PNG(应用升级换图标/卸载后产生的陈旧文件) */
+async function pruneOrphanIcons(): Promise<void> {
+  try {
+    const referenced = new Set<string>();
+    for (const entry of metaCache.values()) {
+      if (entry.app.iconCacheFile) referenced.add(path.basename(entry.app.iconCacheFile));
+    }
+    const dir = iconCacheDir();
+    const files = await fs.readdir(dir);
+    await Promise.all(
+      files
+        .filter((f) => f.endsWith('.png') && !referenced.has(f))
+        .map((f) => fs.unlink(path.join(dir, f)).catch(() => {}))
+    );
+  } catch {
+    // icon-cache 不存在或不可读,忽略
+  }
 }
 
 /** 用 FSEvents(fs.watch) 监听应用目录的安装/卸载,替代窗口聚焦轮询。 */
