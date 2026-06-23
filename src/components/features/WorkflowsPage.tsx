@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { Star, Clock, Play, Loader2, Check, AlertCircle, Pencil, Trash2, Plus } from 'lucide-react';
 import type { Workflow } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
@@ -18,10 +18,21 @@ type LaunchPhase =
   | { status: 'success'; message: string }
   | { status: 'error'; message: string };
 
-function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
-  const { software, launchWorkflow, toggleWorkflowFavorite, deleteWorkflow } = useSoftwareStore();
+const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
+  const software = useSoftwareStore((s) => s.software);
+  const launchWorkflow = useSoftwareStore((s) => s.launchWorkflow);
+  const toggleWorkflowFavorite = useSoftwareStore((s) => s.toggleWorkflowFavorite);
+  const deleteWorkflow = useSoftwareStore((s) => s.deleteWorkflow);
   const [phase, setPhase] = useState<LaunchPhase>({ status: 'idle' });
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+    };
+  }, []);
+
   const workflowSoftware = workflow.softwareIds
     .map((id) => software.find((s) => s.id === id))
     .filter(Boolean)
@@ -47,7 +58,8 @@ function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
       });
     }
 
-    setTimeout(() => setPhase({ status: 'idle' }), 3000);
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setPhase({ status: 'idle' }), 3000);
   };
 
   return (
@@ -71,6 +83,8 @@ function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
               <h3 className="text-base font-semibold text-white">{workflow.name}</h3>
               <button
                 onClick={() => toggleWorkflowFavorite(workflow.id)}
+                aria-label={workflow.isFavorite ? '取消收藏' : '收藏'}
+                aria-pressed={workflow.isFavorite}
                 className="text-amber-400 opacity-80 hover:opacity-100 transition-opacity"
               >
                 <Star className={cn('w-3.5 h-3.5', workflow.isFavorite && 'fill-amber-400')} />
@@ -79,6 +93,7 @@ function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
                 <button
                   onClick={() => onEdit(workflow)}
                   title="编辑"
+                  aria-label="编辑工作流"
                   className="p-1 rounded-md text-slate-500 hover:text-slate-200 hover:bg-slate-800/60 transition-colors"
                 >
                   <Pencil className="w-3.5 h-3.5" />
@@ -86,6 +101,7 @@ function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
                 <button
                   onClick={() => setConfirmDelete(true)}
                   title="删除"
+                  aria-label="删除工作流"
                   className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-slate-800/60 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -191,10 +207,10 @@ function WorkflowCard({ workflow, onEdit }: WorkflowCardProps) {
       </div>
     </div>
   );
-}
+});
 
 export function WorkflowsPage() {
-  const { workflows } = useSoftwareStore();
+  const workflows = useSoftwareStore((s) => s.workflows);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
   const favorite = workflows.filter((w) => w.isFavorite);
@@ -205,10 +221,10 @@ export function WorkflowsPage() {
     setEditorOpen(true);
   };
 
-  const openEdit = (workflow: Workflow) => {
+  const openEdit = useCallback((workflow: Workflow) => {
     setEditingWorkflow(workflow);
     setEditorOpen(true);
-  };
+  }, []);
 
   return (
     <div className="space-y-8">

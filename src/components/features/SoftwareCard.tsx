@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, memo } from 'react';
 import { Play, Clock, HardDrive, Download, Trash2, RotateCcw } from 'lucide-react';
 import { CATEGORIES } from '@/data/categories';
 import type { Software } from '@/types';
@@ -14,6 +14,10 @@ interface SoftwareCardProps {
 }
 
 export function SoftwareCard({ software, variant = 'default', context = 'library' }: SoftwareCardProps) {
+  return <SoftwareCardImpl software={software} variant={variant} context={context} />;
+}
+
+const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'default', context = 'library' }: SoftwareCardProps) {
   const launchSoftware = useSoftwareStore((s) => s.launchSoftware);
   const removeSoftware = useSoftwareStore((s) => s.removeSoftware);
   const reinstallSoftware = useSoftwareStore((s) => s.reinstallSoftware);
@@ -346,4 +350,4 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
       {overlay}
     </div>
   );
-}
+});
