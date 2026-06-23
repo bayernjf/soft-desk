@@ -37,6 +37,7 @@ export interface UsageStats {
   activeCount: number;
   avgMinutes: number;
   loading: boolean;
+  error: string | null;
 }
 
 export const PERIOD_OPTIONS: { id: StatsPeriod; label: string }[] = [
@@ -174,29 +175,37 @@ function finalize(ranking: RankItem[], trend: TrendPoint[]): UsageStats {
     activeCount,
     avgMinutes,
     loading: false,
+    error: null,
   };
 }
 
 export function useUsageStats(period: StatsPeriod): UsageStats {
-  const { software, isElectron } = useSoftwareStore();
+  const software = useSoftwareStore((s) => s.software);
+  const isElectron = useSoftwareStore((s) => s.isElectron);
   const [rows, setRows] = useState<DailyUsageStat[] | null>(null);
   const [loading, setLoading] = useState(isElectron);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isElectron || !window.softdesk) {
       setRows(null);
       setLoading(false);
+      setError(null);
       return;
     }
     let cancelled = false;
     setLoading(true);
+    setError(null);
     window.softdesk
       .getUsageStats(period)
       .then((data) => {
         if (!cancelled) setRows(data);
       })
-      .catch(() => {
-        if (!cancelled) setRows([]);
+      .catch((err) => {
+        if (!cancelled) {
+          setRows([]);
+          setError(err instanceof Error ? err.message : '使用统计加载失败');
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -207,6 +216,6 @@ export function useUsageStats(period: StatsPeriod): UsageStats {
   }, [period, isElectron]);
 
   return useMemo(() => {
-    return { ...buildRealStats(rows ?? [], software, period), loading };
-  }, [software, period, rows, loading]);
+    return { ...buildRealStats(rows ?? [], software, period), loading, error };
+  }, [software, period, rows, loading, error]);
 }
