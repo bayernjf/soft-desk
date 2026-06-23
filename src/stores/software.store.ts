@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Software, Workflow, SoftwareCategory } from '@/types';
+import { WORKFLOW_COLORS } from '@/data/categories';
 
 export interface WorkflowLaunchResult {
   total: number;
@@ -46,8 +47,6 @@ export interface WorkflowInput {
   color: string;
 }
 
-const WORKFLOW_COLORS = ['#00d4aa', '#a371f7', '#58a6ff', '#d29922', '#f85149', '#ec4899'];
-
 const hasBridge = typeof window !== 'undefined' && !!window.softdesk;
 
 export const useSoftwareStore = create<SoftwareStore>()(
@@ -90,7 +89,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
 
   scanSoftware: async () => {
     if (!window.softdesk) {
-      set({ scanError: '当前不在 Electron 环境，使用示例数据' });
+      set({ scanError: '当前不在 Electron 环境，无法扫描本机软件' });
       return;
     }
     set({ isScanning: true, scanError: null });
