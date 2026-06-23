@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SoftDesk 应用图标备选方案</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+    background: #0d0d14;
+    color: #e2e8f0;
+    padding: 48px 32px 80px;
+  }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  .sub { color: #64748b; font-size: 14px; margin-top: 8px; }
+  .grid {
+    margin-top: 44px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 24px;
+  }
+  .card {
+    background: #15151c;
+    border: 1px solid rgba(148,163,184,0.12);
+    border-radius: 20px;
+    padding: 24px;
+    transition: border-color .2s;
+  }
+  .card:hover { border-color: rgba(139,92,246,0.5); }
+  .card h2 { font-size: 15px; font-weight: 600; }
+  .card .tag { font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.5; }
+  .stage {
+    margin: 20px 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  .swatch { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .swatch .lbl { font-size: 11px; color: #475569; }
+  .bg-dark { background: #1c1c24; padding: 14px; border-radius: 22px; }
+  .bg-light { background: #f1f5f9; padding: 14px; border-radius: 22px; }
+  .small-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  .small-row .lbl { font-size: 11px; color: #475569; margin-right: 4px; }
+  /* macOS squircle 圆角约为边长的 22.5% */
+  .ico { display: block; border-radius: 22.37%; }
+</style>
+</head>
+<body>
+  <h1>SoftDesk 应用图标 · 10 个备选方案</h1>
+  <p class="sub">①～⑥ 为初版方案；⑦～⑩ 为新增的「突出工作台 Workspace」主题方案。每个方案展示深色 / 浅色底大图，以及 64px、32px、16px 小尺寸可读性。挑一个告诉我编号即可，我再导出 .icns 并接入打包配置。</p>
+
+  <div class="grid">
+
+    <!-- 方案 1：层叠卡片 -->
+    <div class="card">
+      <h2>① 层叠卡片 Stacked Decks</h2>
+      <p class="tag">三张错落卡片，寓意"软件库/工作台"。紫粉渐变沿用侧边栏品牌色。</p>
+      <div class="stage">
+        <div class="swatch"><div class="bg-dark">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="g1" x1="0" y1="0" x2="512" y2="512">
+              <stop offset="0%" stop-color="#8b5cf6"/><stop offset="55%" stop-color="#d946ef"/><stop offset="100%" stop-color="#f59e0b"/>
+            </linearGradient></defs>
+            <rect width="512" height="512" rx="115" fill="url(#g1)"/>
+            <rect x="150" y="120" width="212" height="150" rx="26" fill="#ffffff" opacity="0.35"/>
+            <rect x="125" y="175" width="262" height="160" rx="28" fill="#ffffff" opacity="0.6"/>
+            <rect x="150" y="240" width="212" height="152" rx="26" fill="#ffffff"/>
+            <circle cx="200" cy="316" r="16" fill="#8b5cf6"/>
+            <rect x="240" y="304" width="100" height="12" rx="6" fill="#cbd5e1"/>
+            <rect x="240" y="330" width="64" height="12" rx="6" fill="#e2e8f0"/>
+          </svg>
+        </div><span class="lbl">深色底</span></div>
+        <div class="swatch"><div class="bg-light">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="115" fill="url(#g1)"/>
+            <rect x="150" y="120" width="212" height="150" rx="26" fill="#ffffff" opacity="0.35"/>
+            <rect x="125" y="175" width="262" height="160" rx="28" fill="#ffffff" opacity="0.6"/>
+            <rect x="150" y="240" width="212" height="152" rx="26" fill="#ffffff"/>
+            <circle cx="200" cy="316" r="16" fill="#8b5cf6"/>
+            <rect x="240" y="304" width="100" height="12" rx="6" fill="#cbd5e1"/>
+            <rect x="240" y="330" width="64" height="12" rx="6" fill="#e2e8f0"/>
+          </svg>
+        </div><span class="lbl">浅色底</span></div>
+      </div>
+      <div class="small-row"><span class="lbl">小尺寸</span>
+        <svg class="ico" width="64" height="64" viewBox="0 0 512 512"><use href="#sol1"/></svg>
+        <svg class="ico" width="32" height="32" viewBox="0 0 512 512"><use href="#sol1"/></svg>
+        <svg class="ico" width="16" height="16" viewBox="0 0 512 512"><use href="#sol1"/></svg>
+      </div>
+      <svg width="0" height="0"><g id="sol1">
+        <rect width="512" height="512" rx="115" fill="url(#g1)"/>
+        <rect x="125" y="175" width="262" height="160" rx="28" fill="#ffffff" opacity="0.6"/>
+        <rect x="150" y="240" width="212" height="152" rx="26" fill="#ffffff"/>
+        <circle cx="200" cy="316" r="16" fill="#8b5cf6"/>
+        <rect x="240" y="304" width="100" height="12" rx="6" fill="#cbd5e1"/>
+      </g></svg>
+    </div>
+
+    <!-- 方案 2：菱形层叠（沿用现 favicon 语言） -->
+    <div class="card">
+      <h2>② 菱形层叠 Diamond Layers</h2>
+      <p class="tag">延续现有 favicon 的菱形堆叠符号，升级为青绿→蓝渐变，识别度最高、最连贯。</p>
+      <div class="stage">
+        <div class="swatch"><div class="bg-dark">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="g2" x1="0" y1="0" x2="512" y2="512">
+              <stop offset="0%" stop-color="#00d4aa"/><stop offset="100%" stop-color="#58a6ff"/>
+            </linearGradient></defs>
+            <rect width="512" height="512" rx="115" fill="url(#g2)"/>
+            <path d="M256 120 L392 200 L256 280 L120 200 Z" fill="#0d1117" opacity="0.9"/>
+            <path d="M120 256 L256 336 L392 256" stroke="#0d1117" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M120 312 L256 392 L392 312" stroke="#0d1117" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.55"/>
+          </svg>
+        </div><span class="lbl">深色底</span></div>
+        <div class="swatch"><div class="bg-light">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="115" fill="url(#g2)"/>
+            <path d="M256 120 L392 200 L256 280 L120 200 Z" fill="#0d1117" opacity="0.9"/>
+            <path d="M120 256 L256 336 L392 256" stroke="#0d1117" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M120 312 L256 392 L392 312" stroke="#0d1117" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.55"/>
+          </svg>
+        </div><span class="lbl">浅色底</span></div>
+      </div>
+      <div class="small-row"><span class="lbl">小尺寸</span>
+        <svg class="ico" width="64" height="64" viewBox="0 0 512 512"><use href="#sol2"/></svg>
+        <svg class="ico" width="32" height="32" viewBox="0 0 512 512"><use href="#sol2"/></svg>
+        <svg class="ico" width="16" height="16" viewBox="0 0 512 512"><use href="#sol2"/></svg>
+      </div>
+      <svg width="0" height="0"><g id="sol2">
+        <rect width="512" height="512" rx="115" fill="url(#g2)"/>
+        <path d="M256 120 L392 200 L256 280 L120 200 Z" fill="#0d1117" opacity="0.9"/>
+        <path d="M120 256 L256 336 L392 256" stroke="#0d1117" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <path d="M120 312 L256 392 L392 312" stroke="#0d1117" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.55"/>
+      </g></svg>
+    </div>
+
+    <!-- 方案 3：九宫格启动器 -->
+    <div class="card">
+      <h2>③ 九宫格启动器 Launchpad Grid</h2>
+      <p class="tag">类 Launchpad 的应用阵列，直观传达"软件启动器/快速启动"定位。</p>
+      <div class="stage">
+        <div class="swatch"><div class="bg-dark">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="g3" x1="0" y1="0" x2="512" y2="512">
+              <stop offset="0%" stop-color="#6d28d9"/><stop offset="100%" stop-color="#0ea5e9"/>
+            </linearGradient></defs>
+            <rect width="512" height="512" rx="115" fill="url(#g3)"/>
+            <g fill="#ffffff">
+              <rect x="120" y="120" width="80" height="80" rx="20" opacity="0.95"/>
+              <rect x="216" y="120" width="80" height="80" rx="20" opacity="0.7"/>
+              <rect x="312" y="120" width="80" height="80" rx="20" opacity="0.95"/>
+              <rect x="120" y="216" width="80" height="80" rx="20" opacity="0.7"/>
+              <rect x="216" y="216" width="80" height="80" rx="20" fill="#f59e0b"/>
+              <rect x="312" y="216" width="80" height="80" rx="20" opacity="0.7"/>
+              <rect x="120" y="312" width="80" height="80" rx="20" opacity="0.95"/>
+              <rect x="216" y="312" width="80" height="80" rx="20" opacity="0.7"/>
+              <rect x="312" y="312" width="80" height="80" rx="20" opacity="0.95"/>
+            </g>
+          </svg>
+        </div><span class="lbl">深色底</span></div>
+        <div class="swatch"><div class="bg-light">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="115" fill="url(#g3)"/>
+            <g fill="#ffffff">
+              <rect x="120" y="120" width="80" height="80" rx="20" opacity="0.95"/>
+              <rect x="216" y="120" width="80" height="80" rx="20" opacity="0.7"/>
+              <rect x="312" y="120" width="80" height="80" rx="20" opacity="0.95"/>
+              <rect x="120" y="216" width="80" height="80" rx="20" opacity="0.7"/>
+              <rect x="216" y="216" width="80" height="80" rx="20" fill="#f59e0b"/>
+              <rect x="312" y="216" width="80" height="80" rx="20" opacity="0.7"/>
+              <rect x="120" y="312" width="80" height="80" rx="20" opacity="0.95"/>
+              <rect x="216" y="312" width="80" height="80" rx="20" opacity="0.7"/>
+              <rect x="312" y="312" width="80" height="80" rx="20" opacity="0.95"/>
+            </g>
+          </svg>
+        </div><span class="lbl">浅色底</span></div>
+      </div>
+      <div class="small-row"><span class="lbl">小尺寸</span>
+        <svg class="ico" width="64" height="64" viewBox="0 0 512 512"><use href="#sol3"/></svg>
+        <svg class="ico" width="32" height="32" viewBox="0 0 512 512"><use href="#sol3"/></svg>
+        <svg class="ico" width="16" height="16" viewBox="0 0 512 512"><use href="#sol3"/></svg>
+      </div>
+      <svg width="0" height="0"><g id="sol3">
+        <rect width="512" height="512" rx="115" fill="url(#g3)"/>
+        <g fill="#ffffff">
+          <rect x="120" y="120" width="80" height="80" rx="20" opacity="0.95"/>
+          <rect x="216" y="120" width="80" height="80" rx="20" opacity="0.7"/>
+          <rect x="312" y="120" width="80" height="80" rx="20" opacity="0.95"/>
+          <rect x="120" y="216" width="80" height="80" rx="20" opacity="0.7"/>
+          <rect x="216" y="216" width="80" height="80" rx="20" fill="#f59e0b"/>
+          <rect x="312" y="216" width="80" height="80" rx="20" opacity="0.7"/>
+          <rect x="120" y="312" width="80" height="80" rx="20" opacity="0.95"/>
+          <rect x="216" y="312" width="80" height="80" rx="20" opacity="0.7"/>
+          <rect x="312" y="312" width="80" height="80" rx="20" opacity="0.95"/>
+        </g>
+      </g></svg>
+    </div>
+
+    <!-- 方案 4：文件夹 + 圆点（沿用侧边栏 Logo） -->
+    <div class="card">
+      <h2>④ 智能文件夹 Folder Dot</h2>
+      <p class="tag">沿用侧边栏 FolderOpenDot 语言，文件夹 + 活跃圆点，强调"管理 + 在线"。</p>
+      <div class="stage">
+        <div class="swatch"><div class="bg-dark">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="g4" x1="0" y1="0" x2="512" y2="512">
+              <stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#ec4899"/>
+            </linearGradient></defs>
+            <rect width="512" height="512" rx="115" fill="url(#g4)"/>
+            <path d="M128 168 h96 l34 40 h126 a24 24 0 0 1 24 24 v124 a24 24 0 0 1 -24 24 H128 a24 24 0 0 1 -24 -24 V192 a24 24 0 0 1 24 -24 Z" fill="#ffffff" opacity="0.95"/>
+            <circle cx="356" cy="172" r="40" fill="#34d399" stroke="#0d0d14" stroke-width="14"/>
+          </svg>
+        </div><span class="lbl">深色底</span></div>
+        <div class="swatch"><div class="bg-light">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="115" fill="url(#g4)"/>
+            <path d="M128 168 h96 l34 40 h126 a24 24 0 0 1 24 24 v124 a24 24 0 0 1 -24 24 H128 a24 24 0 0 1 -24 -24 V192 a24 24 0 0 1 24 -24 Z" fill="#ffffff" opacity="0.95"/>
+            <circle cx="356" cy="172" r="40" fill="#34d399" stroke="#ffffff" stroke-width="14"/>
+          </svg>
+        </div><span class="lbl">浅色底</span></div>
+      </div>
+      <div class="small-row"><span class="lbl">小尺寸</span>
+        <svg class="ico" width="64" height="64" viewBox="0 0 512 512"><use href="#sol4"/></svg>
+        <svg class="ico" width="32" height="32" viewBox="0 0 512 512"><use href="#sol4"/></svg>
+        <svg class="ico" width="16" height="16" viewBox="0 0 512 512"><use href="#sol4"/></svg>
+      </div>
+      <svg width="0" height="0"><g id="sol4">
+        <rect width="512" height="512" rx="115" fill="url(#g4)"/>
+        <path d="M128 168 h96 l34 40 h126 a24 24 0 0 1 24 24 v124 a24 24 0 0 1 -24 24 H128 a24 24 0 0 1 -24 -24 V192 a24 24 0 0 1 24 -24 Z" fill="#ffffff" opacity="0.95"/>
+        <circle cx="356" cy="172" r="40" fill="#34d399" stroke="#0d0d14" stroke-width="14"/>
+      </g></svg>
+    </div>
+
+    <!-- 方案 5：字母 S 单字 -->
+    <div class="card">
+      <h2>⑤ S 单字 Monogram</h2>
+      <p class="tag">极简字母 S，现代利落，缩到 16px 依然清晰。适合走克制路线。</p>
+      <div class="stage">
+        <div class="swatch"><div class="bg-dark">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="g5" x1="0" y1="0" x2="512" y2="512">
+              <stop offset="0%" stop-color="#00d4aa"/><stop offset="50%" stop-color="#58a6ff"/><stop offset="100%" stop-color="#8b5cf6"/>
+            </linearGradient></defs>
+            <rect width="512" height="512" rx="115" fill="url(#g5)"/>
+            <text x="256" y="356" font-family="-apple-system, SF Pro Display, Segoe UI, sans-serif" font-size="300" font-weight="800" fill="#ffffff" text-anchor="middle">S</text>
+          </svg>
+        </div><span class="lbl">深色底</span></div>
+        <div class="swatch"><div class="bg-light">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="115" fill="url(#g5)"/>
+            <text x="256" y="356" font-family="-apple-system, SF Pro Display, Segoe UI, sans-serif" font-size="300" font-weight="800" fill="#ffffff" text-anchor="middle">S</text>
+          </svg>
+        </div><span class="lbl">浅色底</span></div>
+      </div>
+      <div class="small-row"><span class="lbl">小尺寸</span>
+        <svg class="ico" width="64" height="64" viewBox="0 0 512 512"><use href="#sol5"/></svg>
+        <svg class="ico" width="32" height="32" viewBox="0 0 512 512"><use href="#sol5"/></svg>
+        <svg class="ico" width="16" height="16" viewBox="0 0 512 512"><use href="#sol5"/></svg>
+      </div>
+      <svg width="0" height="0"><g id="sol5">
+        <rect width="512" height="512" rx="115" fill="url(#g5)"/>
+        <text x="256" y="356" font-family="-apple-system, SF Pro Display, Segoe UI, sans-serif" font-size="300" font-weight="800" fill="#ffffff" text-anchor="middle">S</text>
+      </g></svg>
+    </div>
+
+    <!-- 方案 6：启动方块 + 进度环 -->
+    <div class="card">
+      <h2>⑥ 启动核心 Launch Core</h2>
+      <p class="tag">启动三角 + 环绕进度弧，体现"一键启动 + 使用统计"双核心能力。</p>
+      <div class="stage">
+        <div class="swatch"><div class="bg-dark">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="g6" x1="0" y1="0" x2="512" y2="512">
+              <stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#06b6d4"/>
+            </linearGradient></defs>
+            <rect width="512" height="512" rx="115" fill="url(#g6)"/>
+            <circle cx="256" cy="256" r="120" fill="none" stroke="#ffffff" stroke-width="26" opacity="0.3"/>
+            <path d="M256 136 a120 120 0 0 1 104 60" fill="none" stroke="#f59e0b" stroke-width="26" stroke-linecap="round"/>
+            <path d="M226 206 L316 256 L226 306 Z" fill="#ffffff"/>
+          </svg>
+        </div><span class="lbl">深色底</span></div>
+        <div class="swatch"><div class="bg-light">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="115" fill="url(#g6)"/>
+            <circle cx="256" cy="256" r="120" fill="none" stroke="#ffffff" stroke-width="26" opacity="0.3"/>
+            <path d="M256 136 a120 120 0 0 1 104 60" fill="none" stroke="#f59e0b" stroke-width="26" stroke-linecap="round"/>
+            <path d="M226 206 L316 256 L226 306 Z" fill="#ffffff"/>
+          </svg>
+        </div><span class="lbl">浅色底</span></div>
+      </div>
+      <div class="small-row"><span class="lbl">小尺寸</span>
+        <svg class="ico" width="64" height="64" viewBox="0 0 512 512"><use href="#sol6"/></svg>
+        <svg class="ico" width="32" height="32" viewBox="0 0 512 512"><use href="#sol6"/></svg>
+        <svg class="ico" width="16" height="16" viewBox="0 0 512 512"><use href="#sol6"/></svg>
+      </div>
+      <svg width="0" height="0"><g id="sol6">
+        <rect width="512" height="512" rx="115" fill="url(#g6)"/>
+        <circle cx="256" cy="256" r="120" fill="none" stroke="#ffffff" stroke-width="26" opacity="0.3"/>
+        <path d="M256 136 a120 120 0 0 1 104 60" fill="none" stroke="#f59e0b" stroke-width="26" stroke-linecap="round"/>
+        <path d="M226 206 L316 256 L226 306 Z" fill="#ffffff"/>
+      </g></svg>
+    </div>
+
+    <!-- 方案 7：工作台桌面 Desk Surface -->
+    <div class="card">
+      <h2>⑦ 工作台桌面 Desk Surface</h2>
+      <p class="tag">俯视的桌面 + 显示器/键盘剪影，最直白地表达"工作台 Workspace"的物理意象。</p>
+      <div class="stage">
+        <div class="swatch"><div class="bg-dark">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="g7" x1="0" y1="0" x2="512" y2="512">
+              <stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#06b6d4"/>
+            </linearGradient></defs>
+            <rect width="512" height="512" rx="115" fill="url(#g7)"/>
+            <rect x="148" y="132" width="216" height="148" rx="18" fill="#ffffff"/>
+            <rect x="170" y="154" width="172" height="104" rx="8" fill="#1e293b"/>
+            <rect x="190" y="172" width="80" height="12" rx="6" fill="#22d3ee"/>
+            <rect x="190" y="196" width="120" height="10" rx="5" fill="#64748b"/>
+            <rect x="190" y="216" width="96" height="10" rx="5" fill="#64748b"/>
+            <rect x="236" y="280" width="40" height="26" fill="#ffffff" opacity="0.85"/>
+            <rect x="150" y="318" width="212" height="44" rx="14" fill="#ffffff" opacity="0.95"/>
+            <g fill="#94a3b8"><rect x="166" y="332" width="24" height="16" rx="4"/><rect x="198" y="332" width="24" height="16" rx="4"/><rect x="230" y="332" width="52" height="16" rx="4"/><rect x="290" y="332" width="24" height="16" rx="4"/><rect x="322" y="332" width="24" height="16" rx="4"/></g>
+          </svg>
+        </div><span class="lbl">深色底</span></div>
+        <div class="swatch"><div class="bg-light">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="115" fill="url(#g7)"/>
+            <rect x="148" y="132" width="216" height="148" rx="18" fill="#ffffff"/>
+            <rect x="170" y="154" width="172" height="104" rx="8" fill="#1e293b"/>
+            <rect x="190" y="172" width="80" height="12" rx="6" fill="#22d3ee"/>
+            <rect x="190" y="196" width="120" height="10" rx="5" fill="#64748b"/>
+            <rect x="190" y="216" width="96" height="10" rx="5" fill="#64748b"/>
+            <rect x="236" y="280" width="40" height="26" fill="#ffffff" opacity="0.85"/>
+            <rect x="150" y="318" width="212" height="44" rx="14" fill="#ffffff" opacity="0.95"/>
+            <g fill="#94a3b8"><rect x="166" y="332" width="24" height="16" rx="4"/><rect x="198" y="332" width="24" height="16" rx="4"/><rect x="230" y="332" width="52" height="16" rx="4"/><rect x="290" y="332" width="24" height="16" rx="4"/><rect x="322" y="332" width="24" height="16" rx="4"/></g>
+          </svg>
+        </div><span class="lbl">浅色底</span></div>
+      </div>
+      <div class="small-row"><span class="lbl">小尺寸</span>
+        <svg class="ico" width="64" height="64" viewBox="0 0 512 512"><use href="#sol7"/></svg>
+        <svg class="ico" width="32" height="32" viewBox="0 0 512 512"><use href="#sol7"/></svg>
+        <svg class="ico" width="16" height="16" viewBox="0 0 512 512"><use href="#sol7"/></svg>
+      </div>
+      <svg width="0" height="0"><g id="sol7">
+        <rect width="512" height="512" rx="115" fill="url(#g7)"/>
+        <rect x="148" y="142" width="216" height="150" rx="18" fill="#ffffff"/>
+        <rect x="172" y="166" width="168" height="102" rx="8" fill="#1e293b"/>
+        <rect x="194" y="186" width="96" height="16" rx="8" fill="#22d3ee"/>
+        <rect x="194" y="214" width="124" height="14" rx="7" fill="#64748b"/>
+        <rect x="150" y="324" width="212" height="48" rx="14" fill="#ffffff" opacity="0.95"/>
+      </g></svg>
+    </div>
+
+    <!-- 方案 8：仪表盘工作台 Dashboard Panel -->
+    <div class="card">
+      <h2>⑧ 仪表盘工作台 Dashboard Panel</h2>
+      <p class="tag">侧栏 + 图表卡片的应用界面缩影，直接呼应产品本身的工作台 Dashboard 布局。</p>
+      <div class="stage">
+        <div class="swatch"><div class="bg-dark">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="g8" x1="0" y1="0" x2="512" y2="512">
+              <stop offset="0%" stop-color="#6d28d9"/><stop offset="55%" stop-color="#d946ef"/><stop offset="100%" stop-color="#f59e0b"/>
+            </linearGradient></defs>
+            <rect width="512" height="512" rx="115" fill="url(#g8)"/>
+            <rect x="120" y="130" width="272" height="252" rx="28" fill="#ffffff"/>
+            <rect x="120" y="130" width="74" height="252" rx="28" fill="#e9d5ff"/>
+            <g fill="#a78bfa"><circle cx="157" cy="172" r="11"/><circle cx="157" cy="212" r="11"/><circle cx="157" cy="252" r="11"/></g>
+            <rect x="214" y="156" width="158" height="46" rx="12" fill="#f1f5f9"/>
+            <rect x="214" y="216" width="72" height="146" rx="12" fill="#ede9fe"/>
+            <rect x="300" y="216" width="72" height="146" rx="12" fill="#f1f5f9"/>
+            <rect x="232" y="300" width="36" height="46" rx="6" fill="#8b5cf6"/>
+            <rect x="318" y="276" width="36" height="70" rx="6" fill="#f59e0b"/>
+          </svg>
+        </div><span class="lbl">深色底</span></div>
+        <div class="swatch"><div class="bg-light">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="115" fill="url(#g8)"/>
+            <rect x="120" y="130" width="272" height="252" rx="28" fill="#ffffff"/>
+            <rect x="120" y="130" width="74" height="252" rx="28" fill="#e9d5ff"/>
+            <g fill="#a78bfa"><circle cx="157" cy="172" r="11"/><circle cx="157" cy="212" r="11"/><circle cx="157" cy="252" r="11"/></g>
+            <rect x="214" y="156" width="158" height="46" rx="12" fill="#f1f5f9"/>
+            <rect x="214" y="216" width="72" height="146" rx="12" fill="#ede9fe"/>
+            <rect x="300" y="216" width="72" height="146" rx="12" fill="#f1f5f9"/>
+            <rect x="232" y="300" width="36" height="46" rx="6" fill="#8b5cf6"/>
+            <rect x="318" y="276" width="36" height="70" rx="6" fill="#f59e0b"/>
+          </svg>
+        </div><span class="lbl">浅色底</span></div>
+      </div>
+      <div class="small-row"><span class="lbl">小尺寸</span>
+        <svg class="ico" width="64" height="64" viewBox="0 0 512 512"><use href="#sol8"/></svg>
+        <svg class="ico" width="32" height="32" viewBox="0 0 512 512"><use href="#sol8"/></svg>
+        <svg class="ico" width="16" height="16" viewBox="0 0 512 512"><use href="#sol8"/></svg>
+      </div>
+      <svg width="0" height="0"><g id="sol8">
+        <rect width="512" height="512" rx="115" fill="url(#g8)"/>
+        <rect x="116" y="124" width="280" height="264" rx="30" fill="#ffffff"/>
+        <rect x="116" y="124" width="84" height="264" rx="30" fill="#e9d5ff"/>
+        <rect x="222" y="220" width="76" height="160" rx="12" fill="#ede9fe"/>
+        <rect x="312" y="220" width="76" height="160" rx="12" fill="#f1f5f9"/>
+        <rect x="240" y="300" width="40" height="80" rx="6" fill="#8b5cf6"/>
+        <rect x="330" y="270" width="40" height="110" rx="6" fill="#f59e0b"/>
+      </g></svg>
+    </div>
+
+    <!-- 方案 9：聚合方块 Hub Blocks -->
+    <div class="card">
+      <h2>⑨ 中枢聚合 Hub Blocks</h2>
+      <p class="tag">四块应用环绕中心高亮块，寓意"把所有软件聚到一个工作台统一调度"。</p>
+      <div class="stage">
+        <div class="swatch"><div class="bg-dark">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="g9" x1="0" y1="0" x2="512" y2="512">
+              <stop offset="0%" stop-color="#00d4aa"/><stop offset="100%" stop-color="#58a6ff"/>
+            </linearGradient></defs>
+            <rect width="512" height="512" rx="115" fill="url(#g9)"/>
+            <rect x="206" y="206" width="100" height="100" rx="24" fill="#ffffff"/>
+            <rect x="206" y="206" width="100" height="100" rx="24" fill="#0d1117" opacity="0.08"/>
+            <g fill="#ffffff" opacity="0.85">
+              <rect x="120" y="120" width="74" height="74" rx="20"/>
+              <rect x="318" y="120" width="74" height="74" rx="20"/>
+              <rect x="120" y="318" width="74" height="74" rx="20"/>
+              <rect x="318" y="318" width="74" height="74" rx="20"/>
+            </g>
+            <g stroke="#ffffff" stroke-width="12" opacity="0.55">
+              <line x1="194" y1="157" x2="222" y2="222"/>
+              <line x1="318" y1="157" x2="290" y2="222"/>
+              <line x1="194" y1="355" x2="222" y2="290"/>
+              <line x1="318" y1="355" x2="290" y2="290"/>
+            </g>
+          </svg>
+        </div><span class="lbl">深色底</span></div>
+        <div class="swatch"><div class="bg-light">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="115" fill="url(#g9)"/>
+            <rect x="206" y="206" width="100" height="100" rx="24" fill="#ffffff"/>
+            <rect x="206" y="206" width="100" height="100" rx="24" fill="#0d1117" opacity="0.08"/>
+            <g fill="#ffffff" opacity="0.85">
+              <rect x="120" y="120" width="74" height="74" rx="20"/>
+              <rect x="318" y="120" width="74" height="74" rx="20"/>
+              <rect x="120" y="318" width="74" height="74" rx="20"/>
+              <rect x="318" y="318" width="74" height="74" rx="20"/>
+            </g>
+            <g stroke="#ffffff" stroke-width="12" opacity="0.55">
+              <line x1="194" y1="157" x2="222" y2="222"/>
+              <line x1="318" y1="157" x2="290" y2="222"/>
+              <line x1="194" y1="355" x2="222" y2="290"/>
+              <line x1="318" y1="355" x2="290" y2="290"/>
+            </g>
+          </svg>
+        </div><span class="lbl">浅色底</span></div>
+      </div>
+      <div class="small-row"><span class="lbl">小尺寸</span>
+        <svg class="ico" width="64" height="64" viewBox="0 0 512 512"><use href="#sol9"/></svg>
+        <svg class="ico" width="32" height="32" viewBox="0 0 512 512"><use href="#sol9"/></svg>
+        <svg class="ico" width="16" height="16" viewBox="0 0 512 512"><use href="#sol9"/></svg>
+      </div>
+      <svg width="0" height="0"><g id="sol9">
+        <rect width="512" height="512" rx="115" fill="url(#g9)"/>
+        <g stroke="#ffffff" stroke-width="14" opacity="0.55">
+          <line x1="194" y1="157" x2="222" y2="222"/><line x1="318" y1="157" x2="290" y2="222"/>
+          <line x1="194" y1="355" x2="222" y2="290"/><line x1="318" y1="355" x2="290" y2="290"/>
+        </g>
+        <g fill="#ffffff" opacity="0.85">
+          <rect x="120" y="120" width="74" height="74" rx="20"/><rect x="318" y="120" width="74" height="74" rx="20"/>
+          <rect x="120" y="318" width="74" height="74" rx="20"/><rect x="318" y="318" width="74" height="74" rx="20"/>
+        </g>
+        <rect x="206" y="206" width="100" height="100" rx="24" fill="#ffffff"/>
+      </g></svg>
+    </div>
+
+    <!-- 方案 10：工作台 + 启动 D 字 -->
+    <div class="card">
+      <h2>⑩ Desk 字符台 Desk Mark</h2>
+      <p class="tag">字母 D 内嵌启动三角，底部一道"桌面线"，把"Desk + 启动工作台"凝练成单字符。</p>
+      <div class="stage">
+        <div class="swatch"><div class="bg-dark">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="g10" x1="0" y1="0" x2="512" y2="512">
+              <stop offset="0%" stop-color="#7c3aed"/><stop offset="50%" stop-color="#ec4899"/><stop offset="100%" stop-color="#f59e0b"/>
+            </linearGradient></defs>
+            <rect width="512" height="512" rx="115" fill="url(#g10)"/>
+            <path d="M156 136 H266 a120 120 0 0 1 0 240 H156 Z" fill="none" stroke="#ffffff" stroke-width="40" stroke-linejoin="round"/>
+            <path d="M214 206 L300 256 L214 306 Z" fill="#ffffff"/>
+            <rect x="150" y="392" width="212" height="20" rx="10" fill="#ffffff" opacity="0.9"/>
+          </svg>
+        </div><span class="lbl">深色底</span></div>
+        <div class="swatch"><div class="bg-light">
+          <svg class="ico" width="112" height="112" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="115" fill="url(#g10)"/>
+            <path d="M156 136 H266 a120 120 0 0 1 0 240 H156 Z" fill="none" stroke="#ffffff" stroke-width="40" stroke-linejoin="round"/>
+            <path d="M214 206 L300 256 L214 306 Z" fill="#ffffff"/>
+            <rect x="150" y="392" width="212" height="20" rx="10" fill="#ffffff" opacity="0.9"/>
+          </svg>
+        </div><span class="lbl">浅色底</span></div>
+      </div>
+      <div class="small-row"><span class="lbl">小尺寸</span>
+        <svg class="ico" width="64" height="64" viewBox="0 0 512 512"><use href="#sol10"/></svg>
+        <svg class="ico" width="32" height="32" viewBox="0 0 512 512"><use href="#sol10"/></svg>
+        <svg class="ico" width="16" height="16" viewBox="0 0 512 512"><use href="#sol10"/></svg>
+      </div>
+      <svg width="0" height="0"><g id="sol10">
+        <rect width="512" height="512" rx="115" fill="url(#g10)"/>
+        <path d="M156 140 H266 a116 116 0 0 1 0 232 H156 Z" fill="none" stroke="#ffffff" stroke-width="44" stroke-linejoin="round"/>
+        <path d="M214 208 L302 256 L214 304 Z" fill="#ffffff"/>
+        <rect x="150" y="392" width="212" height="22" rx="11" fill="#ffffff" opacity="0.9"/>
+      </g></svg>
+    </div>
+
+  </div>
+</body>
+</html>
