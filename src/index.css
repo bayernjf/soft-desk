@@ -92,3 +92,195 @@ body {
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* ============================================
+   浅色主题 - 柔和咖啡奶白色调
+   仅在 html.light 作用域下覆盖写死的深色工具类,
+   不改动任何组件代码,深色主题(默认/.dark)完全不受影响。
+   ============================================ */
+html.light {
+  /* 咖啡奶白色板 */
+  --l-bg: #efe7da;          /* 应用底色 - 奶咖 */
+  --l-panel: #faf5ec;       /* 卡片/面板 - 暖白 */
+  --l-panel-2: #fffdf8;     /* 强面板/弹层 - 近白暖调 */
+  --l-hover: #e7dccb;       /* hover 态 */
+  --l-line: #e2d5c1;        /* 边框线 */
+  --l-line-soft: #ebe0d0;   /* 浅边框 */
+  --l-txt: #3b3127;         /* 主文字 - 深咖 */
+  --l-txt-2: #6f6151;       /* 次级文字 */
+  --l-txt-3: #9b8c78;       /* 弱文字/占位 */
+  --l-overlay: rgba(59, 49, 39, 0.45); /* 遮罩 */
+
+  background-color: var(--l-bg);
+  color: var(--l-txt);
+}
+
+html.light body {
+  background-color: var(--l-bg);
+  color: var(--l-txt);
+}
+
+/* 文本选择 / 滚动条 在浅色下的适配 */
+html.light ::selection {
+  background: rgba(139, 92, 246, 0.18);
+  color: #2a2118;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: rgba(120, 100, 75, 0.28);
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 100, 75, 0.45);
+}
+
+@layer utilities {
+  /* —— 背景:应用底色 —— */
+  html.light .bg-\[\#0a0a0f\],
+  html.light .bg-\[\#0d0d14\]\/95 {
+    background-color: var(--l-bg);
+  }
+
+  /* —— 背景:面板/卡片 —— */
+  html.light .bg-slate-900\/40,
+  html.light .bg-slate-900\/50,
+  html.light .bg-slate-900\/60,
+  html.light .bg-slate-900 {
+    background-color: var(--l-panel);
+  }
+  html.light .bg-\[\#15151c\] {
+    background-color: var(--l-panel-2);
+  }
+
+  /* —— 背景:hover / 次级块 —— */
+  html.light .bg-slate-800,
+  html.light .bg-slate-800\/40,
+  html.light .bg-slate-800\/50,
+  html.light .bg-slate-800\/60,
+  html.light .bg-slate-700,
+  html.light .bg-slate-700\/70 {
+    background-color: var(--l-hover);
+  }
+  html.light .hover\:bg-slate-800:hover,
+  html.light .hover\:bg-slate-800\/30:hover,
+  html.light .hover\:bg-slate-800\/40:hover,
+  html.light .hover\:bg-slate-800\/50:hover,
+  html.light .hover\:bg-slate-800\/60:hover,
+  html.light .hover\:bg-slate-800\/70:hover,
+  html.light .hover\:bg-slate-800\/80:hover,
+  html.light .hover\:bg-slate-700:hover {
+    background-color: var(--l-hover);
+  }
+
+  /* —— 遮罩层 —— */
+  html.light .bg-slate-950\/70,
+  html.light .bg-slate-950\/90 {
+    background-color: var(--l-overlay);
+  }
+
+  /* —— 文字层级 —— */
+  html.light .text-white,
+  html.light .text-slate-100,
+  html.light .text-slate-200,
+  html.light .text-slate-300 {
+    color: var(--l-txt);
+  }
+  html.light .text-slate-400 {
+    color: var(--l-txt-2);
+  }
+  html.light .text-slate-500,
+  html.light .text-slate-600,
+  html.light .text-slate-700 {
+    color: var(--l-txt-3);
+  }
+  html.light .hover\:text-white:hover,
+  html.light .hover\:text-slate-200:hover,
+  html.light .hover\:text-slate-300:hover {
+    color: var(--l-txt);
+  }
+  html.light .group:hover .group-hover\:text-white,
+  html.light .group:hover .group-hover\:text-slate-300 {
+    color: var(--l-txt);
+  }
+  html.light .group:hover .group-hover\:text-slate-500 {
+    color: var(--l-txt-2);
+  }
+  html.light .placeholder\:text-slate-500::placeholder,
+  html.light .placeholder\:text-slate-600::placeholder {
+    color: var(--l-txt-3);
+  }
+
+  /* —— 边框 —— */
+  html.light .border-slate-800,
+  html.light .border-slate-800\/40,
+  html.light .border-slate-800\/60,
+  html.light .border-slate-800\/80,
+  html.light .border-slate-700,
+  html.light .border-slate-700\/60,
+  html.light .border-slate-700\/80 {
+    border-color: var(--l-line);
+  }
+  html.light .hover\:border-slate-700:hover,
+  html.light .hover\:border-slate-700\/60:hover,
+  html.light .hover\:border-slate-700\/80:hover {
+    border-color: var(--l-line);
+  }
+
+  /* —— 实色彩色按钮上的白字必须保持白色 ——
+     用 ~=(整词匹配)只命中实色类(bg-violet-500),
+     不命中淡色态(bg-violet-500/90、from-violet-500/15),避免误伤选中态文字 —— */
+  html.light [class~="bg-violet-500"].text-white,
+  html.light [class~="bg-violet-600"].text-white,
+  html.light [class~="bg-rose-500"].text-white,
+  html.light [class~="bg-emerald-500"].text-white,
+  html.light .bg-violet-500 .text-white,
+  html.light .bg-violet-600 .text-white,
+  html.light [class~="from-violet-500"].text-white,
+  html.light [class~="from-emerald-500"].text-white {
+    color: #ffffff;
+  }
+
+  /* —— 浅色下淡色渐变/淡底的"选中态":提高对比度,文字用品牌深紫,不再是浅底白字 —— */
+  html.light [class~="from-violet-500/15"],
+  html.light [class~="from-violet-500/10"] {
+    background-image: none;
+    background-color: rgba(124, 58, 237, 0.14);
+  }
+  html.light [class~="from-violet-500/15"] .text-white,
+  html.light .bg-violet-500\/15,
+  html.light .bg-violet-500\/20,
+  html.light .text-violet-300 {
+    color: #6d28d9;
+  }
+  /* 周期/排序等深色选中按钮(bg-violet-500/90)在浅色下用实色品牌紫 + 白字 */
+  html.light .bg-violet-500\/90 {
+    background-color: #7c3aed;
+  }
+
+  /* —— 浅色下的浅底强调态对比过低:换实色品牌紫 + 白字 ——
+     bg-white 仅在与 text-slate-900 同时出现(启动按钮)时变紫;
+     单独的 bg-white(如开关滑块圆点)保持白色不动 —— */
+  html.light .bg-slate-200,
+  html.light .bg-white.text-slate-900 {
+    background-color: #7c3aed;
+  }
+  html.light .bg-slate-200.text-slate-900,
+  html.light .bg-white.text-slate-900 {
+    color: #ffffff;
+  }
+  html.light .bg-white.text-slate-900.hover\:bg-slate-100:hover {
+    background-color: #6d28d9;
+  }
+
+  /* —— 主内容区深色渐变背景:浅色下改为奶咖渐变 —— */
+  html.light .from-\[\#0a0a0f\] {
+    --tw-gradient-from: #efe7da var(--tw-gradient-from-position);
+    --tw-gradient-to: rgb(239 231 218 / 0) var(--tw-gradient-to-position);
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-stops);
+  }
+  html.light .via-\[\#0d0d14\] {
+    --tw-gradient-to: rgb(245 240 233 / 0) var(--tw-gradient-to-position);
+    --tw-gradient-stops: var(--tw-gradient-from), #f5f0e9 var(--tw-gradient-via-position), var(--tw-gradient-to);
+  }
+  html.light .to-\[\#0a0a0f\] {
+    --tw-gradient-to: #efe7da var(--tw-gradient-to-position);
+  }
+}

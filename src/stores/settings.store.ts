@@ -48,6 +48,17 @@ export function applyTheme(theme: ThemeMode) {
   root.classList.add(isDark ? 'dark' : 'light');
 }
 
+// 持续监听系统明暗变化:仅当用户选择"跟随系统"时,系统切换主题会实时同步到应用
+let systemThemeWatching = false;
+export function watchSystemTheme() {
+  if (systemThemeWatching || typeof window === 'undefined' || !window.matchMedia) return;
+  systemThemeWatching = true;
+  const mql = window.matchMedia('(prefers-color-scheme: dark)');
+  mql.addEventListener('change', () => {
+    if (useSettingsStore.getState().theme === 'system') applyTheme('system');
+  });
+}
+
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
