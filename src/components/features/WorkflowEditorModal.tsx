@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react';
 import { X, Check, Search } from 'lucide-react';
 import type { Workflow } from '@/types';
 import { useSoftwareStore, type WorkflowInput } from '@/stores/software.store';
+import { WORKFLOW_COLORS } from '@/data/categories';
 import { cn } from '@/lib/utils';
-
-const COLOR_OPTIONS = ['#00d4aa', '#a371f7', '#58a6ff', '#d29922', '#f85149', '#ec4899'];
 
 interface WorkflowEditorModalProps {
   workflow?: Workflow | null;
@@ -12,13 +11,15 @@ interface WorkflowEditorModalProps {
 }
 
 export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalProps) {
-  const { software, createWorkflow, updateWorkflow } = useSoftwareStore();
+  const software = useSoftwareStore((s) => s.software);
+  const createWorkflow = useSoftwareStore((s) => s.createWorkflow);
+  const updateWorkflow = useSoftwareStore((s) => s.updateWorkflow);
   const isEdit = !!workflow;
 
   const [name, setName] = useState(workflow?.name ?? '');
   const [description, setDescription] = useState(workflow?.description ?? '');
   const [selectedIds, setSelectedIds] = useState<string[]>(workflow?.softwareIds ?? []);
-  const [color, setColor] = useState(workflow?.color ?? COLOR_OPTIONS[0]);
+  const [color, setColor] = useState(workflow?.color ?? WORKFLOW_COLORS[0]);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
 
@@ -68,15 +69,22 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
       <div
         className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
         onClick={onClose}
+        aria-hidden="true"
       />
 
-      <div className="relative w-full max-w-lg max-h-[88vh] flex flex-col rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl shadow-slate-950/50">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={isEdit ? '编辑工作流' : '创建工作流'}
+        className="relative w-full max-w-lg max-h-[88vh] flex flex-col rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl shadow-slate-950/50"
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
           <h2 className="text-base font-semibold text-white">
             {isEdit ? '编辑工作流' : '创建工作流'}
           </h2>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="text-slate-500 hover:text-slate-300 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -119,10 +127,12 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1.5">主题色</label>
             <div className="flex items-center gap-2.5">
-              {COLOR_OPTIONS.map((c) => (
+              {WORKFLOW_COLORS.map((c) => (
                 <button
                   key={c}
                   onClick={() => setColor(c)}
+                  aria-label={`选择主题色 ${c}`}
+                  aria-pressed={color === c}
                   className={cn(
                     'w-7 h-7 rounded-full transition-transform',
                     color === c ? 'ring-2 ring-offset-2 ring-offset-slate-900 ring-white scale-110' : 'hover:scale-110'

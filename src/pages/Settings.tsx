@@ -29,6 +29,9 @@ function Toggle({ checked, onChange, label, description }: ToggleProps) {
       </div>
       <button
         onClick={() => onChange(!checked)}
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
         className={cn(
           'relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5',
           checked ? 'bg-violet-500' : 'bg-slate-700'

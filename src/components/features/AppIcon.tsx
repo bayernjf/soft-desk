@@ -34,6 +34,8 @@ export function AppIcon({ software, size = 40, rounded = 'rounded-xl', className
   const fontSize = Math.round(size * 0.34);
   return (
     <div
+      role="img"
+      aria-label={software.name}
       style={{ ...style, backgroundColor: software.color + '25', color: software.color, fontSize }}
       className={cn(rounded, 'flex items-center justify-center font-semibold shrink-0', className)}
     >

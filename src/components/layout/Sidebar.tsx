@@ -23,7 +23,7 @@ const navItems = [
 ];
 
 export function Sidebar() {
-  const { software } = useSoftwareStore();
+  const software = useSoftwareStore((s) => s.software);
   const location = useLocation();
 
   return (

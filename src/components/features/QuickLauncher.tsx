@@ -17,7 +17,10 @@ type LauncherItem =
 const MAX_RESULTS = 8;
 
 export function QuickLauncher({ open, onClose }: QuickLauncherProps) {
-  const { software, workflows, launchSoftware, launchWorkflow } = useSoftwareStore();
+  const software = useSoftwareStore((s) => s.software);
+  const workflows = useSoftwareStore((s) => s.workflows);
+  const launchSoftware = useSoftwareStore((s) => s.launchSoftware);
+  const launchWorkflow = useSoftwareStore((s) => s.launchWorkflow);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -98,8 +101,12 @@ export function QuickLauncher({ open, onClose }: QuickLauncherProps) {
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] px-4 bg-black/50 backdrop-blur-sm"
       onClick={onClose}
+      aria-hidden="true"
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="快速启动"
         className="w-full max-w-xl rounded-2xl bg-[#15151c] border border-slate-700/60 shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
@@ -111,6 +118,7 @@ export function QuickLauncher({ open, onClose }: QuickLauncherProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索软件或工作流，回车启动…"
+            aria-label="搜索软件或工作流"
             className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 outline-none"
           />
           <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-slate-500 font-mono">
