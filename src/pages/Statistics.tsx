@@ -13,7 +13,7 @@ import {
   Cell,
   CartesianGrid,
 } from 'recharts';
-import { Clock, Rocket, AppWindow, Gauge, ChevronDown, Loader2, ChevronRight } from 'lucide-react';
+import { Clock, Rocket, AppWindow, Gauge, ChevronDown, Loader2, ChevronRight, AlertCircle } from 'lucide-react';
 import { CATEGORIES } from '@/data/categories';
 import { useSoftwareStore } from '@/stores/software.store';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
@@ -152,6 +152,13 @@ export function Statistics() {
           ))}
         </div>
       </div>
+
+      {stats.error && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          使用统计加载失败：{stats.error}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {summaryCards.map((stat) => {
