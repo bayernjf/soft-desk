@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { QuickLauncher } from '@/components/features/QuickLauncher';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useSettingsStore, syncWindowPrefs } from '@/stores/settings.store';
 import { cn } from '@/lib/utils';
 
 export function Layout() {
@@ -22,6 +23,9 @@ export function Layout() {
       if (cancelled) return;
       if (window.softdesk) {
         setElectronReady(true);
+        // bridge 就绪后,把渲染层持久化的窗口偏好同步给主进程,
+        // 确保下次冷启动 createWindow 前 window-prefs.json 与设置页一致
+        syncWindowPrefs(useSettingsStore.getState().prefs);
         scanSoftware();
         return;
       }

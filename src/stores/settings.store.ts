@@ -59,6 +59,15 @@ export function watchSystemTheme() {
   });
 }
 
+// 把与窗口行为相关的偏好推送到 Electron 主进程并持久化(浏览器环境下无 bridge,安全跳过)
+export function syncWindowPrefs(prefs: AppPreferences) {
+  if (typeof window === 'undefined' || !window.softdesk?.syncSettings) return;
+  void window.softdesk.syncSettings({
+    startMinimized: prefs.startMinimized,
+    minimizeToTray: prefs.minimizeToTray,
+  });
+}
+
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
@@ -68,7 +77,13 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ theme });
         applyTheme(theme);
       },
-      togglePref: (key) => set({ prefs: { ...get().prefs, [key]: !get().prefs[key] } }),
+      togglePref: (key) => {
+        const prefs = { ...get().prefs, [key]: !get().prefs[key] };
+        set({ prefs });
+        if (key === 'startMinimized' || key === 'minimizeToTray') {
+          syncWindowPrefs(prefs);
+        }
+      },
     }),
     {
       name: 'softdesk-settings',
