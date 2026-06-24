@@ -64,8 +64,17 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
 
   return (
     <div
+      onClick={() => onEdit(workflow)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onEdit(workflow);
+        }
+      }}
       className={cn(
-        'relative p-5 rounded-2xl transition-all duration-300 overflow-hidden group',
+        'relative p-5 rounded-2xl transition-all duration-300 overflow-hidden group cursor-pointer',
         'bg-slate-900/40 border border-slate-800/60 hover:border-slate-700/80'
       )}
     >
@@ -82,7 +91,10 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
             <div className="flex items-center gap-2">
               <h3 className="text-base font-semibold text-white">{workflow.name}</h3>
               <button
-                onClick={() => toggleWorkflowFavorite(workflow.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleWorkflowFavorite(workflow.id);
+                }}
                 aria-label={workflow.isFavorite ? '取消收藏' : '收藏'}
                 aria-pressed={workflow.isFavorite}
                 className="text-amber-400 opacity-80 hover:opacity-100 transition-opacity"
@@ -91,7 +103,10 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
               </button>
               <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
-                  onClick={() => onEdit(workflow)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(workflow);
+                  }}
                   title="编辑"
                   aria-label="编辑工作流"
                   className="p-1 rounded-md text-slate-500 hover:text-slate-200 hover:bg-slate-800/60 transition-colors"
@@ -99,7 +114,10 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() => setConfirmDelete(true)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmDelete(true);
+                  }}
                   title="删除"
                   aria-label="删除工作流"
                   className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-slate-800/60 transition-colors"
@@ -111,7 +129,10 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
             <p className="text-xs text-slate-500 mt-1">{workflow.description}</p>
           </div>
           <button
-            onClick={handleLaunch}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleLaunch();
+            }}
             disabled={phase.status === 'launching'}
             className={cn(
               'px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-1.5',
@@ -138,13 +159,19 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
             <span>确定删除「{workflow.name}」？</span>
             <div className="flex items-center gap-2 shrink-0">
               <button
-                onClick={() => setConfirmDelete(false)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmDelete(false);
+                }}
                 className="px-2 py-1 rounded-md text-slate-400 hover:text-slate-200 transition-colors"
               >
                 取消
               </button>
               <button
-                onClick={() => deleteWorkflow(workflow.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteWorkflow(workflow.id);
+                }}
                 className="px-2 py-1 rounded-md bg-rose-500 text-white hover:bg-rose-600 transition-colors"
               >
                 删除
