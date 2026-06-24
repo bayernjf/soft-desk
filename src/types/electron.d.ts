@@ -134,6 +134,26 @@ export interface AiSemanticSearchResult {
   ids: string[] | null;
 }
 
+export interface AuthProfile {
+  userId: string;
+  email: string;
+  nickname: string;
+  avatarUrl: string | null;
+  plan: 'free' | 'pro';
+  emailVerified: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
+export interface AuthSession {
+  loggedIn: boolean;
+  profile?: AuthProfile;
+}
+
+export type AuthResult =
+  | { success: true; profile: AuthProfile }
+  | { success: false; error: string };
+
 export interface SoftdeskBridge {
   scanSoftware: (smartGrouping?: boolean) => Promise<Software[]>;
   launchSoftware: (
@@ -176,6 +196,18 @@ export interface SoftdeskBridge {
   onSearchStreamDelta: (callback: (delta: AiSearchStreamDelta) => void) => () => void;
   /** 查询当前是否有启用且配置完整的 AI 模型 */
   hasAiProvider: () => Promise<{ hasProvider: boolean }>;
+  /** 邮箱+密码注册账号;成功返回脱敏资料,Token 由主进程加密落盘 */
+  registerAccount: (input: {
+    email: string;
+    password: string;
+    nickname?: string;
+  }) => Promise<AuthResult>;
+  /** 邮箱+密码登录;成功返回脱敏资料 */
+  loginAccount: (input: { email: string; password: string }) => Promise<AuthResult>;
+  /** 退出登录,清除本机加密 Token */
+  logoutAccount: () => Promise<{ success: boolean }>;
+  /** 查询当前登录态与脱敏资料(渲染层无法拿到明文 Token) */
+  getAuthSession: () => Promise<AuthSession>;
   toggleMaximize: () => Promise<{ maximized: boolean }>;
   /** 监听由托盘菜单或全局快捷键触发的"打开快速启动器"事件,返回取消监听函数 */
   onOpenLauncher: (callback: () => void) => () => void;

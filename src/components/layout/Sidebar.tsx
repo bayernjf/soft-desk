@@ -9,8 +9,10 @@ import {
   FolderOpenDot,
   Sparkles,
   ChevronRight,
+  UserRound,
 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { CATEGORIES } from '@/data/categories';
 import { cn } from '@/lib/utils';
 
@@ -25,6 +27,8 @@ const navItems = [
 export function Sidebar() {
   const software = useSoftwareStore((s) => s.software);
   const selectedCategory = useSoftwareStore((s) => s.selectedCategory);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
+  const profile = useAuthStore((s) => s.profile);
   const location = useLocation();
   const inLibrary = location.pathname === '/library';
 
@@ -136,7 +140,26 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="p-3 border-t border-slate-800/60">
+      <div className="p-3 border-t border-slate-800/60 space-y-1">
+        <NavLink
+          to="/account"
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
+              isActive
+                ? 'bg-slate-800/60 text-white'
+                : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
+            )
+          }
+        >
+          <UserRound className="w-4 h-4" />
+          <span className="flex-1 truncate">
+            {loggedIn && profile ? profile.nickname : '登录账号'}
+          </span>
+          {loggedIn && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-label="已登录" />
+          )}
+        </NavLink>
         <NavLink
           to="/settings"
           className={({ isActive }) =>

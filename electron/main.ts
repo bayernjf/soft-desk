@@ -17,6 +17,7 @@ import {
   type AiChatMessage,
   type SearchCandidate,
 } from './ai';
+import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession } from './auth';
 
 function todayKey(): string {
   const d = new Date();
@@ -237,8 +238,15 @@ async function classifyUncategorized(apps: ScannedApp[]): Promise<ScannedApp[]> 
       }))
     );
     for (const a of pending) aiClassifiedIds.add(a.id);
-    if (Object.keys(mapping).length === 0) return apps;
+    if (Object.keys(mapping).length === 0) {
+      console.log(`[softdesk] AI classify: ${pending.length} 个待分类应用，模型未返回有效结果`);
+      return apps;
+    }
 
+    console.log(
+      `[softdesk] AI classify: ${pending.length} 个待分类，命中 ${Object.keys(mapping).length} 个`,
+      mapping
+    );
     await applyAiCategories(mapping as Record<string, ScannedCategory>);
     return apps.map((a) => {
       const next = mapping[a.id];
@@ -583,6 +591,34 @@ ipcMain.handle('settings:sync', (_event, prefs: unknown) => {
   }
   persistWindowPrefs();
   return { success: true };
+});
+
+// 账号登录(邮箱/密码):凭证校验、密码哈希、Token 加密落盘均在主进程完成,
+// 渲染层只拿到登录态与脱敏资料(见 Technical-Architecture.md §6.5)。
+ipcMain.handle('auth:register', (_event, raw: unknown) => {
+  const input = (raw && typeof raw === 'object' ? raw : {}) as {
+    email?: string;
+    password?: string;
+    nickname?: string;
+  };
+  return authRegister(input.email, input.password, input.nickname);
+});
+
+ipcMain.handle('auth:login', (_event, raw: unknown) => {
+  const input = (raw && typeof raw === 'object' ? raw : {}) as {
+    email?: string;
+    password?: string;
+  };
+  return authLogin(input.email, input.password);
+});
+
+ipcMain.handle('auth:logout', () => {
+  authLogout();
+  return { success: true };
+});
+
+ipcMain.handle('auth:getSession', () => {
+  return authGetSession();
 });
 
 ipcMain.handle('software:remove', async (_event, appPath: string) => {

@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { QuickLauncher } from '@/components/features/QuickLauncher';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useSettingsStore, syncWindowPrefs } from '@/stores/settings.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { cn } from '@/lib/utils';
 
 export function Layout() {
@@ -72,10 +73,14 @@ export function Layout() {
     };
   }, [applyScannedApps]);
 
+  // 启动时向主进程(权威)查询登录态,回填渲染层会话(仅登录态 + 脱敏资料)
+  useEffect(() => {
+    void useAuthStore.getState().hydrateSession();
+  }, []);
+
   // 接通快速启动器:Electron 托盘/全局快捷键事件 + 应用内键盘快捷键(⌘⇧Space)
   useEffect(() => {
     const unsubscribe = window.softdesk?.onOpenLauncher(() => setLauncherOpen(true));
-
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'Space') {
         e.preventDefault();

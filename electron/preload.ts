@@ -52,6 +52,12 @@ contextBridge.exposeInMainWorld('softdesk', {
     return () => ipcRenderer.removeListener('ai:searchStream:delta', handler);
   },
   hasAiProvider: () => ipcRenderer.invoke('ai:hasProvider'),
+  registerAccount: (input: { email: string; password: string; nickname?: string }) =>
+    ipcRenderer.invoke('auth:register', input),
+  loginAccount: (input: { email: string; password: string }) =>
+    ipcRenderer.invoke('auth:login', input),
+  logoutAccount: () => ipcRenderer.invoke('auth:logout'),
+  getAuthSession: () => ipcRenderer.invoke('auth:getSession'),
   toggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
   onOpenLauncher: (callback: () => void) => {
     const handler = () => callback();
