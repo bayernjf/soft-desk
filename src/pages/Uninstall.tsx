@@ -4,7 +4,6 @@ import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatSize } from '@/services/software.service';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
-import { LazyMount } from '@/components/features/LazyMount';
 import type { SoftwareCategory } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -74,78 +73,8 @@ export function Uninstall() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-5">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索软件名称、描述或标签..."
-              className={cn(
-                'w-full pl-11 pr-10 py-3.5 rounded-2xl bg-slate-900/60 border border-slate-800',
-                'text-sm text-slate-100 placeholder:text-slate-600',
-                'focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all'
-              )}
-            />
-            {query && (
-              <button
-                onClick={() => setQuery('')}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-slate-800 text-slate-500"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={() => setCategory('all')}
-              className={cn(
-                'px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
-                category === 'all'
-                  ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-                  : 'bg-slate-800/50 text-slate-400 border border-slate-800/60 hover:bg-slate-800 hover:text-slate-300'
-              )}
-            >
-              全部
-            </button>
-            {CATEGORIES.filter((c) => software.some((s) => s.category === c.id)).map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setCategory(cat.id)}
-                className={cn(
-                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
-                  category === cat.id
-                    ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-                    : 'bg-slate-800/50 text-slate-400 border border-slate-800/60 hover:bg-slate-800 hover:text-slate-300'
-                )}
-              >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-200">全部软件</h2>
-            <span className="text-xs text-slate-500 tabular-nums">{filtered.length} 个</span>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            {filtered.map((sw) => (
-              <LazyMount key={sw.id} estimatedHeight={96}>
-                <SoftwareCard software={sw} context="uninstall" />
-              </LazyMount>
-            ))}
-            {filtered.length === 0 && (
-              <div className="col-span-full py-20 text-center">
-                <div className="text-slate-600 text-sm">没有找到匹配的软件</div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <aside className="space-y-4">
+      <div className="flow-root -mx-1.5">
+        <aside className="px-1.5 space-y-4 mb-5 lg:float-right lg:mb-5 lg:w-1/3">
           <section className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-slate-900/40 to-slate-900/40 border border-amber-500/20">
             <div className="flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
@@ -237,6 +166,79 @@ export function Uninstall() {
             </button>
           )}
         </aside>
+
+        <div className="flow-root px-1.5 space-y-5 mb-5">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索软件名称、描述或标签..."
+              className={cn(
+                'w-full pl-11 pr-10 py-3.5 rounded-2xl bg-slate-900/60 border border-slate-800',
+                'text-sm text-slate-100 placeholder:text-slate-600',
+                'focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all'
+              )}
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-slate-800 text-slate-500"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setCategory('all')}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                category === 'all'
+                  ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                  : 'bg-slate-800/50 text-slate-400 border border-slate-800/60 hover:bg-slate-800 hover:text-slate-300'
+              )}
+            >
+              全部
+            </button>
+            {CATEGORIES.filter((c) => software.some((s) => s.category === c.id)).map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setCategory(cat.id)}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                  category === cat.id
+                    ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                    : 'bg-slate-800/50 text-slate-400 border border-slate-800/60 hover:bg-slate-800 hover:text-slate-300'
+                )}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-200">全部软件</h2>
+            <span className="text-xs text-slate-500 tabular-nums">{filtered.length} 个</span>
+          </div>
+        </div>
+
+        <div className="text-[0]">
+          {filtered.map((sw) => (
+            <div
+              key={sw.id}
+              className="inline-block align-top w-full sm:w-1/2 lg:w-1/3 px-1.5 pb-3"
+            >
+              <SoftwareCard software={sw} context="uninstall" />
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="py-20 text-center">
+              <div className="text-slate-600 text-sm">没有找到匹配的软件</div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
