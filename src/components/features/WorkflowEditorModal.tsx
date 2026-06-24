@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
-import { X, Check, Search } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { X, Search } from 'lucide-react';
 import type { Workflow } from '@/types';
 import { useSoftwareStore, type WorkflowInput } from '@/stores/software.store';
-import { WORKFLOW_COLORS } from '@/data/categories';
+import { WORKFLOW_COLORS, CATEGORIES } from '@/data/categories';
+import { formatMinutes } from '@/services/software.service';
+import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
 
 interface WorkflowEditorModalProps {
@@ -35,10 +37,25 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
     s.name.toLowerCase().includes(query.trim().toLowerCase())
   );
 
-  const toggleSoftware = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+  // 已选软件(按选择顺序),用于上方展示区
+  const selectedSoftware = useMemo(
+    () =>
+      selectedIds
+        .map((id) => software.find((s) => s.id === id))
+        .filter((s): s is NonNullable<typeof s> => !!s),
+    [selectedIds, software]
+  );
+
+  // 下方候选列表:剔除已选,点击即移入展示区
+  const availableSoftware = filteredSoftware.filter((s) => !selectedIds.includes(s.id));
+
+  const addSoftware = (id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setError('');
+  };
+
+  const removeSoftware = (id: string) => {
+    setSelectedIds((prev) => prev.filter((x) => x !== id));
   };
 
   const handleSubmit = () => {
@@ -150,6 +167,37 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
               </label>
               <span className="text-xs text-slate-500">已选 {selectedIds.length} 个</span>
             </div>
+
+            {/* 已选展示区:小卡片网格,右上角 × 移回候选列表 */}
+            <div className="mb-3 p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 min-h-[3.5rem]">
+              {selectedSoftware.length === 0 ? (
+                <div className="px-2 py-3 text-center text-xs text-slate-600">
+                  从下方列表点击软件，添加到这里
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {selectedSoftware.map((s) => (
+                    <div
+                      key={s.id}
+                      className="relative flex items-center gap-2 pl-2 pr-7 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/60"
+                    >
+                      <AppIcon software={s} size={28} rounded="rounded-md" />
+                      <span className="flex-1 text-xs font-medium text-slate-200 truncate">
+                        {s.name}
+                      </span>
+                      <button
+                        onClick={() => removeSoftware(s.id)}
+                        aria-label={`移除 ${s.name}`}
+                        className="absolute top-1 right-1 p-0.5 rounded-md text-slate-500 hover:text-rose-400 hover:bg-slate-700/60 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="relative mb-2.5">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
               <input
@@ -163,38 +211,43 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
                 )}
               />
             </div>
-            <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-800 divide-y divide-slate-800/60">
-              {filteredSoftware.length === 0 ? (
-                <div className="px-3 py-6 text-center text-xs text-slate-600">未找到软件</div>
+
+            {/* 候选列表:胶囊样式 + 双列网格,卡片之间留间隙;点击即移入展示区 */}
+            <div className="max-h-52 overflow-y-auto pr-0.5">
+              {availableSoftware.length === 0 ? (
+                <div className="px-3 py-6 text-center text-xs text-slate-600">
+                  {filteredSoftware.length === 0 ? '未找到软件' : '已全部添加'}
+                </div>
               ) : (
-                filteredSoftware.map((s) => {
-                  const checked = selectedIds.includes(s.id);
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => toggleSoftware(s.id)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-800/40 transition-colors text-left"
-                    >
-                      <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-semibold shrink-0"
-                        style={{ backgroundColor: s.color + '30', color: s.color }}
-                      >
-                        {s.name.slice(0, 2)}
-                      </div>
-                      <span className="flex-1 text-sm text-slate-200 truncate">{s.name}</span>
-                      <div
+                <div className="grid grid-cols-2 gap-2">
+                  {availableSoftware.map((s) => {
+                    const categoryMeta = CATEGORIES.find((c) => c.id === s.category);
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => addSoftware(s.id)}
                         className={cn(
-                          'w-5 h-5 rounded-md border flex items-center justify-center transition-colors shrink-0',
-                          checked
-                            ? 'bg-violet-500 border-violet-500'
-                            : 'border-slate-700'
+                          'flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full text-left group min-w-0',
+                          'bg-slate-800/40 border border-slate-800/60',
+                          'hover:bg-slate-800/70 hover:border-slate-700/80 transition-colors'
                         )}
                       >
-                        {checked && <Check className="w-3.5 h-3.5 text-white" />}
-                      </div>
-                    </button>
-                  );
-                })
+                        <AppIcon
+                          software={s}
+                          size={32}
+                          rounded="rounded-full"
+                          className="shrink-0 transition-transform duration-200 group-hover:scale-105"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-slate-100 truncate">{s.name}</div>
+                          <div className="text-xs text-slate-500 truncate">
+                            {categoryMeta?.name} · {formatMinutes(s.usageMinutes)}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
