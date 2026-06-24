@@ -546,3 +546,141 @@ export async function semanticSearch(
   }
   return out.slice(0, 10);
 }
+
+const SEARCH_STREAM_SYSTEM = `你是一个 macOS 应用搜索助手。用户用自然语言描述意图（如"截屏""做表格""改图""录屏""连数据库"），你要从给定的候选应用里挑出能完成该意图的应用。
+请严格按以下两步输出：
+1. 先用一两句简短中文说明你的思考过程：分析用户意图、判断哪些候选应用相关、为什么相关；
+2. 然后另起一行，只输出一行 JSON：{"ids":["id1","id2"]}
+要求：
+- 理解意图而非字面匹配（例如"截屏"应匹配截图类工具，"做表格"应匹配电子表格类应用）；
+- ids 只能是给定候选里的 id，按相关度从高到低排序，最多 10 个；
+- 没有任何相关应用时 ids 返回空数组，绝不编造 id。`;
+
+/** 解析单行 OpenAI SSE 流:每行 data: {json};提取 delta.content 与 delta.reasoning_content。 */
+function parseOpenAiSseLine(line: string): { content?: string; reasoning?: string } | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('data:')) return null;
+  const payload = trimmed.slice(5).trim();
+  if (!payload || payload === '[DONE]') return null;
+  try {
+    const data = JSON.parse(payload) as {
+      choices?: { delta?: { content?: string; reasoning_content?: string; reasoning?: string } }[];
+    };
+    const delta = data?.choices?.[0]?.delta;
+    if (!delta) return null;
+    return {
+      content: typeof delta.content === 'string' ? delta.content : undefined,
+      reasoning:
+        typeof delta.reasoning_content === 'string'
+          ? delta.reasoning_content
+          : typeof delta.reasoning === 'string'
+            ? delta.reasoning
+            : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** OpenAI 兼容协议的流式补全:实时把 reasoning / content 增量通过 onDelta 推出,
+ *  返回累计的正文 content(供解析最终 JSON)。失败返回 null。 */
+async function streamOpenAi(
+  config: AiProviderConfig,
+  options: AiCompleteOptions,
+  onDelta: (chunk: { content?: string; reasoning?: string }) => void
+): Promise<string | null> {
+  const url = joinPath(effectiveEndpoint(config), '/chat/completions');
+  const body: Record<string, unknown> = {
+    model: config.model.trim(),
+    messages: options.messages,
+    temperature: options.temperature ?? 0.3,
+    max_tokens: options.maxTokens ?? 1024,
+    stream: true,
+  };
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) return null;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let content = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      const delta = parseOpenAiSseLine(line);
+      if (!delta) continue;
+      if (delta.content) content += delta.content;
+      if (delta.content || delta.reasoning) onDelta(delta);
+    }
+  }
+  return content;
+}
+
+/** 流式语义搜索:实时推送模型思考增量(onDelta),最终解析并返回相关软件 id。
+ *  仅 OpenAI 兼容协议走流式;anthropic/gemini 回退到非流式 semanticSearch(无思考增量)。
+ *  无启用模型 / 失败 / 解析失败时返回 null,由调用方回退本地匹配。 */
+export async function semanticSearchStream(
+  query: string,
+  candidates: SearchCandidate[],
+  onDelta: (chunk: { content?: string; reasoning?: string }) => void
+): Promise<string[] | null> {
+  const config = getActiveProvider();
+  const q = (query ?? '').trim();
+  if (!config || !q || candidates.length === 0) return null;
+
+  if (config.provider === 'anthropic' || config.provider === 'gemini') {
+    return semanticSearch(query, candidates);
+  }
+
+  const payload = candidates.slice(0, 200).map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description ?? '',
+    category: c.category ?? '',
+    tags: Array.isArray(c.tags) ? c.tags.slice(0, 8) : [],
+  }));
+
+  let content: string | null;
+  try {
+    content = await streamOpenAi(
+      config,
+      {
+        messages: [
+          { role: 'system', content: SEARCH_STREAM_SYSTEM },
+          { role: 'user', content: JSON.stringify({ query: q, apps: payload }) },
+        ],
+        temperature: 0,
+        maxTokens: 600,
+      },
+      onDelta
+    );
+  } catch {
+    return null;
+  }
+  if (content === null) return null;
+
+  const parsed = parseJsonLoose<{ ids?: unknown }>(content);
+  if (!parsed || !Array.isArray(parsed.ids)) return null;
+
+  const validIds = new Set(candidates.map((c) => c.id));
+  const seenIds = new Set<string>();
+  const result: string[] = [];
+  for (const id of parsed.ids) {
+    if (typeof id === 'string' && validIds.has(id) && !seenIds.has(id)) {
+      seenIds.add(id);
+      result.push(id);
+    }
+  }
+  return result.slice(0, 10);
+}

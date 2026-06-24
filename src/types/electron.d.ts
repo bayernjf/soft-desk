@@ -114,6 +114,21 @@ export interface AiSemanticSearchInput {
   candidates: AiSearchCandidate[];
 }
 
+export interface AiSemanticSearchStreamInput {
+  /** 标识本次流式搜索,渲染层据此只消费属于自己的增量 */
+  streamId: string;
+  query: string;
+  candidates: AiSearchCandidate[];
+}
+
+export interface AiSearchStreamDelta {
+  streamId: string;
+  /** 模型正文增量(含最终 JSON,UI 一般不直接展示) */
+  content?: string;
+  /** 模型思考过程增量(reasoning_content),用于实时展示思考 */
+  reasoning?: string;
+}
+
 export interface AiSemanticSearchResult {
   /** 按相关度排序的软件 id;null 表示无模型/失败,调用方应回退本地匹配 */
   ids: string[] | null;
@@ -153,6 +168,12 @@ export interface SoftdeskBridge {
   }) => Promise<{ suggestions: AiWorkflowSuggestion[] }>;
   /** 自然语言语义搜索:返回按相关度排序的软件 id(null 表示回退本地匹配) */
   semanticSearch: (input: AiSemanticSearchInput) => Promise<AiSemanticSearchResult>;
+  /** 流式自然语言语义搜索:实时通过 onSearchStreamDelta 推送思考增量,最终返回软件 id */
+  semanticSearchStream: (
+    input: AiSemanticSearchStreamInput
+  ) => Promise<AiSemanticSearchResult>;
+  /** 监听流式语义搜索的思考增量,返回取消监听函数 */
+  onSearchStreamDelta: (callback: (delta: AiSearchStreamDelta) => void) => () => void;
   /** 查询当前是否有启用且配置完整的 AI 模型 */
   hasAiProvider: () => Promise<{ hasProvider: boolean }>;
   toggleMaximize: () => Promise<{ maximized: boolean }>;

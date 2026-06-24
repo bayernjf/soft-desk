@@ -71,3 +71,61 @@ export async function searchSoftwareByIntent(
     return null;
   }
 }
+
+/** 从流式累积的正文里剥离最终结果 JSON(```json 围栏 / {"ids":...} 对象),
+ *  只保留可读的思考文字,供 UI 展示。 */
+function stripResultJson(text: string): string {
+  let out = text;
+  const fenceIdx = out.search(/```/);
+  if (fenceIdx !== -1) out = out.slice(0, fenceIdx);
+  const idsIdx = out.search(/\{\s*"ids"/);
+  if (idsIdx !== -1) out = out.slice(0, idsIdx);
+  return out.trim();
+}
+
+/** 流式自然语言语义搜索:onThinking 实时接收模型思考过程文本(累计),返回相关软件 id。
+ *  无 bridge / 无启用模型 / 调用失败时返回 null,调用方据此回退到本地字面匹配。 */
+export async function searchSoftwareByIntentStream(
+  query: string,
+  software: Software[],
+  onThinking: (thinkingText: string) => void
+): Promise<string[] | null> {
+  if (
+    typeof window === 'undefined' ||
+    !window.softdesk?.semanticSearchStream ||
+    !window.softdesk?.onSearchStreamDelta
+  ) {
+    return null;
+  }
+
+  const candidates = software
+    .filter((s) => !s.uninstalled && !s.deleted)
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      category: s.category,
+      tags: s.tags,
+    }));
+
+  if (!query.trim() || candidates.length === 0) return null;
+
+  const streamId = `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  let thinking = '';
+  const unsubscribe = window.softdesk.onSearchStreamDelta((delta) => {
+    if (delta.streamId !== streamId) return;
+    const piece = delta.reasoning ?? delta.content ?? '';
+    if (!piece) return;
+    thinking += piece;
+    onThinking(stripResultJson(thinking));
+  });
+
+  try {
+    const res = await window.softdesk.semanticSearchStream({ streamId, query, candidates });
+    return Array.isArray(res?.ids) ? res.ids : null;
+  } catch {
+    return null;
+  } finally {
+    unsubscribe();
+  }
+}

@@ -13,6 +13,7 @@ import {
   classifyApps,
   suggestWorkflows,
   semanticSearch,
+  semanticSearchStream,
   type AiChatMessage,
   type SearchCandidate,
 } from './ai';
@@ -538,6 +539,33 @@ ipcMain.handle('ai:semanticSearch', async (_event, raw: unknown) => {
   const candidates = Array.isArray(input.candidates) ? input.candidates : [];
   if (!query.trim() || candidates.length === 0) return { ids: null };
   const ids = await semanticSearch(query, candidates);
+  return { ids };
+});
+
+// 流式语义搜索:边推理边把模型思考增量(reasoning/content)通过 'ai:searchStream:delta'
+// 推回发起的渲染进程,最终返回相关软件 id;无启用模型/失败时返回 { ids: null }。
+// streamId 用于渲染层区分并发的多次搜索,只消费属于自己的增量。
+ipcMain.handle('ai:semanticSearchStream', async (event, raw: unknown) => {
+  if (!getActiveProvider()) return { ids: null };
+  const input = (raw && typeof raw === 'object' ? raw : {}) as {
+    streamId?: string;
+    query?: string;
+    candidates?: SearchCandidate[];
+  };
+  const streamId = typeof input.streamId === 'string' ? input.streamId : '';
+  const query = typeof input.query === 'string' ? input.query : '';
+  const candidates = Array.isArray(input.candidates) ? input.candidates : [];
+  if (!streamId || !query.trim() || candidates.length === 0) return { ids: null };
+
+  const sender = event.sender;
+  const ids = await semanticSearchStream(query, candidates, (chunk) => {
+    if (sender.isDestroyed()) return;
+    sender.send('ai:searchStream:delta', {
+      streamId,
+      content: chunk.content,
+      reasoning: chunk.reasoning,
+    });
+  });
   return { ids };
 });
 

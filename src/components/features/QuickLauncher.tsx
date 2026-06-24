@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Rocket, Layers, CornerDownLeft, Loader2 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useSettingsStore } from '@/stores/settings.store';
 import { useSemanticSearch } from '@/hooks/useSemanticSearch';
 import { hasActiveAiProvider } from '@/services/ai.service';
+import { fieldMatches } from '@/lib/searchMatch';
 import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
 import type { Software, Workflow } from '@/types';
@@ -23,6 +25,7 @@ export function QuickLauncher({ open, onClose }: QuickLauncherProps) {
   const workflows = useSoftwareStore((s) => s.workflows);
   const launchSoftware = useSoftwareStore((s) => s.launchSoftware);
   const launchWorkflow = useSoftwareStore((s) => s.launchWorkflow);
+  const aiSearchEnabled = useSettingsStore((s) => s.prefs.aiSearch);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const [aiReady, setAiReady] = useState(false);
@@ -65,14 +68,14 @@ export function QuickLauncher({ open, onClose }: QuickLauncherProps) {
     return available
       .filter(
         (s) =>
-          s.name.toLowerCase().includes(q) ||
-          s.tags.some((t) => t.toLowerCase().includes(q)) ||
-          s.publisher?.toLowerCase().includes(q)
+          fieldMatches(s.name, q) ||
+          s.tags.some((t) => fieldMatches(t, q)) ||
+          (s.publisher ? fieldMatches(s.publisher, q) : false)
       )
       .slice(0, MAX_RESULTS);
   }, [query, available]);
 
-  const semantic = useSemanticSearch(query, available, aiReady, localSoftware.length);
+  const semantic = useSemanticSearch(query, available, aiReady, localSoftware.length, aiSearchEnabled);
 
   const items = useMemo<LauncherItem[]>(() => {
     const q = query.trim().toLowerCase();

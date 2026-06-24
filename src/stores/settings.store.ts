@@ -17,6 +17,7 @@ export interface AppPreferences {
   weeklyReport: boolean;
   smartGrouping: boolean;
   aiSuggestions: boolean;
+  aiSearch: boolean;
   sendAnalytics: boolean;
   anonymizeData: boolean;
   scanOnStartup: boolean;
@@ -43,6 +44,7 @@ const DEFAULT_PREFS: AppPreferences = {
   weeklyReport: true,
   smartGrouping: true,
   aiSuggestions: true,
+  aiSearch: true,
   sendAnalytics: false,
   anonymizeData: true,
   scanOnStartup: true,

@@ -36,6 +36,21 @@ contextBridge.exposeInMainWorld('softdesk', {
     query: string;
     candidates: { id: string; name: string; description?: string; category?: string; tags?: string[] }[];
   }) => ipcRenderer.invoke('ai:semanticSearch', input),
+  semanticSearchStream: (input: {
+    streamId: string;
+    query: string;
+    candidates: { id: string; name: string; description?: string; category?: string; tags?: string[] }[];
+  }) => ipcRenderer.invoke('ai:semanticSearchStream', input),
+  onSearchStreamDelta: (
+    callback: (delta: { streamId: string; content?: string; reasoning?: string }) => void
+  ) => {
+    const handler = (
+      _e: unknown,
+      delta: { streamId: string; content?: string; reasoning?: string }
+    ) => callback(delta);
+    ipcRenderer.on('ai:searchStream:delta', handler);
+    return () => ipcRenderer.removeListener('ai:searchStream:delta', handler);
+  },
   hasAiProvider: () => ipcRenderer.invoke('ai:hasProvider'),
   toggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
   onOpenLauncher: (callback: () => void) => {
