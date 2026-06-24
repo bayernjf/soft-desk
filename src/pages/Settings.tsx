@@ -3,6 +3,7 @@ import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog 
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
+import { AiModelsSection } from '@/components/features/AiModelsSection';
 
 type TabId = 'appearance' | 'notifications' | 'data' | 'privacy' | 'ai' | 'help';
 
@@ -211,21 +212,24 @@ export function Settings() {
           )}
 
           {activeTab === 'ai' && (
-            <div className="space-y-0 max-w-lg border-t border-slate-800/80">
+            <div className="space-y-0 max-w-2xl border-t border-slate-800/80">
               <h2 className="text-base font-semibold text-slate-100 mb-1 pt-0">AI 功能</h2>
               <p className="text-sm text-slate-500 mb-6">基于 AI 的智能建议与自动化</p>
-              <Toggle
-                checked={prefs.smartGrouping}
-                onChange={toggleSmartGrouping}
-                label="智能分类"
-                description="AI 自动将同类软件分组到合适的分类"
-              />
-              <Toggle
-                checked={prefs.aiSuggestions}
-                onChange={() => togglePref('aiSuggestions')}
-                label="工作流建议"
-                description="基于使用习惯，为你推荐常用的软件组合"
-              />
+              <div className="max-w-lg">
+                <Toggle
+                  checked={prefs.smartGrouping}
+                  onChange={toggleSmartGrouping}
+                  label="智能分类"
+                  description="AI 自动将同类软件分组到合适的分类"
+                />
+                <Toggle
+                  checked={prefs.aiSuggestions}
+                  onChange={() => togglePref('aiSuggestions')}
+                  label="工作流建议"
+                  description="基于使用习惯，为你推荐常用的软件组合"
+                />
+              </div>
+              <AiModelsSection />
             </div>
           )}
 
