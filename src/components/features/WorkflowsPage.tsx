@@ -137,7 +137,7 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
             }}
             disabled={phase.status === 'launching'}
             className={cn(
-              'px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-1.5',
+              'px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-1.5 min-w-[96px] shrink-0',
               'bg-white text-slate-900 hover:bg-slate-100 shadow-lg shadow-slate-900/20',
               'active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100'
             )}
