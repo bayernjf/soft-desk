@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Software, Workflow, SoftwareCategory } from '@/types';
 import { WORKFLOW_COLORS } from '@/data/categories';
+import { useSettingsStore } from '@/stores/settings.store';
 
 export interface WorkflowLaunchResult {
   total: number;
@@ -94,7 +95,8 @@ export const useSoftwareStore = create<SoftwareStore>()(
     }
     set({ isScanning: true, scanError: null });
     try {
-      const apps = await window.softdesk.scanSoftware();
+      const smartGrouping = useSettingsStore.getState().prefs.smartGrouping;
+      const apps = await window.softdesk.scanSoftware(smartGrouping);
       get().applyScannedApps(apps);
       set({ isScanning: false });
     } catch (err) {

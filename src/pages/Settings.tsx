@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings.store';
+import { useSoftwareStore } from '@/stores/software.store';
 
 type TabId = 'appearance' | 'notifications' | 'data' | 'privacy' | 'ai' | 'help';
 
@@ -54,6 +55,13 @@ export function Settings() {
   const setTheme = useSettingsStore((s) => s.setTheme);
   const prefs = useSettingsStore((s) => s.prefs);
   const togglePref = useSettingsStore((s) => s.togglePref);
+  const scanSoftware = useSoftwareStore((s) => s.scanSoftware);
+
+  // 切换"智能分类"后立即重扫,使新的分类策略即时反映到全局软件列表
+  const toggleSmartGrouping = () => {
+    togglePref('smartGrouping');
+    void scanSoftware();
+  };
 
   const openStorage = () => {
     window.softdesk?.openUserData?.();
@@ -208,7 +216,7 @@ export function Settings() {
               <p className="text-sm text-slate-500 mb-6">基于 AI 的智能建议与自动化</p>
               <Toggle
                 checked={prefs.smartGrouping}
-                onChange={() => togglePref('smartGrouping')}
+                onChange={toggleSmartGrouping}
                 label="智能分类"
                 description="AI 自动将同类软件分组到合适的分类"
               />
