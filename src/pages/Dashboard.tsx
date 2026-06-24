@@ -1,12 +1,15 @@
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowUpRight, Clock, Sparkles, TrendingUp } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useSettingsStore } from '@/stores/settings.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
 import { AppIcon } from '@/components/features/AppIcon';
 import { cn } from '@/lib/utils';
+import type { CoUsagePair } from '@/types/electron';
 
 function StatCard({
   icon: Icon,
@@ -45,6 +48,11 @@ function StatCard({
 export function Dashboard() {
   const software = useSoftwareStore((s) => s.software);
   const workflows = useSoftwareStore((s) => s.workflows);
+  const createWorkflow = useSoftwareStore((s) => s.createWorkflow);
+  const isElectron = useSoftwareStore((s) => s.isElectron);
+  const aiSuggestionsEnabled = useSettingsStore((s) => s.prefs.aiSuggestions);
+  const navigate = useNavigate();
+  const [coUsage, setCoUsage] = useState<CoUsagePair[]>([]);
 
   const topApps = [...software].sort((a, b) => b.usageMinutes - a.usageMinutes).slice(0, 5);
   const recentApps = [...software]
@@ -63,11 +71,78 @@ export function Dashboard() {
     return '晚上好';
   })();
 
-  // 基于真实使用时长的 top 应用生成工作流建议,数据不足时不展示伪建议
-  const suggestionApps = topApps.filter((s) => s.usageMinutes > 0).slice(0, 3);
-  const suggestionText =
-    suggestionApps.length >= 2
-      ? `${suggestionApps.map((s) => s.name).join('、')} 是你使用最频繁的应用，建议创建组合工作流一键启动。`
+  // 拉取基于 sessions 的共现分析数据(仅在 Electron + 开启 AI 建议时)
+  useEffect(() => {
+    if (!aiSuggestionsEnabled || !isElectron || !window.softdesk?.getSuggestions) {
+      setCoUsage([]);
+      return;
+    }
+    let cancelled = false;
+    window.softdesk
+      .getSuggestions()
+      .then((pairs) => {
+        if (!cancelled) setCoUsage(pairs);
+      })
+      .catch(() => {
+        if (!cancelled) setCoUsage([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiSuggestionsEnabled, isElectron]);
+
+  // 从共现软件对聚合出一个 2-4 个软件的组合建议:以最高频的一对为种子,
+  // 再贪心并入与种子高频共现的相邻软件;仅采用当前已安装且可用的软件。
+  const suggestion = useMemo(() => {
+    const byId = new Map(software.map((s) => [s.id, s]));
+    const available = (id: string) => {
+      const sw = byId.get(id);
+      return sw && !sw.uninstalled && !sw.deleted ? sw : null;
+    };
+
+    const validPairs = coUsage.filter((p) => available(p.a) && available(p.b));
+    if (validPairs.length === 0) return null;
+
+    const seed = validPairs[0];
+    const group = [seed.a, seed.b];
+    for (const pair of validPairs.slice(1)) {
+      if (group.length >= 4) break;
+      if (group.includes(pair.a) && !group.includes(pair.b)) group.push(pair.b);
+      else if (group.includes(pair.b) && !group.includes(pair.a)) group.push(pair.a);
+    }
+
+    const apps = group.map((id) => byId.get(id)!).filter(Boolean);
+    if (apps.length < 2) return null;
+
+    // 已存在覆盖同一组软件的工作流则不再重复建议
+    const groupSet = new Set(group);
+    const duplicated = workflows.some(
+      (w) =>
+        w.softwareIds.length === groupSet.size &&
+        w.softwareIds.every((id) => groupSet.has(id))
+    );
+    if (duplicated) return null;
+
+    return { apps, ids: group, strength: seed.count };
+  }, [coUsage, software, workflows]);
+
+  const handleCreateSuggested = () => {
+    if (!suggestion) return;
+    const name = `${suggestion.apps[0].name} 工作流`;
+    createWorkflow({
+      name,
+      description: '基于你的使用习惯智能推荐的软件组合',
+      softwareIds: suggestion.ids,
+      color: '',
+    });
+    navigate('/workflows');
+  };
+
+  // 回退文案:无共现数据时,基于使用时长 top 应用给出轻量建议
+  const fallbackApps = topApps.filter((s) => s.usageMinutes > 0).slice(0, 3);
+  const fallbackText =
+    fallbackApps.length >= 2
+      ? `${fallbackApps.map((s) => s.name).join('、')} 是你使用最频繁的应用，建议创建组合工作流一键启动。`
       : null;
 
   return (
@@ -217,33 +292,60 @@ export function Dashboard() {
             </div>
           </section>
 
-          <section>
-            <h2 className="text-sm font-semibold text-slate-200 mb-4">AI 建议</h2>
-            {suggestionText ? (
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-slate-900/40 to-amber-500/5 border border-violet-500/20">
-                <div className="flex items-start gap-2.5 mb-3">
-                  <Sparkles className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-200">优化你的工作流</h3>
-                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">{suggestionText}</p>
+          {aiSuggestionsEnabled && (
+            <section>
+              <h2 className="text-sm font-semibold text-slate-200 mb-4">AI 建议</h2>
+              {suggestion ? (
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-slate-900/40 to-amber-500/5 border border-violet-500/20">
+                  <div className="flex items-start gap-2.5 mb-3">
+                    <Sparkles className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-200">推荐工作流组合</h3>
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        你经常一起使用 {suggestion.apps.map((s) => s.name).join('、')}，建议组成一个工作流一键启动。
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mb-3">
+                    {suggestion.apps.map((sw) => (
+                      <div key={sw.id} title={sw.name}>
+                        <AppIcon software={sw} size={32} rounded="rounded-lg" />
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={handleCreateSuggested}
+                    className="block w-full py-2.5 rounded-xl bg-violet-500/15 text-violet-300 text-xs font-medium hover:bg-violet-500/25 transition-colors text-center"
+                  >
+                    一键创建该工作流 +
+                  </button>
+                </div>
+              ) : fallbackText ? (
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-slate-900/40 to-amber-500/5 border border-violet-500/20">
+                  <div className="flex items-start gap-2.5 mb-3">
+                    <Sparkles className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-200">优化你的工作流</h3>
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">{fallbackText}</p>
+                    </div>
+                  </div>
+                  <Link
+                    to="/workflows"
+                    className="block w-full py-2.5 rounded-xl bg-violet-500/15 text-violet-300 text-xs font-medium hover:bg-violet-500/25 transition-colors text-center"
+                  >
+                    创建工作流 +
+                  </Link>
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60">
+                  <div className="text-xs text-slate-400 leading-relaxed">
+                    💡 <span className="text-slate-300">提示</span>
+                    ：继续使用应用，积累足够的使用数据后，这里会基于你的真实习惯给出工作流建议。
                   </div>
                 </div>
-                <Link
-                  to="/workflows"
-                  className="block w-full py-2.5 rounded-xl bg-violet-500/15 text-violet-300 text-xs font-medium hover:bg-violet-500/25 transition-colors text-center"
-                >
-                  创建工作流 +
-                </Link>
-              </div>
-            ) : (
-              <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60">
-                <div className="text-xs text-slate-400 leading-relaxed">
-                  💡 <span className="text-slate-300">提示</span>
-                  ：继续使用应用，积累足够的使用数据后，这里会基于你的真实习惯给出工作流建议。
-                </div>
-              </div>
-            )}
-          </section>
+              )}
+            </section>
+          )}
         </aside>
       </div>
     </div>
