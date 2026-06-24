@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
 import type { Software } from '@/types';
-import type { DailyUsageStat } from '@/types/electron';
+import type { DailyUsageStat, HourlyUsage, SegmentUsageByApp } from '@/types/electron';
 
 export type StatsPeriod = 'day' | 'week' | 'month' | 'all';
 
@@ -264,4 +264,56 @@ export function useDailyUsageHeatmap(): DailyUsageHeatmap {
     }
     return { byDate, loading };
   }, [rows, loading]);
+}
+
+export interface TimeSegmentStats {
+  /** 24 个点(0-23 时)的使用分钟数与会话数,固定长度 24 */
+  hourly: HourlyUsage[];
+  /** 每个软件四时段使用时长(按合计降序) */
+  byApp: SegmentUsageByApp[];
+  loading: boolean;
+}
+
+/** 拉取"全天 24 小时活跃节律"与"软件 × 时段使用分布",随 period 切换窗口天数。
+ *  非 Electron 环境返回空数据。 */
+export function useTimeSegmentStats(period: StatsPeriod): TimeSegmentStats {
+  const isElectron = useSoftwareStore((s) => s.isElectron);
+  const [hourly, setHourly] = useState<HourlyUsage[]>([]);
+  const [byApp, setByApp] = useState<SegmentUsageByApp[]>([]);
+  const [loading, setLoading] = useState(isElectron);
+
+  useEffect(() => {
+    if (!isElectron || !window.softdesk?.getHourlyUsage || !window.softdesk?.getSegmentByApp) {
+      setHourly([]);
+      setByApp([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const days = PERIOD_DAYS[period];
+    Promise.all([
+      window.softdesk.getHourlyUsage(days),
+      window.softdesk.getSegmentByApp(days),
+    ])
+      .then(([h, a]) => {
+        if (cancelled) return;
+        setHourly(Array.isArray(h) ? h : []);
+        setByApp(Array.isArray(a) ? a : []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHourly([]);
+          setByApp([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isElectron, period]);
+
+  return { hourly, byApp, loading };
 }

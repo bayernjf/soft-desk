@@ -10,7 +10,7 @@ import { fetchWorkflowSuggestions, hasActiveAiProvider } from '@/services/ai.ser
 import { SoftwareCard } from '@/components/features/SoftwareCard';
 import { AppIcon } from '@/components/features/AppIcon';
 import { cn } from '@/lib/utils';
-import type { CoUsagePair, AiWorkflowSuggestion } from '@/types/electron';
+import type { CoUsagePair, AiWorkflowSuggestion, SegmentCoUsage, TimeSegment } from '@/types/electron';
 
 function StatCard({
   icon: Icon,
@@ -46,6 +46,21 @@ function StatCard({
   );
 }
 
+const SEGMENT_LABEL: Record<TimeSegment, string> = {
+  morning: '早上',
+  afternoon: '下午',
+  evening: '晚上',
+  night: '深夜',
+};
+
+/** 把 0-23 小时映射到时段(与主进程 segmentOfHour 保持一致) */
+function segmentOfHour(hour: number): TimeSegment {
+  if (hour >= 5 && hour <= 11) return 'morning';
+  if (hour >= 12 && hour <= 17) return 'afternoon';
+  if (hour >= 18 && hour <= 22) return 'evening';
+  return 'night';
+}
+
 export function Dashboard() {
   const software = useSoftwareStore((s) => s.software);
   const workflows = useSoftwareStore((s) => s.workflows);
@@ -54,6 +69,7 @@ export function Dashboard() {
   const aiSuggestionsEnabled = useSettingsStore((s) => s.prefs.aiSuggestions);
   const navigate = useNavigate();
   const [coUsage, setCoUsage] = useState<CoUsagePair[]>([]);
+  const [segmentUsage, setSegmentUsage] = useState<SegmentCoUsage[]>([]);
   const [aiProviderReady, setAiProviderReady] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AiWorkflowSuggestion[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
@@ -79,6 +95,7 @@ export function Dashboard() {
   useEffect(() => {
     if (!aiSuggestionsEnabled || !isElectron || !window.softdesk?.getSuggestions) {
       setCoUsage([]);
+      setSegmentUsage([]);
       return;
     }
     let cancelled = false;
@@ -89,6 +106,15 @@ export function Dashboard() {
       })
       .catch(() => {
         if (!cancelled) setCoUsage([]);
+      });
+    // 按时段拆分的共现:用于"当前时段优先"的场景化本地推荐
+    window.softdesk
+      .getSegmentSuggestions?.()
+      .then((segs) => {
+        if (!cancelled) setSegmentUsage(Array.isArray(segs) ? segs : []);
+      })
+      .catch(() => {
+        if (!cancelled) setSegmentUsage([]);
       });
     return () => {
       cancelled = true;
@@ -132,8 +158,8 @@ export function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiSuggestionsEnabled, isElectron]);
 
-  // 从共现软件对聚合出一个 2-4 个软件的组合建议:以最高频的一对为种子,
-  // 再贪心并入与种子高频共现的相邻软件;仅采用当前已安装且可用的软件。
+  // 从共现软件对聚合出一个 2-4 个软件的组合建议:优先用"当前时段"的共现对作为种子
+  // (场景化:如早上常一起开的软件),无当前时段数据时回退到全天共现。
   const suggestion = useMemo(() => {
     const byId = new Map(software.map((s) => [s.id, s]));
     const available = (id: string) => {
@@ -141,7 +167,13 @@ export function Dashboard() {
       return sw && !sw.uninstalled && !sw.deleted ? sw : null;
     };
 
-    const validPairs = coUsage.filter((p) => available(p.a) && available(p.b));
+    // 当前时段优先:取本时段共现对;不足则回退到全天共现
+    const currentSegment = segmentOfHour(new Date().getHours());
+    const segPairs = segmentUsage.find((s) => s.segment === currentSegment)?.pairs ?? [];
+    const useSegment = segPairs.some((p) => available(p.a) && available(p.b));
+    const sourcePairs = useSegment ? segPairs : coUsage;
+
+    const validPairs = sourcePairs.filter((p) => available(p.a) && available(p.b));
     if (validPairs.length === 0) return null;
 
     const seed = validPairs[0];
@@ -164,15 +196,24 @@ export function Dashboard() {
     );
     if (duplicated) return null;
 
-    return { apps, ids: group, strength: seed.count };
-  }, [coUsage, software, workflows]);
+    return {
+      apps,
+      ids: group,
+      strength: seed.count,
+      segment: useSegment ? currentSegment : null,
+    };
+  }, [coUsage, segmentUsage, software, workflows]);
 
   const handleCreateSuggested = () => {
     if (!suggestion) return;
-    const name = `${suggestion.apps[0].name} 工作流`;
+    const name = suggestion.segment
+      ? `${SEGMENT_LABEL[suggestion.segment]}工作流`
+      : `${suggestion.apps[0].name} 工作流`;
     createWorkflow({
       name,
-      description: '基于你的使用习惯智能推荐的软件组合',
+      description: suggestion.segment
+        ? `你常在${SEGMENT_LABEL[suggestion.segment]}一起使用的软件组合`
+        : '基于你的使用习惯智能推荐的软件组合',
       softwareIds: suggestion.ids,
       color: '',
     });
@@ -411,9 +452,19 @@ export function Dashboard() {
                   <div className="flex items-start gap-2.5 mb-3">
                     <Sparkles className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
                     <div>
-                      <h3 className="text-sm font-semibold text-slate-200">推荐工作流组合</h3>
+                      <h3 className="text-sm font-semibold text-slate-200">
+                        {suggestion.segment
+                          ? `${SEGMENT_LABEL[suggestion.segment]}工作流推荐`
+                          : '推荐工作流组合'}
+                      </h3>
                       <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                        你经常一起使用 {suggestion.apps.map((s) => s.name).join('、')}，建议组成一个工作流一键启动。
+                        {suggestion.segment
+                          ? `你常在${SEGMENT_LABEL[suggestion.segment]}一起使用 ${suggestion.apps
+                              .map((s) => s.name)
+                              .join('、')}，建议组成一个工作流一键启动。`
+                          : `你经常一起使用 ${suggestion.apps
+                              .map((s) => s.name)
+                              .join('、')}，建议组成一个工作流一键启动。`}
                       </p>
                     </div>
                   </div>

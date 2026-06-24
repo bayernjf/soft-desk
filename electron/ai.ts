@@ -399,6 +399,13 @@ export interface CoUsageInput {
   count: number;
 }
 
+export interface SegmentCoUsageInput {
+  /** morning / afternoon / evening / night */
+  segment: string;
+  sessionCount: number;
+  pairs: CoUsageInput[];
+}
+
 export interface WorkflowSuggestion {
   name: string;
   description: string;
@@ -406,21 +413,38 @@ export interface WorkflowSuggestion {
   reason: string;
 }
 
-const SUGGEST_SYSTEM = `你是一个生产力助手。基于用户已安装应用、使用时长与"经常同时使用"的共现统计，推荐 1-3 个有业务语义的"工作流"（一组经常配合使用的软件，可一键启动）。
+const SEGMENT_LABEL: Record<string, string> = {
+  morning: '早上',
+  afternoon: '下午',
+  evening: '晚上',
+  night: '深夜',
+};
+
+const SUGGEST_SYSTEM = `你是一个生产力助手。基于用户已安装应用、使用时长、"经常同时使用"的共现统计，以及"按一天中时段(早上/下午/晚上/深夜)拆分的共现统计"，推荐 1-3 个有业务语义的"工作流"（一组经常配合使用的软件，可一键启动）。
 要求：
 - 每个工作流包含 2-5 个软件，只能用给定的软件 id；
-- name 用简洁中文（如"前端开发环境""设计出图流程"）；
-- description 一句话说明用途；
-- reason 用一句话解释为什么推荐这个组合（结合使用习惯）；
+- 充分利用时段规律：若某组软件主要在某时段一起使用，请据此生成场景化工作流，并在 name 体现时段（如"早上工作流""下午设计流程""晚上娱乐"）；
+- name 用简洁中文；description 一句话说明用途；
+- reason 用一句话解释为什么推荐这个组合（结合使用习惯与时段规律，如"你常在早上同时打开它们"）；
 - 不要推荐只有单个软件的组合，不要编造不存在的 id。
 只输出 JSON：{"workflows":[{"name":"","description":"","softwareIds":["",""],"reason":""}]}，不要任何解释。`;
 
 export async function suggestWorkflows(
   apps: SuggestAppInput[],
-  coUsage: CoUsageInput[]
+  coUsage: CoUsageInput[],
+  segments: SegmentCoUsageInput[] = []
 ): Promise<WorkflowSuggestion[]> {
   const config = getActiveProvider();
   if (!config || apps.length < 2) return [];
+
+  // 仅保留有共现对的时段,每个时段取前若干高频对,带上中文时段标签,控制 token 体积
+  const segmentPayload = segments
+    .filter((s) => Array.isArray(s.pairs) && s.pairs.length > 0)
+    .map((s) => ({
+      segment: SEGMENT_LABEL[s.segment] ?? s.segment,
+      sessionCount: s.sessionCount,
+      pairs: s.pairs.slice(0, 12),
+    }));
 
   const result = await complete(config, {
     messages: [
@@ -430,6 +454,7 @@ export async function suggestWorkflows(
         content: JSON.stringify({
           apps: apps.slice(0, 60),
           coUsage: coUsage.slice(0, 40),
+          segmentCoUsage: segmentPayload,
         }),
       },
     ],

@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('softdesk', {
   getUsageStats: (period: 'day' | 'week' | 'month' | 'all') =>
     ipcRenderer.invoke('usage:getStats', period),
   getSuggestions: () => ipcRenderer.invoke('usage:getSuggestions'),
+  getSegmentSuggestions: () => ipcRenderer.invoke('usage:getSegmentSuggestions'),
+  getHourlyUsage: (windowDays?: number) => ipcRenderer.invoke('usage:getHourlyUsage', windowDays),
+  getSegmentByApp: (windowDays?: number) => ipcRenderer.invoke('usage:getSegmentByApp', windowDays),
   testAiProvider: (input: {
     provider?: string;
     endpoint?: string;

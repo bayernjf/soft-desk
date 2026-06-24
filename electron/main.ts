@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { scanInstalledApps, applyAiCategories, startAppWatcher, stopAppWatcher, type ScannedApp, type ScannedCategory } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
-import { getStats, getUsageSummary, getCoUsage, recordLaunch, closeDb } from './database';
+import { getStats, getUsageSummary, getCoUsage, getCoUsageBySegment, getHourlyUsage, getSegmentUsageByApp, recordLaunch, closeDb } from './database';
 import {
   syncProviders,
   getProviders,
@@ -290,6 +290,38 @@ ipcMain.handle('usage:getSuggestions', async () => {
   }
 });
 
+// 返回按时段(早上/下午/晚上/深夜)拆分的共现分析,供 Dashboard 做场景化工作流推荐
+ipcMain.handle('usage:getSegmentSuggestions', async () => {
+  try {
+    return getCoUsageBySegment();
+  } catch (err) {
+    console.error('[softdesk] getCoUsageBySegment failed:', err);
+    return [];
+  }
+});
+
+// 返回近 windowDays 天的全天 24 小时活跃节律(每小时使用时长与会话数),供统计页节律图
+ipcMain.handle('usage:getHourlyUsage', async (_event, windowDays?: unknown) => {
+  try {
+    const days = typeof windowDays === 'number' && windowDays > 0 ? windowDays : 30;
+    return getHourlyUsage(days);
+  } catch (err) {
+    console.error('[softdesk] getHourlyUsage failed:', err);
+    return [];
+  }
+});
+
+// 返回每个软件在四时段的使用时长分布,供统计页"软件活跃时段"堆叠条形图
+ipcMain.handle('usage:getSegmentByApp', async (_event, windowDays?: unknown) => {
+  try {
+    const days = typeof windowDays === 'number' && windowDays > 0 ? windowDays : 30;
+    return getSegmentUsageByApp(days);
+  } catch (err) {
+    console.error('[softdesk] getSegmentUsageByApp failed:', err);
+    return [];
+  }
+});
+
 // 切换窗口最大化/还原(maximize 是填满工作区,非全屏 fullscreen),供顶部拖拽区双击调用
 ipcMain.handle('window:toggleMaximize', () => {
   if (!win) return { maximized: false };
@@ -479,7 +511,13 @@ ipcMain.handle('ai:suggestWorkflows', async (_event, raw: unknown) => {
   } catch {
     coUsage = [];
   }
-  const suggestions = await suggestWorkflows(apps, coUsage);
+  let segments: ReturnType<typeof getCoUsageBySegment> = [];
+  try {
+    segments = getCoUsageBySegment();
+  } catch {
+    segments = [];
+  }
+  const suggestions = await suggestWorkflows(apps, coUsage, segments);
   return { suggestions };
 });
 

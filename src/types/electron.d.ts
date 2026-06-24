@@ -30,6 +30,35 @@ export interface CoUsagePair {
   count: number;
 }
 
+export type TimeSegment = 'morning' | 'afternoon' | 'evening' | 'night';
+
+export interface SegmentCoUsage {
+  segment: TimeSegment;
+  /** 该时段内的会话总数(反映该时段活跃度) */
+  sessionCount: number;
+  /** 该时段内按共现次数降序的软件对 */
+  pairs: CoUsagePair[];
+}
+
+export interface HourlyUsage {
+  /** 0-23 */
+  hour: number;
+  /** 该小时累计使用分钟数 */
+  minutes: number;
+  /** 该小时的会话数 */
+  sessionCount: number;
+}
+
+export interface SegmentUsageByApp {
+  softwareId: string;
+  morning: number;
+  afternoon: number;
+  evening: number;
+  night: number;
+  /** 全时段合计分钟数(降序排序依据) */
+  total: number;
+}
+
 export interface AiTestInput {
   provider?: string;
   endpoint?: string;
@@ -104,6 +133,12 @@ export interface SoftdeskBridge {
   getUsageStats: (period: 'day' | 'week' | 'month' | 'all') => Promise<DailyUsageStat[]>;
   /** 基于 sessions 共现分析的软件对(降序),用于生成工作流建议 */
   getSuggestions: () => Promise<CoUsagePair[]>;
+  /** 按时段(早上/下午/晚上/深夜)拆分的共现分析,用于场景化工作流推荐 */
+  getSegmentSuggestions: () => Promise<SegmentCoUsage[]>;
+  /** 全天 24 小时活跃节律(每小时使用时长与会话数),用于统计页节律图 */
+  getHourlyUsage: (windowDays?: number) => Promise<HourlyUsage[]>;
+  /** 每个软件在四时段的使用时长分布,用于统计页堆叠条形图 */
+  getSegmentByApp: (windowDays?: number) => Promise<SegmentUsageByApp[]>;
   /** 测试 AI provider 连通性(主进程对 OpenAI 兼容接口发最小请求) */
   testAiProvider: (input: AiTestInput) => Promise<AiTestResult>;
   /** 把含 apiKey 的 provider 列表同步到主进程并落盘,推理在主进程发起 */

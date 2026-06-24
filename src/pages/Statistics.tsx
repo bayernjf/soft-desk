@@ -18,6 +18,8 @@ import { CATEGORIES } from '@/data/categories';
 import { useSoftwareStore } from '@/stores/software.store';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
 import { UsageHeatmap } from '@/components/features/UsageHeatmap';
+import { TimeSegmentChart } from '@/components/features/TimeSegmentChart';
+import { AppIcon } from '@/components/features/AppIcon';
 import {
   useUsageStats,
   PERIOD_OPTIONS,
@@ -323,6 +325,8 @@ export function Statistics() {
 
       <UsageHeatmap />
 
+      <TimeSegmentChart period={period} />
+
       <section className="p-6 rounded-2xl bg-slate-900/40 border border-slate-800/60">
         <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
           <div>
@@ -413,12 +417,7 @@ export function Statistics() {
                   <div className="w-6 text-xs text-slate-600 tabular-nums">
                     {String(idx + 1).padStart(2, '0')}
                   </div>
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
-                    style={{ backgroundColor: sw.color + '25', color: sw.color }}
-                  >
-                    {sw.name.slice(0, 2)}
-                  </div>
+                  <AppIcon software={sw} size={36} rounded="rounded-xl" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2 min-w-0">
