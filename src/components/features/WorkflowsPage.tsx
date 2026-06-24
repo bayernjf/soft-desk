@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react';
-import { Star, Clock, Play, Loader2, Check, AlertCircle, Pencil, Trash2, Plus } from 'lucide-react';
+import { Star, Clock, Play, Loader2, Check, AlertCircle, Pencil, Trash2, Plus, Sparkles } from 'lucide-react';
 import type { Workflow } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
 import { formatTimeAgo } from '@/services/software.service';
+import { hasActiveAiProvider } from '@/services/ai.service';
 import { cn } from '@/lib/utils';
 import { WorkflowEditorModal } from './WorkflowEditorModal';
+import { AiWorkflowModal } from './AiWorkflowModal';
 import { AppIcon } from './AppIcon';
 
 interface WorkflowCardProps {
@@ -239,9 +241,25 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
 export function WorkflowsPage() {
   const workflows = useSoftwareStore((s) => s.workflows);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiReady, setAiReady] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
   const favorite = workflows.filter((w) => w.isFavorite);
   const rest = workflows.filter((w) => !w.isFavorite);
+
+  useEffect(() => {
+    let cancelled = false;
+    hasActiveAiProvider()
+      .then((ready) => {
+        if (!cancelled) setAiReady(ready);
+      })
+      .catch(() => {
+        if (!cancelled) setAiReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const openCreate = () => {
     setEditingWorkflow(null);
@@ -260,13 +278,24 @@ export function WorkflowsPage() {
           <h1 className="text-2xl font-bold text-white tracking-tight">工作流</h1>
           <p className="text-sm text-slate-500 mt-1">一键启动你的高效工作组合</p>
         </div>
-        <button
-          onClick={openCreate}
-          className="px-4 py-2 rounded-xl bg-violet-500/20 text-violet-300 text-sm font-medium border border-violet-500/30 hover:bg-violet-500/30 transition-colors flex items-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" />
-          创建工作流
-        </button>
+        <div className="flex items-center gap-2">
+          {aiReady && (
+            <button
+              onClick={() => setAiOpen(true)}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-500/20 to-fuchsia-500/15 text-violet-300 text-sm font-medium border border-violet-500/30 hover:from-violet-500/30 hover:to-fuchsia-500/25 transition-colors flex items-center gap-1.5"
+            >
+              <Sparkles className="w-4 h-4" />
+              AI 生成
+            </button>
+          )}
+          <button
+            onClick={openCreate}
+            className="px-4 py-2 rounded-xl bg-violet-500/20 text-violet-300 text-sm font-medium border border-violet-500/30 hover:bg-violet-500/30 transition-colors flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            创建工作流
+          </button>
+        </div>
       </div>
 
       {favorite.length > 0 && (
@@ -305,6 +334,8 @@ export function WorkflowsPage() {
           onClose={() => setEditorOpen(false)}
         />
       )}
+
+      {aiOpen && <AiWorkflowModal onClose={() => setAiOpen(false)} />}
     </div>
   );
 }

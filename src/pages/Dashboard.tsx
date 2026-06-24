@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, Clock, Sparkles, TrendingUp } from 'lucide-react';
+import { ArrowUpRight, Clock, Sparkles, TrendingUp, Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useSettingsStore } from '@/stores/settings.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
+import { fetchWorkflowSuggestions, hasActiveAiProvider } from '@/services/ai.service';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
 import { AppIcon } from '@/components/features/AppIcon';
 import { cn } from '@/lib/utils';
-import type { CoUsagePair } from '@/types/electron';
+import type { CoUsagePair, AiWorkflowSuggestion } from '@/types/electron';
 
 function StatCard({
   icon: Icon,
@@ -53,6 +54,9 @@ export function Dashboard() {
   const aiSuggestionsEnabled = useSettingsStore((s) => s.prefs.aiSuggestions);
   const navigate = useNavigate();
   const [coUsage, setCoUsage] = useState<CoUsagePair[]>([]);
+  const [aiProviderReady, setAiProviderReady] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<AiWorkflowSuggestion[]>([]);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const topApps = [...software].sort((a, b) => b.usageMinutes - a.usageMinutes).slice(0, 5);
   const recentApps = [...software]
@@ -89,6 +93,43 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
+  }, [aiSuggestionsEnabled, isElectron]);
+
+  // 真 AI 建议:有启用模型时,把已安装应用 + 共现统计交给模型生成有语义的工作流建议;
+  // 失败或无模型则保持空,UI 自动回退到下方基于共现统计/使用时长的本地建议。
+  useEffect(() => {
+    if (!aiSuggestionsEnabled || !isElectron) {
+      setAiProviderReady(false);
+      setAiSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    setAiLoading(true);
+    hasActiveAiProvider()
+      .then(async (ready) => {
+        if (cancelled) return;
+        setAiProviderReady(ready);
+        if (!ready) {
+          setAiSuggestions([]);
+          return;
+        }
+        const list = await fetchWorkflowSuggestions(software);
+        if (!cancelled) setAiSuggestions(list);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAiProviderReady(false);
+          setAiSuggestions([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAiLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // 仅在启用状态/环境变化时触发,避免软件列表频繁变动导致重复调用模型(省钱)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiSuggestionsEnabled, isElectron]);
 
   // 从共现软件对聚合出一个 2-4 个软件的组合建议:以最高频的一对为种子,
@@ -133,6 +174,23 @@ export function Dashboard() {
       name,
       description: '基于你的使用习惯智能推荐的软件组合',
       softwareIds: suggestion.ids,
+      color: '',
+    });
+    navigate('/workflows');
+  };
+
+  // 由某条 AI 建议直接落地为工作流(过滤掉已不可用的软件 id 后创建)
+  const byId = useMemo(() => new Map(software.map((s) => [s.id, s])), [software]);
+  const handleCreateAiSuggestion = (sug: AiWorkflowSuggestion) => {
+    const ids = sug.softwareIds.filter((id) => {
+      const sw = byId.get(id);
+      return sw && !sw.uninstalled && !sw.deleted;
+    });
+    if (ids.length < 2) return;
+    createWorkflow({
+      name: sug.name,
+      description: sug.description || '由 AI 基于你的使用习惯推荐',
+      softwareIds: ids,
       color: '',
     });
     navigate('/workflows');
@@ -294,8 +352,61 @@ export function Dashboard() {
 
           {aiSuggestionsEnabled && (
             <section>
-              <h2 className="text-sm font-semibold text-slate-200 mb-4">AI 建议</h2>
-              {suggestion ? (
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-slate-200">AI 建议</h2>
+                {aiProviderReady && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 text-[10px] font-medium">
+                    <Sparkles className="w-3 h-3" />
+                    模型驱动
+                  </span>
+                )}
+              </div>
+              {aiLoading ? (
+                <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60 flex items-center gap-2 text-xs text-slate-400">
+                  <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
+                  AI 正在分析你的使用习惯…
+                </div>
+              ) : aiSuggestions.length > 0 ? (
+                <div className="space-y-3">
+                  {aiSuggestions.map((sug, idx) => {
+                    const apps = sug.softwareIds
+                      .map((id) => byId.get(id))
+                      .filter(
+                        (s): s is NonNullable<typeof s> => !!s && !s.uninstalled && !s.deleted
+                      );
+                    if (apps.length < 2) return null;
+                    return (
+                      <div
+                        key={`${sug.name}-${idx}`}
+                        className="p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-slate-900/40 to-amber-500/5 border border-violet-500/20"
+                      >
+                        <div className="flex items-start gap-2.5 mb-3">
+                          <Sparkles className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
+                          <div>
+                            <h3 className="text-sm font-semibold text-slate-200">{sug.name}</h3>
+                            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                              {sug.reason || sug.description}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 mb-3">
+                          {apps.map((sw) => (
+                            <div key={sw.id} title={sw.name}>
+                              <AppIcon software={sw} size={32} rounded="rounded-lg" />
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => handleCreateAiSuggestion(sug)}
+                          className="block w-full py-2.5 rounded-xl bg-violet-500/15 text-violet-300 text-xs font-medium hover:bg-violet-500/25 transition-colors text-center"
+                        >
+                          一键创建该工作流 +
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : suggestion ? (
                 <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-slate-900/40 to-amber-500/5 border border-violet-500/20">
                   <div className="flex items-start gap-2.5 mb-3">
                     <Sparkles className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
