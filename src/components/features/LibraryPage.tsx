@@ -1,9 +1,11 @@
-import { useEffect, useMemo } from 'react';
-import { Search, SlidersHorizontal, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Search, SlidersHorizontal, X, Sparkles, Loader2 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
 import { LazyMount } from '@/components/features/LazyMount';
+import { useSemanticSearch } from '@/hooks/useSemanticSearch';
+import { hasActiveAiProvider } from '@/services/ai.service';
 import { cn } from '@/lib/utils';
 
 const sortOptions = [
@@ -21,8 +23,41 @@ export function LibraryPage() {
   const setSearchQuery = useSoftwareStore((s) => s.setSearchQuery);
   const sortBy = useSoftwareStore((s) => s.sortBy);
   const setSortBy = useSoftwareStore((s) => s.setSortBy);
+  const [aiReady, setAiReady] = useState(false);
 
-  const filtered = useMemo(() => {
+  useEffect(() => {
+    let cancelled = false;
+    hasActiveAiProvider()
+      .then((ready) => {
+        if (!cancelled) setAiReady(ready);
+      })
+      .catch(() => {
+        if (!cancelled) setAiReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const sortResult = (list: typeof software) => {
+    switch (sortBy) {
+      case 'name':
+        return [...list].sort((a, b) => a.name.localeCompare(b.name));
+      case 'usage':
+        return [...list].sort((a, b) => b.usageMinutes - a.usageMinutes);
+      case 'recent':
+        return [...list].sort(
+          (a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()
+        );
+      case 'size':
+        return [...list].sort((a, b) => b.size - a.size);
+      default:
+        return list;
+    }
+  };
+
+  // 本地字面匹配(免费、即时):name / description / tags 的 includes
+  const localFiltered = useMemo(() => {
     let result = software;
     if (selectedCategory !== 'all') {
       result = result.filter((s) => s.category === selectedCategory);
@@ -36,24 +71,33 @@ export function LibraryPage() {
           s.tags.some((t) => t.toLowerCase().includes(q))
       );
     }
-    switch (sortBy) {
-      case 'name':
-        result = [...result].sort((a, b) => a.name.localeCompare(b.name));
-        break;
-      case 'usage':
-        result = [...result].sort((a, b) => b.usageMinutes - a.usageMinutes);
-        break;
-      case 'recent':
-        result = [...result].sort(
-          (a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()
-        );
-        break;
-      case 'size':
-        result = [...result].sort((a, b) => b.size - a.size);
-        break;
-    }
     return result;
-  }, [software, selectedCategory, searchQuery, sortBy]);
+  }, [software, selectedCategory, searchQuery]);
+
+  // AI 语义搜索:本地命中数作为触发门槛之一,结果用于补充本地字面匹配漏掉的意图相关软件
+  const semantic = useSemanticSearch(searchQuery, software, aiReady, localFiltered.length);
+
+  // 合并本地与语义结果:本地优先,语义结果去重后追加;再按当前排序输出
+  const filtered = useMemo(() => {
+    const localIds = new Set(localFiltered.map((s) => s.id));
+    let merged = localFiltered;
+
+    if (semantic.ids && semantic.ids.length > 0) {
+      const byId = new Map(software.map((s) => [s.id, s]));
+      const extra = semantic.ids
+        .filter((id) => !localIds.has(id))
+        .map((id) => byId.get(id))
+        .filter((s): s is NonNullable<typeof s> => !!s && !s.uninstalled && !s.deleted)
+        .filter((s) => selectedCategory === 'all' || s.category === selectedCategory);
+      merged = [...localFiltered, ...extra];
+    }
+
+    return sortResult(merged);
+    // sortResult 依赖 sortBy,显式列出避免漏依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localFiltered, semantic.ids, software, selectedCategory, sortBy]);
+
+  const aiExtraCount = filtered.length - localFiltered.length;
 
   useEffect(() => {
     return () => {
@@ -98,6 +142,22 @@ export function LibraryPage() {
           </button>
         )}
       </div>
+
+      {searchQuery.trim() && (semantic.loading || (semantic.fromAi && aiExtraCount > 0)) && (
+        <div className="flex items-center gap-2 -mt-2 text-xs">
+          {semantic.loading ? (
+            <span className="inline-flex items-center gap-1.5 text-slate-400">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
+              AI 正在理解你的搜索意图…
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300">
+              <Sparkles className="w-3 h-3" />
+              AI 语义搜索补充了 {aiExtraCount} 个相关应用
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex flex-wrap items-center gap-1.5">

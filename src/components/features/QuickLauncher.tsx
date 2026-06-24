@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Rocket, Layers, CornerDownLeft } from 'lucide-react';
+import { Search, Rocket, Layers, CornerDownLeft, Loader2 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useSemanticSearch } from '@/hooks/useSemanticSearch';
+import { hasActiveAiProvider } from '@/services/ai.service';
 import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
 import type { Software, Workflow } from '@/types';
@@ -23,6 +25,7 @@ export function QuickLauncher({ open, onClose }: QuickLauncherProps) {
   const launchWorkflow = useSoftwareStore((s) => s.launchWorkflow);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [aiReady, setAiReady] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 打开时重置状态并聚焦输入框
@@ -34,9 +37,45 @@ export function QuickLauncher({ open, onClose }: QuickLauncherProps) {
     }
   }, [open]);
 
+  // 打开时探测一次是否有启用模型,决定是否启用语义搜索
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    hasActiveAiProvider()
+      .then((ready) => {
+        if (!cancelled) setAiReady(ready);
+      })
+      .catch(() => {
+        if (!cancelled) setAiReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const available = useMemo(
+    () => software.filter((s) => !s.uninstalled && !s.deleted),
+    [software]
+  );
+
+  // 本地字面匹配的软件(name / tags / publisher),作为即时结果与语义触发门槛
+  const localSoftware = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return available
+      .filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.tags.some((t) => t.toLowerCase().includes(q)) ||
+          s.publisher?.toLowerCase().includes(q)
+      )
+      .slice(0, MAX_RESULTS);
+  }, [query, available]);
+
+  const semantic = useSemanticSearch(query, available, aiReady, localSoftware.length);
+
   const items = useMemo<LauncherItem[]>(() => {
     const q = query.trim().toLowerCase();
-    const available = software.filter((s) => !s.uninstalled && !s.deleted);
 
     if (!q) {
       // 无输入时展示最近使用的软件
@@ -46,24 +85,25 @@ export function QuickLauncher({ open, onClose }: QuickLauncherProps) {
         .map((s) => ({ type: 'software', software: s }) as LauncherItem);
     }
 
-    const matchedSoftware = available
-      .filter(
-        (s) =>
-          s.name.toLowerCase().includes(q) ||
-          s.tags.some((t) => t.toLowerCase().includes(q)) ||
-          s.publisher?.toLowerCase().includes(q)
-      )
-      .slice(0, MAX_RESULTS);
-
     const matchedWorkflows = workflows
       .filter((w) => w.name.toLowerCase().includes(q))
       .slice(0, 3);
 
+    // 语义结果:补充本地字面匹配漏掉的意图相关软件(去重),追加在本地结果之后
+    const localIds = new Set(localSoftware.map((s) => s.id));
+    const byId = new Map(available.map((s) => [s.id, s]));
+    const semanticExtra = (semantic.ids ?? [])
+      .filter((id) => !localIds.has(id))
+      .map((id) => byId.get(id))
+      .filter((s): s is Software => !!s)
+      .slice(0, MAX_RESULTS);
+
     return [
       ...matchedWorkflows.map((w) => ({ type: 'workflow', workflow: w }) as LauncherItem),
-      ...matchedSoftware.map((s) => ({ type: 'software', software: s }) as LauncherItem),
+      ...localSoftware.map((s) => ({ type: 'software', software: s }) as LauncherItem),
+      ...semanticExtra.map((s) => ({ type: 'software', software: s }) as LauncherItem),
     ];
-  }, [query, software, workflows]);
+  }, [query, available, workflows, localSoftware, semantic.ids]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -128,7 +168,14 @@ export function QuickLauncher({ open, onClose }: QuickLauncherProps) {
 
         <div className="max-h-[52vh] overflow-y-auto py-2">
           {items.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-slate-500">未找到匹配的软件或工作流</div>
+            semantic.loading ? (
+              <div className="px-4 py-10 flex items-center justify-center gap-2 text-sm text-slate-400">
+                <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
+                AI 正在理解你的搜索意图…
+              </div>
+            ) : (
+              <div className="px-4 py-10 text-center text-sm text-slate-500">未找到匹配的软件或工作流</div>
+            )
           ) : (
             items.map((item, index) => {
               const active = index === activeIndex;
