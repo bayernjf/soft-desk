@@ -219,3 +219,49 @@ export function useUsageStats(period: StatsPeriod): UsageStats {
     return { ...buildRealStats(rows ?? [], software, period), loading, error };
   }, [software, period, rows, loading, error]);
 }
+
+export interface DailyUsageHeatmap {
+  /** date('YYYY-MM-DD') -> 当日累计使用分钟数 */
+  byDate: Map<string, number>;
+  loading: boolean;
+}
+
+/** 拉取近一年的每日使用数据并按天聚合成 date -> 分钟数,供日历热力图使用。
+ *  独立于顶部时间段切换,固定展示全年趋势;非 Electron 环境返回空 Map。 */
+export function useDailyUsageHeatmap(): DailyUsageHeatmap {
+  const isElectron = useSoftwareStore((s) => s.isElectron);
+  const [rows, setRows] = useState<DailyUsageStat[] | null>(null);
+  const [loading, setLoading] = useState(isElectron);
+
+  useEffect(() => {
+    if (!isElectron || !window.softdesk) {
+      setRows(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    window.softdesk
+      .getUsageStats('all')
+      .then((data) => {
+        if (!cancelled) setRows(data);
+      })
+      .catch(() => {
+        if (!cancelled) setRows([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isElectron]);
+
+  return useMemo(() => {
+    const byDate = new Map<string, number>();
+    for (const row of rows ?? []) {
+      byDate.set(row.date, (byDate.get(row.date) ?? 0) + row.usageTime / 60);
+    }
+    return { byDate, loading };
+  }, [rows, loading]);
+}

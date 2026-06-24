@@ -17,6 +17,7 @@ import { Clock, Rocket, AppWindow, Gauge, ChevronDown, Loader2, ChevronRight, Al
 import { CATEGORIES } from '@/data/categories';
 import { useSoftwareStore } from '@/stores/software.store';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
+import { UsageHeatmap } from '@/components/features/UsageHeatmap';
 import {
   useUsageStats,
   PERIOD_OPTIONS,
@@ -319,6 +320,8 @@ export function Statistics() {
           )}
         </section>
       </div>
+
+      <UsageHeatmap />
 
       <section className="p-6 rounded-2xl bg-slate-900/40 border border-slate-800/60">
         <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
