@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage } from 'electron';
 import path from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { scanInstalledApps, startAppWatcher, stopAppWatcher, type ScannedApp } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
-import { getStats, getUsageSummary, recordLaunch, closeDb } from './database';
+import { getStats, getUsageSummary, getCoUsage, recordLaunch, closeDb } from './database';
 
 function todayKey(): string {
   const d = new Date();
@@ -32,6 +33,51 @@ app.setPath('userData', path.join(process.env.APP_ROOT, '.electron-data'));
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+
+// 窗口行为偏好,由渲染进程(设置页)通过 settings:sync 同步,并落盘持久化,
+// 以便下次冷启动前(创建窗口时)即可读取 startMinimized。
+interface WindowPrefs {
+  startMinimized: boolean;
+  minimizeToTray: boolean;
+}
+
+const DEFAULT_WINDOW_PREFS: WindowPrefs = {
+  startMinimized: false,
+  minimizeToTray: true,
+};
+
+let windowPrefs: WindowPrefs = { ...DEFAULT_WINDOW_PREFS };
+
+function windowPrefsPath(): string {
+  return path.join(app.getPath('userData'), 'window-prefs.json');
+}
+
+function loadWindowPrefs(): void {
+  try {
+    const raw = readFileSync(windowPrefsPath(), 'utf-8');
+    const parsed = JSON.parse(raw) as Partial<WindowPrefs>;
+    windowPrefs = {
+      startMinimized:
+        typeof parsed.startMinimized === 'boolean'
+          ? parsed.startMinimized
+          : DEFAULT_WINDOW_PREFS.startMinimized,
+      minimizeToTray:
+        typeof parsed.minimizeToTray === 'boolean'
+          ? parsed.minimizeToTray
+          : DEFAULT_WINDOW_PREFS.minimizeToTray,
+    };
+  } catch {
+    // 首次启动或文件损坏,沿用默认值
+  }
+}
+
+function persistWindowPrefs(): void {
+  try {
+    writeFileSync(windowPrefsPath(), JSON.stringify(windowPrefs), 'utf-8');
+  } catch {
+    // 落盘失败不阻断主流程
+  }
+}
 
 const TRAY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 32 32" fill="none">
   <path d="M10 12L16 8L22 12L16 16L10 12Z" fill="black"/>
@@ -92,6 +138,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 768,
     backgroundColor: '#0d1117',
+    show: !windowPrefs.startMinimized,
     titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: PRELOAD_PATH,
@@ -120,27 +167,40 @@ function createWindow() {
     win.loadFile(path.join(RENDERER_DIST, 'index.html'));
   }
 
-  // 点击关闭按钮时隐藏到托盘而非退出(仅在用户未选择退出时)
+  // 点击关闭按钮:开启"最小化到托盘"时隐藏到托盘而非退出;关闭该偏好时直接退出应用
   win.on('close', (event) => {
-    if (!isQuitting) {
+    if (isQuitting) return;
+    if (windowPrefs.minimizeToTray) {
       event.preventDefault();
       win?.hide();
+    } else {
+      // 未开启最小化到托盘:关窗即退出整个应用(含 macOS)
+      isQuitting = true;
+      app.quit();
     }
   });
 }
 
-ipcMain.handle('software:scan', async () => scanWithUsage());
+ipcMain.handle('software:scan', async (_event, smartGrouping?: boolean) => {
+  if (typeof smartGrouping === 'boolean') {
+    lastSmartGrouping = smartGrouping;
+  }
+  return scanWithUsage();
+});
 
 // 维护一份合法 app 路径白名单,launch/remove 仅允许操作扫描得到的真实应用,
 // 防止渲染进程被注入后传入任意路径启动/删除文件
 const knownAppPaths = new Set<string>();
+
+// 记录最近一次渲染层传入的"智能分类"开关,供 FSEvents 监听到变化后的重扫沿用
+let lastSmartGrouping = true;
 
 function isAllowedAppPath(appPath: unknown): appPath is string {
   return typeof appPath === 'string' && knownAppPaths.has(appPath);
 }
 
 async function scanWithUsage(): Promise<ScannedApp[]> {
-  const apps = await scanInstalledApps();
+  const apps = await scanInstalledApps(lastSmartGrouping);
   knownAppPaths.clear();
   for (const a of apps) knownAppPaths.add(a.path);
   let summary: ReturnType<typeof getUsageSummary> = [];
@@ -164,6 +224,16 @@ async function scanWithUsage(): Promise<ScannedApp[]> {
 
 ipcMain.handle('usage:getStats', async (_event, period: 'day' | 'week' | 'month' | 'all') => {
   return getStats(period ?? 'week');
+});
+
+// 返回基于 sessions 共现分析的软件对(降序),供 Dashboard 生成工作流建议
+ipcMain.handle('usage:getSuggestions', async () => {
+  try {
+    return getCoUsage();
+  } catch (err) {
+    console.error('[softdesk] getCoUsage failed:', err);
+    return [];
+  }
 });
 
 // 切换窗口最大化/还原(maximize 是填满工作区,非全屏 fullscreen),供顶部拖拽区双击调用
@@ -228,6 +298,22 @@ ipcMain.handle('app:openUserData', async () => {
   return { success: true };
 });
 
+// 渲染进程(设置页)同步窗口行为偏好;落盘后下次冷启动即可在 createWindow 前读取
+ipcMain.handle('settings:sync', (_event, prefs: unknown) => {
+  if (!prefs || typeof prefs !== 'object') {
+    return { success: false };
+  }
+  const next = prefs as Partial<WindowPrefs>;
+  if (typeof next.startMinimized === 'boolean') {
+    windowPrefs.startMinimized = next.startMinimized;
+  }
+  if (typeof next.minimizeToTray === 'boolean') {
+    windowPrefs.minimizeToTray = next.minimizeToTray;
+  }
+  persistWindowPrefs();
+  return { success: true };
+});
+
 ipcMain.handle('software:remove', async (_event, appPath: string) => {
   if (!isAllowedAppPath(appPath)) {
     return { success: false, error: '无效或未授权的软件路径' };
@@ -248,6 +334,7 @@ ipcMain.handle('software:remove', async (_event, appPath: string) => {
 });
 
 app.whenReady().then(() => {
+  loadWindowPrefs();
   createWindow();
   createTray();
   globalShortcut.register('CommandOrControl+Shift+Space', openLauncher);
