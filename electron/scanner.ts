@@ -167,21 +167,63 @@ const LSAPP_CATEGORY_MAP: Record<string, ScannedCategory> = {
 };
 
 const NAME_KEYWORDS: Array<[ScannedCategory, RegExp]> = [
-  ['dev-tools', /(code|xcode|terminal|iterm|docker|git|android studio|intellij|pycharm|webstorm|goland|postman|tableplus|sequel|sourcetree|warp)/i],
-  ['design', /(figma|sketch|photoshop|illustrator|affinity|pixelmator|blender|zeplin|framer|canva)/i],
-  ['browsers', /(chrome|safari|firefox|edge|arc|brave|opera|vivaldi)/i],
-  ['communication', /(wechat|微信|slack|telegram|discord|zoom|lark|飞书|teams|messages|mail|qq|dingtalk|钉钉|whatsapp|feishu)/i],
-  ['media', /(spotify|vlc|music|iina|quicktime|netflix|bilibili|youtube|infuse|photos)/i],
-  ['security', /(clash|surge|1password|bitwarden|vpn|little snitch|lulu|keychain)/i],
-  ['productivity', /(notion|obsidian|things|notes|word|excel|powerpoint|keynote|pages|numbers|office|wps|reminders|calendar|todoist|craft)/i],
-  ['utilities', /(raycast|alfred|cleanmymac|the unarchiver|finder|monitor|activity|settings|system)/i],
+  ['dev-tools', /(code|xcode|terminal|iterm|docker|git|android studio|intellij|pycharm|webstorm|goland|clion|rider|datagrip|phpstorm|rubymine|fleet|zed|cursor|nova|sublime|atom|vim|neovim|emacs|postman|insomnia|tableplus|sequel|navicat|dbeaver|sourcetree|fork|tower|warp|hyper|kitty|alacritty|node|python|go land)/i],
+  ['design', /(figma|sketch|photoshop|illustrator|indesign|lightroom|after effects|premiere|affinity|pixelmator|gimp|inkscape|blender|cinema 4d|maya|zbrush|zeplin|framer|canva|principle|protopie|origami)/i],
+  ['browsers', /(chrome|chromium|safari|firefox|edge|arc|brave|opera|vivaldi|tor browser|orion)/i],
+  ['communication', /(wechat|微信|slack|telegram|discord|zoom|lark|飞书|teams|messages|信息|mail|邮件|outlook|qq|tim|dingtalk|钉钉|whatsapp|feishu|skype|line|signal|messenger|webex|腾讯会议|tencent meeting)/i],
+  ['media', /(spotify|vlc|music|网易云|cloudmusic|qqmusic|iina|quicktime|netflix|bilibili|哔哩|youtube|infuse|photos|movist|potplayer|kmplayer|audacity|garageband|logic pro|爱奇艺|iqiyi|优酷|youku)/i],
+  ['security', /(clash|surge|shadowrocket|quantumult|v2ray|trojan|vpn|1password|bitwarden|lastpass|keepass|enpass|dashlane|little snitch|lulu|micro snitch|keychain|protonvpn|wireguard|nordvpn|expressvpn)/i],
+  ['productivity', /(notion|obsidian|things|notes|备忘录|word|excel|powerpoint|onenote|keynote|pages|numbers|office|wps|libreoffice|reminders|calendar|fantastical|todoist|ticktick|滴答|craft|bear|typora|marginnote|goodnotes|anki|xmind|mindnode|drafts|evernote|印象笔记|有道)/i],
+  ['utilities', /(raycast|alfred|cleanmymac|the unarchiver|keka|bartender|hazel|karabiner|rectangle|magnet|istat|finder|monitor|activity|settings|system|appcleaner|onyx|downie|permute|hidden bar|mounty|betterzip)/i],
 ];
+
+// 优先级高于关键词:按 bundleId 反域(如 com.microsoft.* / com.jetbrains.*)归类,
+// 命中常见厂商即可稳定分类,避免依赖软件名拼写差异
+const BUNDLE_ID_KEYWORDS: Array<[ScannedCategory, RegExp]> = [
+  ['dev-tools', /^(com\.jetbrains\.|com\.apple\.dt\.|com\.microsoft\.vscode|com\.todesktop\.|dev\.warp\.|com\.googlecode\.iterm2|com\.github\.|org\.python\.|com\.postmanlabs\.|com\.sublimetext\.|com\.docker\.)/i],
+  ['design', /^(com\.adobe\.|com\.bohemiancoding\.sketch|com\.figma\.|com\.seriflabs\.|com\.pixelmatorteam\.|org\.blenderfoundation\.|com\.maxon\.)/i],
+  ['browsers', /^(com\.google\.chrome|com\.apple\.safari|org\.mozilla\.|com\.microsoft\.edgemac|company\.thebrowser\.|com\.brave\.|com\.operasoftware\.|com\.vivaldi\.)/i],
+  ['communication', /^(com\.tencent\.(xinwei|wechat|qq|tim)|com\.tencent\.meeting|com\.electron\.lark|com\.bytedance\.lark|com\.tinyspeck\.slackmacgap|com\.hnc\.discord|us\.zoom\.|com\.microsoft\.teams|com\.apple\.mail|ru\.keepcoder\.telegram|com\.alibaba\.dingtalk|net\.whatsapp\.|com\.skype\.)/i],
+  ['media', /^(com\.spotify\.|org\.videolan\.|com\.apple\.music|com\.netease\.|com\.tencent\.qqmusicmac|com\.colliderli\.iina|com\.apple\.quicktimeplayer|tv\.bilibili\.|com\.firecore\.|com\.apple\.photos)/i],
+  ['security', /^(com\.west2online\.clashx|com\.agilebits\.onepassword|com\.bitwarden\.|com\.lastpass\.|org\.pqrs\.|com\.obdev\.littlesnitch|com\.proton\.|com\.wireguard\.)/i],
+  ['productivity', /^(notion\.id|md\.obsidian|com\.culturedcode\.|com\.microsoft\.(word|excel|powerpoint|onenote|office)|com\.apple\.i(work|cal|notes)|com\.kingsoft\.wpsoffice|com\.todoist\.|com\.ticktick\.|com\.shinyfrog\.bear|abnerworks\.typora|com\.evernote\.)/i],
+  ['utilities', /^(com\.raycast\.|com\.runningwithcrayons\.alfred|com\.macpaw\.|com\.surteesstudios\.bartender|com\.knollsoft\.rectangle|com\.crowdcafe\.windowmagnet|com\.bombich\.|com\.apple\.finder)/i],
+];
+
+function inferCategoryByBundleId(bundleId: string): ScannedCategory | null {
+  for (const [cat, re] of BUNDLE_ID_KEYWORDS) {
+    if (re.test(bundleId)) return cat;
+  }
+  return null;
+}
 
 function inferCategoryByName(name: string): ScannedCategory {
   for (const [cat, re] of NAME_KEYWORDS) {
     if (re.test(name)) return cat;
   }
   return 'utilities';
+}
+
+/**
+ * 解析应用分类。
+ * - smartGrouping 关闭时:只信任系统声明的 LSApplicationCategoryType,未知一律归 utilities,不做任何推断;
+ * - smartGrouping 开启时:系统声明缺失/未映射时,依次用 bundleId 域名映射、软件名关键词推断。
+ */
+function resolveCategory(
+  lsCategory: string | undefined,
+  bundleId: string | undefined,
+  name: string,
+  smartGrouping: boolean
+): ScannedCategory {
+  if (lsCategory && LSAPP_CATEGORY_MAP[lsCategory]) {
+    return LSAPP_CATEGORY_MAP[lsCategory];
+  }
+  if (!smartGrouping) return 'utilities';
+  if (bundleId) {
+    const byBundle = inferCategoryByBundleId(bundleId);
+    if (byBundle) return byBundle;
+  }
+  return inferCategoryByName(name);
 }
 
 async function readInfoPlist(appPath: string): Promise<Record<string, string>> {
@@ -238,14 +280,16 @@ function publisherFromBundleId(bundleId?: string): string | undefined {
   return undefined;
 }
 
-async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
+async function scanOneApp(appPath: string, smartGrouping: boolean): Promise<ScannedApp | null> {
   try {
     const baseName = path.basename(appPath, '.app');
     const stat = await fs.stat(appPath);
 
     const cached = metaCache.get(appPath);
     const mtimeMs = stat.mtimeMs;
-    if (cached && cached.mtimeMs === mtimeMs) {
+    // 缓存命中需同时满足:包未变(mtime 相同) 且 分类策略未变(smartGrouping 相同);
+    // 开关切换后强制走重算分支,使分类立即反映新策略
+    if (cached && cached.mtimeMs === mtimeMs && cached.smartGrouping === smartGrouping) {
       // app 包未变,直接复用上次解析结果,跳过 plist/du/sips 等昂贵调用;
       // 图标 data URL 从缓存的 PNG 文件路径按需读出(缓存本身不存 base64)
       let iconCacheFile = cached.app.iconCacheFile ?? null;
@@ -259,6 +303,7 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
           iconCacheFile = refreshed;
           metaCache.set(appPath, {
             mtimeMs,
+            smartGrouping,
             app: { ...cached.app, iconCacheFile: refreshed ?? undefined },
           });
           metaCacheDirty = true;
@@ -270,9 +315,12 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
     const plist = await readInfoPlist(appPath);
     const size = await getDirSizeMB(appPath);
 
-    const lsCategory = plist['LSApplicationCategoryType'];
-    const category: ScannedCategory =
-      (lsCategory && LSAPP_CATEGORY_MAP[lsCategory]) || inferCategoryByName(baseName);
+    const category = resolveCategory(
+      plist['LSApplicationCategoryType'],
+      plist['CFBundleIdentifier'],
+      baseName,
+      smartGrouping
+    );
 
     const installDate = stat.birthtime.toISOString().slice(0, 10);
     const lastUsed = stat.atime.toISOString();
@@ -301,7 +349,7 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
     };
 
     // 缓存里只存图标文件路径,不存 base64,避免 scan-cache.json 膨胀
-    metaCache.set(appPath, { mtimeMs, app: { ...scanned, icon: '' } });
+    metaCache.set(appPath, { mtimeMs, smartGrouping, app: { ...scanned, icon: '' } });
     metaCacheDirty = true;
     return scanned;
   } catch {
@@ -311,6 +359,8 @@ async function scanOneApp(appPath: string): Promise<ScannedApp | null> {
 
 interface MetaCacheEntry {
   mtimeMs: number;
+  /** 生成该缓存时使用的智能分类开关状态,开关切换后需失效重算 */
+  smartGrouping: boolean;
   app: ScannedApp;
 }
 
@@ -385,11 +435,11 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export async function scanInstalledApps(): Promise<ScannedApp[]> {
+export async function scanInstalledApps(smartGrouping = true): Promise<ScannedApp[]> {
   await loadMetaCache();
   const found = await listAppPaths();
 
-  const results = await mapWithConcurrency(found, 6, (p) => scanOneApp(p));
+  const results = await mapWithConcurrency(found, 6, (p) => scanOneApp(p, smartGrouping));
   const apps = results.filter((a): a is ScannedApp => a !== null);
 
   // 清理已不存在应用的缓存条目
