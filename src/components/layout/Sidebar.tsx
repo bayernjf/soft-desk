@@ -1,4 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import {
   LayoutDashboard,
   Library,
@@ -9,12 +10,15 @@ import {
   FolderOpenDot,
   Sparkles,
   ChevronRight,
+  ChevronDown,
   UserRound,
 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { CATEGORIES } from '@/data/categories';
 import { cn } from '@/lib/utils';
+
+const COLLAPSED_CATEGORY_COUNT = 5;
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: '工作台' },
@@ -31,6 +35,18 @@ export function Sidebar() {
   const profile = useAuthStore((s) => s.profile);
   const location = useLocation();
   const inLibrary = location.pathname === '/library';
+  const [showAllCategories, setShowAllCategories] = useState(false);
+
+  const visibleCategories = CATEGORIES.map((cat) => ({
+    ...cat,
+    count: software.filter((s) => s.category === cat.id).length,
+  })).filter((cat) => cat.count > 0);
+
+  const hasMoreCategories = visibleCategories.length > COLLAPSED_CATEGORY_COUNT;
+  const displayedCategories =
+    showAllCategories || !hasMoreCategories
+      ? visibleCategories
+      : visibleCategories.slice(0, COLLAPSED_CATEGORY_COUNT);
 
   return (
     <aside className="w-72 shrink-0 h-screen border-r border-slate-800/60 bg-[#0d0d14]/95 backdrop-blur-sm flex flex-col">
@@ -87,9 +103,8 @@ export function Sidebar() {
           </div>
 
           <div className="space-y-0.5">
-            {CATEGORIES.slice(0, 5).map((cat) => {
-              const count = software.filter((s) => s.category === cat.id).length;
-              if (count === 0) return null;
+            {displayedCategories.map((cat) => {
+              const count = cat.count;
               const isSelected = inLibrary && selectedCategory === cat.id;
               return (
                 <NavLink
@@ -136,6 +151,27 @@ export function Sidebar() {
                 </NavLink>
               );
             })}
+
+            {hasMoreCategories && (
+              <button
+                type="button"
+                onClick={() => setShowAllCategories((v) => !v)}
+                aria-expanded={showAllCategories}
+                className="w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-sm text-slate-500 hover:bg-slate-800/40 hover:text-slate-200 transition-all duration-200"
+              >
+                <ChevronDown
+                  className={cn(
+                    'w-4 h-4 transition-transform duration-200',
+                    showAllCategories && 'rotate-180'
+                  )}
+                />
+                <span className="flex-1 text-left">
+                  {showAllCategories
+                    ? '收起'
+                    : `展开更多（${visibleCategories.length - COLLAPSED_CATEGORY_COUNT}）`}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </div>
