@@ -136,6 +136,70 @@ export function getStats(period: 'day' | 'week' | 'month' | 'all'): DailyUsage[]
   return rows;
 }
 
+export interface CoUsagePair {
+  a: string;
+  b: string;
+  count: number;
+}
+
+/**
+ * 基于 sessions 表做共现分析:近 windowDays 天内,把每段会话按 bucketMinutes
+ * 分钟的时间窗口归桶,统计"同一时间窗口内一起出现"的不同软件两两共现次数。
+ * 返回按共现次数降序的软件对,供工作流建议使用。
+ */
+export function getCoUsage(windowDays = 30, bucketMinutes = 30): CoUsagePair[] {
+  const database = getDb();
+  const since = new Date();
+  since.setDate(since.getDate() - (windowDays - 1));
+  const sinceStr = since.toISOString().slice(0, 10);
+
+  const rows = database
+    .prepare(
+      `SELECT software_id AS softwareId, start_time AS startTime
+       FROM sessions
+       WHERE date >= ?
+       ORDER BY start_time ASC`
+    )
+    .all(sinceStr) as { softwareId: string; startTime: string }[];
+
+  const bucketMs = bucketMinutes * 60 * 1000;
+  // bucketKey -> 该时间窗口内出现过的软件集合
+  const buckets = new Map<number, Set<string>>();
+  for (const row of rows) {
+    const ts = new Date(row.startTime).getTime();
+    if (Number.isNaN(ts)) continue;
+    const bucket = Math.floor(ts / bucketMs);
+    let set = buckets.get(bucket);
+    if (!set) {
+      set = new Set<string>();
+      buckets.set(bucket, set);
+    }
+    set.add(row.softwareId);
+  }
+
+  // 软件对(有序 key "a\u0000b")-> 共现次数
+  const pairCount = new Map<string, number>();
+  for (const set of buckets.values()) {
+    const ids = [...set];
+    if (ids.length < 2) continue;
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const [a, b] = ids[i] < ids[j] ? [ids[i], ids[j]] : [ids[j], ids[i]];
+        const key = `${a}\u0000${b}`;
+        pairCount.set(key, (pairCount.get(key) ?? 0) + 1);
+      }
+    }
+  }
+
+  const pairs: CoUsagePair[] = [];
+  for (const [key, count] of pairCount.entries()) {
+    const [a, b] = key.split('\u0000');
+    pairs.push({ a, b, count });
+  }
+  pairs.sort((x, y) => y.count - x.count);
+  return pairs;
+}
+
 export function closeDb(): void {
   if (db) {
     db.close();
