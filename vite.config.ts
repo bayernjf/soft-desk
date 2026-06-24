@@ -12,6 +12,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // https://vite.dev/config/
 export default defineConfig({
+  // 固定 dev 端口并禁止自动切换:Electron 的 localStorage 按 origin(含端口)隔离,
+  // 端口漂移会导致换到全新的空 localStorage,引发"重启后配置丢失"的假象。
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
   build: {
     sourcemap: 'hidden',
   },
