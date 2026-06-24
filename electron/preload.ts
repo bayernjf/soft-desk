@@ -12,6 +12,28 @@ contextBridge.exposeInMainWorld('softdesk', {
   getUsageStats: (period: 'day' | 'week' | 'month' | 'all') =>
     ipcRenderer.invoke('usage:getStats', period),
   getSuggestions: () => ipcRenderer.invoke('usage:getSuggestions'),
+  testAiProvider: (input: {
+    provider?: string;
+    endpoint?: string;
+    apiKey?: string;
+    model?: string;
+  }) => ipcRenderer.invoke('ai:test', input),
+  syncAiProviders: (providers: unknown) => ipcRenderer.invoke('ai:syncProviders', providers),
+  getAiProviders: () => ipcRenderer.invoke('ai:getProviders'),
+  completeAi: (input: {
+    messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
+    maxTokens?: number;
+    temperature?: number;
+    expectJson?: boolean;
+  }) => ipcRenderer.invoke('ai:complete', input),
+  suggestWorkflows: (input: {
+    apps: { id: string; name: string; category: string; usageMinutes: number }[];
+  }) => ipcRenderer.invoke('ai:suggestWorkflows', input),
+  semanticSearch: (input: {
+    query: string;
+    candidates: { id: string; name: string; description?: string; category?: string; tags?: string[] }[];
+  }) => ipcRenderer.invoke('ai:semanticSearch', input),
+  hasAiProvider: () => ipcRenderer.invoke('ai:hasProvider'),
   toggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
   onOpenLauncher: (callback: () => void) => {
     const handler = () => callback();

@@ -2,9 +2,20 @@ import { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, nativeI
 import path from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { scanInstalledApps, startAppWatcher, stopAppWatcher, type ScannedApp } from './scanner';
+import { scanInstalledApps, applyAiCategories, startAppWatcher, stopAppWatcher, type ScannedApp, type ScannedCategory } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
 import { getStats, getUsageSummary, getCoUsage, recordLaunch, closeDb } from './database';
+import {
+  syncProviders,
+  getProviders,
+  getActiveProvider,
+  complete,
+  classifyApps,
+  suggestWorkflows,
+  semanticSearch,
+  type AiChatMessage,
+  type SearchCandidate,
+} from './ai';
 
 function todayKey(): string {
   const d = new Date();
@@ -195,14 +206,57 @@ const knownAppPaths = new Set<string>();
 // 记录最近一次渲染层传入的"智能分类"开关,供 FSEvents 监听到变化后的重扫沿用
 let lastSmartGrouping = true;
 
+// 记录已用 AI 兜底分类过的应用 id,避免同一会话内对同一应用反复调用模型(省钱)
+const aiClassifiedIds = new Set<string>();
+
 function isAllowedAppPath(appPath: unknown): appPath is string {
   return typeof appPath === 'string' && knownAppPaths.has(appPath);
+}
+
+/**
+ * 对规则判不出(categorySource==='default')且尚未 AI 分类过的应用,批量送模型兜底分类。
+ * 仅在存在启用的 AI provider 且开启智能分类时触发;结果写回扫描缓存并就地修正本次返回值。
+ * 任何失败都静默回退(保留 utilities),不阻断扫描主流程。
+ */
+async function classifyUncategorized(apps: ScannedApp[]): Promise<ScannedApp[]> {
+  if (!lastSmartGrouping || !getActiveProvider()) return apps;
+
+  const pending = apps.filter(
+    (a) => a.categorySource === 'default' && !aiClassifiedIds.has(a.id)
+  );
+  if (pending.length === 0) return apps;
+
+  try {
+    const mapping = await classifyApps(
+      pending.map((a) => ({
+        id: a.id,
+        name: a.name,
+        bundleId: a.bundleId,
+        description: a.description,
+      }))
+    );
+    for (const a of pending) aiClassifiedIds.add(a.id);
+    if (Object.keys(mapping).length === 0) return apps;
+
+    await applyAiCategories(mapping as Record<string, ScannedCategory>);
+    return apps.map((a) => {
+      const next = mapping[a.id];
+      if (next && a.categorySource === 'default') {
+        return { ...a, category: next, categorySource: 'ai' as const };
+      }
+      return a;
+    });
+  } catch (err) {
+    console.error('[softdesk] AI classify failed:', err);
+    return apps;
+  }
 }
 
 async function scanWithUsage(): Promise<ScannedApp[]> {
   const apps = await scanInstalledApps(lastSmartGrouping);
   knownAppPaths.clear();
   for (const a of apps) knownAppPaths.add(a.path);
+  const classified = await classifyUncategorized(apps);
   let summary: ReturnType<typeof getUsageSummary> = [];
   try {
     summary = getUsageSummary();
@@ -210,7 +264,7 @@ async function scanWithUsage(): Promise<ScannedApp[]> {
     console.error('[softdesk] getUsageSummary failed:', dbErr);
   }
   const byId = new Map(summary.map((s) => [s.softwareId, s]));
-  return apps.map((appItem) => {
+  return classified.map((appItem) => {
     const usage = byId.get(appItem.id);
     if (!usage) return appItem;
     return {
@@ -296,6 +350,157 @@ ipcMain.handle('software:launchBatch', async (_event, appPaths: string[]) => {
 ipcMain.handle('app:openUserData', async () => {
   await shell.openPath(app.getPath('userData'));
   return { success: true };
+});
+
+// 测试 AI provider 连通性:对 OpenAI 兼容接口发一个最小 /chat/completions 请求,
+// 由主进程发出,避免渲染层 CORS 限制且不在页面暴露 apiKey。
+interface AiTestInput {
+  provider?: string;
+  endpoint?: string;
+  apiKey?: string;
+  model?: string;
+}
+
+function joinChatCompletionsUrl(endpoint: string): string {
+  const base = endpoint.replace(/\/+$/, '');
+  if (/\/chat\/completions$/.test(base)) return base;
+  return `${base}/chat/completions`;
+}
+
+ipcMain.handle('ai:test', async (_event, raw: unknown) => {
+  const input = (raw && typeof raw === 'object' ? raw : {}) as AiTestInput;
+  const endpoint = typeof input.endpoint === 'string' ? input.endpoint.trim() : '';
+  const apiKey = typeof input.apiKey === 'string' ? input.apiKey.trim() : '';
+  const model = typeof input.model === 'string' ? input.model.trim() : '';
+
+  if (!endpoint) return { success: false, error: '请填写 Endpoint' };
+  if (!apiKey) return { success: false, error: '请填写 API Key' };
+  if (!model) return { success: false, error: '请填写模型 ID' };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(joinChatCompletionsUrl(endpoint), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+
+    if (res.ok) {
+      return { success: true };
+    }
+
+    let detail = '';
+    try {
+      const data = (await res.json()) as { error?: { message?: string }; message?: string };
+      detail = data?.error?.message || data?.message || '';
+    } catch {
+      detail = await res.text().catch(() => '');
+    }
+    return {
+      success: false,
+      error: `HTTP ${res.status}${detail ? `：${String(detail).slice(0, 200)}` : ''}`,
+    };
+  } catch (err) {
+    const message =
+      err instanceof Error
+        ? err.name === 'AbortError'
+          ? '请求超时（20s）'
+          : err.message
+        : '请求失败';
+    return { success: false, error: message };
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+// 渲染层在 AI provider 配置变更时,把含 apiKey 的完整列表同步进主进程并落盘;
+// 之后所有业务推理在主进程发起,apiKey 不再随业务 IPC 往返暴露给页面。
+ipcMain.handle('ai:syncProviders', (_event, raw: unknown) => {
+  try {
+    syncProviders(raw);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : '同步失败' };
+  }
+});
+
+// 渲染层启动时读取主进程落盘的 provider 列表回填 store(主进程是唯一权威数据源),
+// 避免因 localStorage 按 origin 隔离/被清空而丢失配置。
+ipcMain.handle('ai:getProviders', () => {
+  try {
+    return { providers: getProviders() };
+  } catch {
+    return { providers: [] };
+  }
+});
+
+// 通用推理入口:用当前启用的 provider 发起一次对话补全,返回文本(无 provider 时报错)。
+ipcMain.handle('ai:complete', async (_event, raw: unknown) => {
+  const config = getActiveProvider();
+  if (!config) return { success: false, error: '未配置或未启用 AI 模型' };
+  const input = (raw && typeof raw === 'object' ? raw : {}) as {
+    messages?: AiChatMessage[];
+    maxTokens?: number;
+    temperature?: number;
+    expectJson?: boolean;
+  };
+  if (!Array.isArray(input.messages) || input.messages.length === 0) {
+    return { success: false, error: '缺少 messages' };
+  }
+  return complete(config, {
+    messages: input.messages,
+    maxTokens: input.maxTokens,
+    temperature: input.temperature,
+    expectJson: input.expectJson,
+  });
+});
+
+// 主动触发 AI 工作流建议:汇总已安装应用 + 共现统计后送模型,返回结构化建议(无 provider 返回空)。
+ipcMain.handle('ai:suggestWorkflows', async (_event, raw: unknown) => {
+  if (!getActiveProvider()) return { suggestions: [] };
+  const input = (raw && typeof raw === 'object' ? raw : {}) as {
+    apps?: { id: string; name: string; category: string; usageMinutes: number }[];
+  };
+  const apps = Array.isArray(input.apps) ? input.apps : [];
+  if (apps.length < 2) return { suggestions: [] };
+  let coUsage: ReturnType<typeof getCoUsage> = [];
+  try {
+    coUsage = getCoUsage();
+  } catch {
+    coUsage = [];
+  }
+  const suggestions = await suggestWorkflows(apps, coUsage);
+  return { suggestions };
+});
+
+// 报告当前是否有启用的 AI 模型,供渲染层决定是否展示 AI 入口
+ipcMain.handle('ai:hasProvider', () => {
+  return { hasProvider: getActiveProvider() !== null };
+});
+
+// 自然语言语义搜索:把查询 + 精简候选送模型,返回按相关度排序的软件 id;
+// 无启用模型 / 失败时返回 { ids: null },由渲染层回退到本地字面匹配。
+ipcMain.handle('ai:semanticSearch', async (_event, raw: unknown) => {
+  if (!getActiveProvider()) return { ids: null };
+  const input = (raw && typeof raw === 'object' ? raw : {}) as {
+    query?: string;
+    candidates?: SearchCandidate[];
+  };
+  const query = typeof input.query === 'string' ? input.query : '';
+  const candidates = Array.isArray(input.candidates) ? input.candidates : [];
+  if (!query.trim() || candidates.length === 0) return { ids: null };
+  const ids = await semanticSearch(query, candidates);
+  return { ids };
 });
 
 // 渲染进程(设置页)同步窗口行为偏好;落盘后下次冷启动即可在 createWindow 前读取

@@ -115,6 +115,14 @@ export type ScannedCategory =
   | 'media'
   | 'security';
 
+/** 分类来源:用于决定是否需要 AI 兜底。
+ *  - system:系统声明的 LSApplicationCategoryType(最可信)
+ *  - bundle:bundleId 域名规则命中
+ *  - name:软件名关键词规则命中
+ *  - ai:大模型兜底分类的结果
+ *  - default:以上都未命中,退化为 utilities(AI 仅对此类重判) */
+export type CategorySource = 'system' | 'bundle' | 'name' | 'ai' | 'default';
+
 export interface ScannedApp {
   id: string;
   name: string;
@@ -123,6 +131,10 @@ export interface ScannedApp {
   /** 图标缓存 PNG 的绝对路径(不持久化进 scan-cache.json,避免缓存文件膨胀) */
   iconCacheFile?: string;
   category: ScannedCategory;
+  /** 该 app 的分类是怎么得到的,供主进程判断哪些需要 AI 兜底 */
+  categorySource: CategorySource;
+  /** 应用 bundleId(若可读),供 AI 分类作为输入特征 */
+  bundleId?: string;
   version?: string;
   publisher?: string;
   size: number;
@@ -197,15 +209,8 @@ function inferCategoryByBundleId(bundleId: string): ScannedCategory | null {
   return null;
 }
 
-function inferCategoryByName(name: string): ScannedCategory {
-  for (const [cat, re] of NAME_KEYWORDS) {
-    if (re.test(name)) return cat;
-  }
-  return 'utilities';
-}
-
 /**
- * 解析应用分类。
+ * 解析应用分类,并返回分类来源(供主进程判断是否需要 AI 兜底)。
  * - smartGrouping 关闭时:只信任系统声明的 LSApplicationCategoryType,未知一律归 utilities,不做任何推断;
  * - smartGrouping 开启时:系统声明缺失/未映射时,依次用 bundleId 域名映射、软件名关键词推断。
  */
@@ -214,16 +219,19 @@ function resolveCategory(
   bundleId: string | undefined,
   name: string,
   smartGrouping: boolean
-): ScannedCategory {
+): { category: ScannedCategory; source: CategorySource } {
   if (lsCategory && LSAPP_CATEGORY_MAP[lsCategory]) {
-    return LSAPP_CATEGORY_MAP[lsCategory];
+    return { category: LSAPP_CATEGORY_MAP[lsCategory], source: 'system' };
   }
-  if (!smartGrouping) return 'utilities';
+  if (!smartGrouping) return { category: 'utilities', source: 'default' };
   if (bundleId) {
     const byBundle = inferCategoryByBundleId(bundleId);
-    if (byBundle) return byBundle;
+    if (byBundle) return { category: byBundle, source: 'bundle' };
   }
-  return inferCategoryByName(name);
+  for (const [cat, re] of NAME_KEYWORDS) {
+    if (re.test(name)) return { category: cat, source: 'name' };
+  }
+  return { category: 'utilities', source: 'default' };
 }
 
 async function readInfoPlist(appPath: string): Promise<Record<string, string>> {
@@ -315,9 +323,10 @@ async function scanOneApp(appPath: string, smartGrouping: boolean): Promise<Scan
     const plist = await readInfoPlist(appPath);
     const size = await getDirSizeMB(appPath);
 
-    const category = resolveCategory(
+    const bundleId = plist['CFBundleIdentifier'];
+    const { category, source: categorySource } = resolveCategory(
       plist['LSApplicationCategoryType'],
-      plist['CFBundleIdentifier'],
+      bundleId,
       baseName,
       smartGrouping
     );
@@ -336,6 +345,8 @@ async function scanOneApp(appPath: string, smartGrouping: boolean): Promise<Scan
       icon,
       iconCacheFile: iconCacheFile ?? undefined,
       category,
+      categorySource,
+      bundleId: bundleId || undefined,
       version: plist['CFBundleShortVersionString'],
       publisher: publisherFromBundleId(plist['CFBundleIdentifier']),
       size,
@@ -462,6 +473,35 @@ export async function scanInstalledApps(smartGrouping = true): Promise<ScannedAp
   await persistMetaCache();
   await pruneOrphanIcons();
   return unique;
+}
+
+/**
+ * 把 AI 兜底得到的分类(id -> category)写回内存缓存与磁盘缓存,并标记 categorySource='ai'。
+ * 只对仍处于 'default' 来源的条目生效,避免覆盖系统/规则已确定的分类;持久化后
+ * 同一应用(mtime 未变)后续扫描直接命中缓存,不会再次调用模型(省钱)。
+ */
+export async function applyAiCategories(
+  mapping: Record<string, ScannedCategory>
+): Promise<void> {
+  if (!mapping || Object.keys(mapping).length === 0) return;
+  await loadMetaCache();
+  let changed = false;
+  for (const entry of metaCache.values()) {
+    const next = mapping[entry.app.id];
+    if (next && entry.app.categorySource === 'default' && next !== undefined) {
+      entry.app = {
+        ...entry.app,
+        category: next,
+        categorySource: 'ai',
+        color: CATEGORY_COLORS[next],
+      };
+      changed = true;
+    }
+  }
+  if (changed) {
+    metaCacheDirty = true;
+    await persistMetaCache();
+  }
 }
 
 /** 删除 icon-cache 中不再被任何缓存条目引用的 PNG(应用升级换图标/卸载后产生的陈旧文件) */
