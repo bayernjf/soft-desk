@@ -23,6 +23,8 @@ export function SoftwareCardTooltip({ software, children }: SoftwareCardTooltipP
   const description = resolveDescription(software);
 
   const handleMouseEnter = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-no-tooltip]')) return;
     setMousePos({ x: e.clientX, y: e.clientY });
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
@@ -40,7 +42,20 @@ export function SoftwareCardTooltip({ software, children }: SoftwareCardTooltipP
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-no-tooltip]')) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setVisible(false);
+      return;
+    }
     setMousePos({ x: e.clientX, y: e.clientY });
+    // 从操作图标区域移回卡片主体时，重新触发延迟显示
+    if (!visible) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        setVisible(true);
+      }, 300);
+    }
   };
 
   const handleMouseLeave = () => {

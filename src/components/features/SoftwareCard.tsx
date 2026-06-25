@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, memo } from 'react';
-import { Play, Clock, HardDrive, Download, Trash2, RotateCcw } from 'lucide-react';
+import { Play, Clock, HardDrive, Download, Trash2, RotateCcw, Star } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { CATEGORIES } from '@/data/categories';
 import type { Software } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
 import { AppIcon } from './AppIcon';
 import { SoftwareCardTooltip } from './SoftwareCardTooltip';
@@ -19,13 +21,27 @@ export function SoftwareCard({ software, variant = 'default', context = 'library
 }
 
 const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'default', context = 'library' }: SoftwareCardProps) {
+  const navigate = useNavigate();
   const launchSoftware = useSoftwareStore((s) => s.launchSoftware);
   const removeSoftware = useSoftwareStore((s) => s.removeSoftware);
   const reinstallSoftware = useSoftwareStore((s) => s.reinstallSoftware);
   const uninstallSoftware = useSoftwareStore((s) => s.uninstallSoftware);
   const purgeSoftware = useSoftwareStore((s) => s.purgeSoftware);
   const scanSoftware = useSoftwareStore((s) => s.scanSoftware);
+  const favoriteIds = useSoftwareStore((s) => s.favoriteIds);
+  const toggleFavorite = useSoftwareStore((s) => s.toggleFavorite);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
   const categoryMeta = CATEGORIES.find((c) => c.id === software.category);
+  const isFavorite = favoriteIds.includes(software.id);
+
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!loggedIn) {
+      navigate('/account');
+      return;
+    }
+    void toggleFavorite(software.id);
+  };
 
   const isDeleted = !!software.deleted;
   const isUninstalled = !!software.uninstalled;
@@ -215,7 +231,18 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
 
   if (variant === 'compact') {
     return (
-      <div ref={wrapperRef} className="relative">
+      <div ref={wrapperRef} className="relative group/card">
+        <button
+          onClick={handleFavoriteClick}
+          className={cn(
+            'absolute top-1.5 right-1.5 z-10 p-1 rounded-md transition-all duration-200 opacity-0 group-hover/card:opacity-100',
+            isFavorite ? 'opacity-100' : '',
+            isFavorite ? 'text-amber-400 hover:text-amber-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
+          )}
+          title={isFavorite ? '取消收藏' : loggedIn ? '收藏' : '请先登录后收藏'}
+        >
+          <Star className={cn('w-3 h-3', isFavorite && 'fill-amber-400')} />
+        </button>
         <SoftwareCardTooltip software={software}>
           <button
             onClick={handleClick}
@@ -232,7 +259,9 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
                 {inactive ? statusLabel : categoryMeta?.name}
               </div>
             </div>
-            <Play className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <span data-no-tooltip className="shrink-0">
+              <Play className="w-3.5 h-3.5 text-slate-500" />
+            </span>
           </button>
         </SoftwareCardTooltip>
         {overlay}
@@ -242,12 +271,23 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
 
   if (variant === 'large') {
     return (
-      <div ref={wrapperRef} className="relative">
+      <div ref={wrapperRef} className="relative group/card">
+        <button
+          onClick={handleFavoriteClick}
+          className={cn(
+            'absolute top-2 right-2 z-10 p-1.5 rounded-lg transition-all duration-200 opacity-0 group-hover/card:opacity-100',
+            isFavorite ? 'opacity-100' : '',
+            isFavorite ? 'text-amber-400 hover:text-amber-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
+          )}
+          title={isFavorite ? '取消收藏' : loggedIn ? '收藏' : '请先登录后收藏'}
+        >
+          <Star className={cn('w-4 h-4', isFavorite && 'fill-amber-400')} />
+        </button>
         <SoftwareCardTooltip software={software}>
           <button
             onClick={handleClick}
             className={cn(
-              'w-full p-4 rounded-2xl text-left transition-all duration-300 group',
+              'w-full flex items-center gap-3 p-3.5 rounded-2xl text-left transition-all duration-200 group',
               'bg-slate-900/50 hover:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700/60',
               'hover:shadow-lg hover:shadow-slate-900/50 hover:-translate-y-0.5',
               inactive && 'grayscale opacity-50 hover:opacity-70 hover:translate-y-0'
@@ -292,14 +332,16 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
                   )}
                 </div>
               </div>
-              <div
-                className={cn(
-                  'w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200',
-                  'bg-slate-800/60 text-slate-400 group-hover:bg-violet-500/20 group-hover:text-violet-300'
-                )}
-              >
-                <Play className="w-5 h-5 ml-0.5" />
-              </div>
+              <span data-no-tooltip className="shrink-0">
+                <div
+                  className={cn(
+                    'w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-200',
+                    'bg-slate-800/60 text-slate-400 group-hover:bg-violet-500/20 group-hover:text-violet-300'
+                  )}
+                >
+                  <Play className="w-5 h-5 ml-0.5" />
+                </div>
+              </span>
             </div>
           </button>
         </SoftwareCardTooltip>
@@ -309,7 +351,18 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
   }
 
   return (
-    <div ref={wrapperRef} className="relative">
+    <div ref={wrapperRef} className="relative group/card">
+      <button
+        onClick={handleFavoriteClick}
+        className={cn(
+          'absolute top-2 right-2 z-10 p-1.5 rounded-lg transition-all duration-200 opacity-0 group-hover/card:opacity-100',
+          isFavorite ? 'opacity-100' : '',
+          isFavorite ? 'text-amber-400 hover:text-amber-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
+        )}
+        title={isFavorite ? '取消收藏' : loggedIn ? '收藏' : '请先登录后收藏'}
+      >
+        <Star className={cn('w-4 h-4', isFavorite && 'fill-amber-400')} />
+      </button>
       <SoftwareCardTooltip software={software}>
         <button
           onClick={handleClick}
@@ -340,17 +393,19 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
                 <span>{formatMinutes(software.usageMinutes)}</span>
               </div>
             </div>
-            {isDeleted ? (
-              <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors shrink-0" />
-            ) : context === 'uninstall' ? (
-              isUninstalled ? (
-                <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors shrink-0" />
+            <span data-no-tooltip className="shrink-0">
+              {isDeleted ? (
+                <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors" />
+              ) : context === 'uninstall' ? (
+                isUninstalled ? (
+                  <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors" />
+                ) : (
+                  <Trash2 className="w-4 h-4 text-slate-600 group-hover:text-rose-400 transition-colors" />
+                )
               ) : (
-                <Trash2 className="w-4 h-4 text-slate-600 group-hover:text-rose-400 transition-colors shrink-0" />
-              )
-            ) : (
-              <Play className="w-4 h-4 text-slate-600 group-hover:text-violet-400 transition-colors shrink-0" />
-            )}
+                <Play className="w-4 h-4 text-slate-600 group-hover:text-violet-400 transition-colors" />
+              )}
+            </span>
           </div>
         </button>
       </SoftwareCardTooltip>
