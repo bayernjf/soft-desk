@@ -17,6 +17,7 @@ interface SoftwareStore {
   software: Software[];
   workflows: Workflow[];
   uninstalledIds: string[];
+  descriptionCache: Record<string, string>;
   selectedCategory: SoftwareCategory | 'all';
   searchQuery: string;
   sortBy: 'name' | 'usage' | 'recent' | 'size';
@@ -39,6 +40,7 @@ interface SoftwareStore {
   removeSoftware: (id: string) => Promise<{ success: boolean; error?: string }>;
   reinstallSoftware: (id: string) => void;
   purgeSoftware: (id: string) => void;
+  setAiDescription: (id: string, description: string) => void;
 }
 
 export interface WorkflowInput {
@@ -56,6 +58,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
   software: [],
   workflows: [],
   uninstalledIds: [],
+  descriptionCache: {},
   selectedCategory: 'all',
   searchQuery: '',
   sortBy: 'recent',
@@ -71,12 +74,14 @@ export const useSoftwareStore = create<SoftwareStore>()(
   applyScannedApps: (apps) => {
     const prev = get().software;
     const uninstalledIds = get().uninstalledIds;
+    const descriptionCache = get().descriptionCache;
     const scannedById = new Map(apps.map((a) => [a.id, a]));
 
     const merged: Software[] = apps.map((app) => ({
       ...app,
       uninstalled: uninstalledIds.includes(app.id),
       deleted: false,
+      aiDescription: descriptionCache[app.id],
     }));
 
     for (const old of prev) {
@@ -251,12 +256,21 @@ export const useSoftwareStore = create<SoftwareStore>()(
       uninstalledIds: get().uninstalledIds.filter((x) => x !== id),
     });
   },
+
+  setAiDescription: (id, description) => {
+    const software = get().software.map((s) =>
+      s.id === id ? { ...s, aiDescription: description } : s
+    );
+    const descriptionCache = { ...get().descriptionCache, [id]: description };
+    set({ software, descriptionCache });
+  },
 }),
     {
       name: 'softdesk-store',
       partialize: (state) => ({
         workflows: state.workflows,
         uninstalledIds: state.uninstalledIds,
+        descriptionCache: state.descriptionCache,
       }),
     }
   )
