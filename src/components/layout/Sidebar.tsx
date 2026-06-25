@@ -18,6 +18,7 @@ import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { CATEGORIES } from '@/data/categories';
 import { cn } from '@/lib/utils';
+import { getAvatarSvg } from '@/lib/avatars';
 
 const COLLAPSED_CATEGORY_COUNT = 5;
 
@@ -194,7 +195,11 @@ export function Sidebar() {
             )
           }
         >
-          <UserRound className="w-4 h-4" />
+          {loggedIn && profile ? (
+            <div className="w-4 h-4" dangerouslySetInnerHTML={{ __html: getAvatarSvg(profile.avatar) }} />
+          ) : (
+            <UserRound className="w-4 h-4" />
+          )}
           <span className="flex-1 truncate">
             {loggedIn && profile ? profile.nickname : '登录账号'}
           </span>
