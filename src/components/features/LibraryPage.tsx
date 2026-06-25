@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Search, SlidersHorizontal, X, Sparkles, Loader2 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useSettingsStore } from '@/stores/settings.store';
@@ -7,6 +7,7 @@ import { SoftwareCard } from '@/components/features/SoftwareCard';
 import { LazyMount } from '@/components/features/LazyMount';
 import { useSemanticSearch } from '@/hooks/useSemanticSearch';
 import { hasActiveAiProvider } from '@/services/ai.service';
+import { batchFillDescriptions } from '@/services/description.service';
 import { fieldMatches } from '@/lib/searchMatch';
 import { cn } from '@/lib/utils';
 
@@ -141,6 +142,8 @@ export function LibraryPage() {
   }, [localFiltered, semantic.ids, software, selectedCategory, sortBy]);
 
   const aiExtraCount = filtered.length - localFiltered.length;
+  const setAiDescription = useSoftwareStore((s) => s.setAiDescription);
+  const batchFilledRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -148,6 +151,21 @@ export function LibraryPage() {
       setSearchQuery('');
     };
   }, [setSelectedCategory, setSearchQuery]);
+
+  useEffect(() => {
+    if (batchFilledRef.current) return;
+    if (software.length === 0) return;
+    if (!aiReady || !aiSearchEnabled) return;
+
+    const activeSoftware = software.filter((s) => !s.uninstalled && !s.deleted);
+    const missing = activeSoftware.filter((s) => !s.aiDescription);
+    if (missing.length === 0) return;
+
+    batchFilledRef.current = true;
+    void batchFillDescriptions(activeSoftware, (id, desc) => {
+      setAiDescription(id, desc);
+    });
+  }, [software, aiReady, aiSearchEnabled, setAiDescription]);
 
   return (
     <div className="space-y-6">
