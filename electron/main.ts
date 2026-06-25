@@ -21,7 +21,7 @@ import {
   type RecommendAppInput,
   type UserProfileInput,
 } from './ai';
-import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession, getTokens as authGetTokens } from './auth';
+import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession, getTokens as authGetTokens, updateProfile as authUpdateProfile } from './auth';
 import { createLogger } from './lib/logger';
 
 const logger = createLogger('main');
@@ -660,6 +660,11 @@ ipcMain.handle('auth:getSession', async () => {
 
 ipcMain.handle('auth:getTokens', () => {
   return authGetTokens();
+});
+
+ipcMain.handle('auth:updateProfile', (_event, raw: unknown) => {
+  const input = (raw && typeof raw === 'object' ? raw : {}) as { nickname?: string; avatar?: number };
+  return authUpdateProfile(input);
 });
 
 ipcMain.handle('software:remove', async (_event, appPath: string) => {

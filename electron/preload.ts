@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('softdesk', {
   logoutAccount: () => ipcRenderer.invoke('auth:logout'),
   getAuthSession: () => ipcRenderer.invoke('auth:getSession'),
   getAuthTokens: () => ipcRenderer.invoke('auth:getTokens'),
+  updateProfile: (input: { nickname?: string; avatar?: number }) =>
+    ipcRenderer.invoke('auth:updateProfile', input),
   toggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
   onOpenLauncher: (callback: () => void) => {
     const handler = () => callback();

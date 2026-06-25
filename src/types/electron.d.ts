@@ -139,6 +139,7 @@ export interface AuthProfile {
   email: string;
   nickname: string;
   avatarUrl: string | null;
+  avatar: number;
   plan: 'free' | 'pro';
   emailVerified: boolean;
   createdAt: string;
@@ -224,6 +225,8 @@ export interface SoftdeskBridge {
   getAuthSession: () => Promise<AuthSession>;
   /** 获取当前用户的 Supabase JWT Token(用于渲染层设置 Supabase 会话) */
   getAuthTokens: () => Promise<{ accessToken: string; refreshToken: string } | null>;
+  /** 更新用户资料(昵称/头像) */
+  updateProfile: (input: { nickname?: string; avatar?: number }) => Promise<AuthResult>;
   toggleMaximize: () => Promise<{ maximized: boolean }>;
   /** 监听由托盘菜单或全局快捷键触发的"打开快速启动器"事件,返回取消监听函数 */
   onOpenLauncher: (callback: () => void) => () => void;

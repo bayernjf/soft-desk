@@ -12,6 +12,7 @@ export interface AuthProfile {
   email: string;
   nickname: string;
   avatarUrl: string | null;
+  avatar: number;
   plan: 'free' | 'pro';
   emailVerified: boolean;
   createdAt: string;
@@ -52,6 +53,7 @@ function userToProfile(user: User): AuthProfile {
     email: user.email ?? '',
     nickname: (user.user_metadata?.nickname as string) || (user.email?.split('@')[0] ?? ''),
     avatarUrl: (user.user_metadata?.avatar_url as string | null) || user.user_metadata?.picture as string | null || null,
+    avatar: (user.user_metadata?.avatar as number) || 0,
     plan: (user.user_metadata?.plan as 'free' | 'pro') || 'free',
     emailVerified: !!user.email_confirmed_at,
     createdAt: user.created_at,
@@ -127,11 +129,12 @@ export async function register(rawEmail: unknown, rawPassword: unknown, rawNickn
 
   try {
     const sb = getSupabase();
+    const randomAvatar = Math.floor(Math.random() * 10);
     const { data, error } = await sb.auth.signUp({
       email,
       password,
       options: {
-        data: { nickname, plan: 'free' },
+        data: { nickname, plan: 'free', avatar: randomAvatar },
       },
     });
 
@@ -234,6 +237,32 @@ export async function getSession(): Promise<AuthSession> {
     logger.error('getSession error:', err);
     logout();
     return { loggedIn: false };
+  }
+}
+
+export async function updateProfile(updates: { nickname?: string; avatar?: number }): Promise<AuthResult> {
+  ensureSessionLoaded();
+  if (!currentSession) {
+    return { success: false, error: '未登录' };
+  }
+
+  try {
+    const sb = getSupabase();
+    const metadata: Record<string, unknown> = {};
+    if (updates.nickname !== undefined) metadata.nickname = updates.nickname;
+    if (updates.avatar !== undefined) metadata.avatar = updates.avatar;
+
+    const { data, error } = await sb.auth.updateUser({ data: metadata });
+
+    if (error || !data.user) {
+      logger.error('updateProfile failed:', error?.message);
+      return { success: false, error: error?.message || '更新失败' };
+    }
+
+    return { success: true, profile: userToProfile(data.user) };
+  } catch (err) {
+    logger.error('updateProfile unexpected error:', err);
+    return { success: false, error: err instanceof Error ? err.message : '更新失败' };
   }
 }
 
