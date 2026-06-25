@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Search } from 'lucide-react';
+import { X, Search, LogIn } from 'lucide-react';
 import type { Workflow } from '@/types';
 import { useSoftwareStore, type WorkflowInput } from '@/stores/software.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { WORKFLOW_COLORS, CATEGORIES } from '@/data/categories';
 import { formatMinutes } from '@/services/software.service';
 import { AppIcon } from './AppIcon';
@@ -14,8 +15,10 @@ interface WorkflowEditorModalProps {
 
 export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalProps) {
   const software = useSoftwareStore((s) => s.software);
+  const workflows = useSoftwareStore((s) => s.workflows);
   const createWorkflow = useSoftwareStore((s) => s.createWorkflow);
   const updateWorkflow = useSoftwareStore((s) => s.updateWorkflow);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
   const isEdit = !!workflow;
 
   const [name, setName] = useState(workflow?.name ?? '');
@@ -59,8 +62,22 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
   };
 
   const handleSubmit = () => {
-    if (!name.trim()) {
+    if (!loggedIn) {
+      setError('请先登录账号');
+      return;
+    }
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       setError('请输入工作流名称');
+      return;
+    }
+    const duplicate = workflows.find(
+      (w) =>
+        w.id !== workflow?.id &&
+        w.name.trim().toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (duplicate) {
+      setError('工作流名称已存在');
       return;
     }
     if (selectedIds.length === 0) {
@@ -109,6 +126,12 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          {!loggedIn && (
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+              <LogIn className="w-3.5 h-3.5 shrink-0" />
+              <span>请先登录账号后再创建工作流</span>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1.5">名称</label>
             <input
@@ -264,9 +287,15 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
           </button>
           <button
             onClick={handleSubmit}
-            className="px-4 py-2 rounded-xl bg-violet-500 text-white text-sm font-medium hover:bg-violet-600 transition-colors active:scale-95"
+            disabled={!loggedIn}
+            className={cn(
+              'px-4 py-2 rounded-xl text-sm font-medium transition-colors active:scale-95',
+              loggedIn
+                ? 'bg-violet-500 text-white hover:bg-violet-600'
+                : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+            )}
           >
-            {isEdit ? '保存' : '创建'}
+            {isEdit ? '保存' : loggedIn ? '创建' : '登录后创建'}
           </button>
         </div>
       </div>
