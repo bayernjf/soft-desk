@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { X, Sparkles, Loader2, AlertCircle, Check } from 'lucide-react';
+import { X, Sparkles, Loader2, AlertCircle, Check, LogIn } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { fetchWorkflowSuggestions } from '@/services/ai.service';
 import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
@@ -18,9 +19,12 @@ type Phase =
 
 export function AiWorkflowModal({ onClose }: AiWorkflowModalProps) {
   const software = useSoftwareStore((s) => s.software);
+  const workflows = useSoftwareStore((s) => s.workflows);
   const createWorkflow = useSoftwareStore((s) => s.createWorkflow);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
   const [phase, setPhase] = useState<Phase>({ status: 'loading' });
   const [created, setCreated] = useState<Set<number>>(new Set());
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -56,6 +60,19 @@ export function AiWorkflowModal({ onClose }: AiWorkflowModalProps) {
   const byId = new Map(software.map((s) => [s.id, s]));
 
   const handleCreate = (sug: AiWorkflowSuggestion, idx: number) => {
+    setErrorMsg('');
+    if (!loggedIn) {
+      setErrorMsg('请先登录账号');
+      return;
+    }
+    const trimmedName = sug.name.trim();
+    const duplicate = workflows.find(
+      (w) => w.name.trim().toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (duplicate) {
+      setErrorMsg(`「${sug.name}」已存在`);
+      return;
+    }
     const ids = sug.softwareIds.filter((id) => {
       const sw = byId.get(id);
       return sw && !sw.uninstalled && !sw.deleted;
@@ -119,6 +136,18 @@ export function AiWorkflowModal({ onClose }: AiWorkflowModalProps) {
 
           {phase.status === 'ready' && (
             <div className="space-y-3">
+              {!loggedIn && (
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+                  <LogIn className="w-3.5 h-3.5 shrink-0" />
+                  <span>请先登录账号后再创建工作流</span>
+                </div>
+              )}
+              {errorMsg && (
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
               {phase.suggestions.map((sug, idx) => {
                 const apps = sug.softwareIds
                   .map((id) => byId.get(id))
@@ -146,12 +175,14 @@ export function AiWorkflowModal({ onClose }: AiWorkflowModalProps) {
                     </div>
                     <button
                       onClick={() => handleCreate(sug, idx)}
-                      disabled={isCreated || apps.length < 2}
+                      disabled={isCreated || apps.length < 2 || !loggedIn}
                       className={cn(
                         'w-full py-2 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5',
                         isCreated
                           ? 'bg-emerald-500/15 text-emerald-300 cursor-default'
-                          : 'bg-violet-500/15 text-violet-300 hover:bg-violet-500/25'
+                          : loggedIn
+                            ? 'bg-violet-500/15 text-violet-300 hover:bg-violet-500/25'
+                            : 'bg-slate-700 text-slate-400 cursor-not-allowed'
                       )}
                     >
                       {isCreated ? (
