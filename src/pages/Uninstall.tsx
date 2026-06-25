@@ -4,6 +4,7 @@ import { useSoftwareStore } from '@/stores/software.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatSize } from '@/services/software.service';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
+import { softwareMatches } from '@/lib/searchMatch';
 import type { SoftwareCategory } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -38,14 +39,8 @@ export function Uninstall() {
       result = result.filter((s) => s.category === category);
     }
     if (query.trim()) {
-      const q = query.toLowerCase();
-      result = result.filter(
-        (s) =>
-          s.name.toLowerCase().includes(q) ||
-          s.description.toLowerCase().includes(q) ||
-          s.tags.some((t) => t.toLowerCase().includes(q)) ||
-          s.publisher?.toLowerCase().includes(q)
-      );
+      const q = query.trim().toLowerCase();
+      result = result.filter((s) => softwareMatches(s, q));
     }
     return [...result].sort((a, b) => {
       if (!!a.uninstalled !== !!b.uninstalled) return a.uninstalled ? 1 : -1;
@@ -173,7 +168,7 @@ export function Uninstall() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索软件名称、描述或标签..."
+              placeholder="搜索软件名称、描述或标签（支持拼音、首字母）..."
               className={cn(
                 'w-full pl-11 pr-10 py-3.5 rounded-2xl bg-slate-900/60 border border-slate-800',
                 'text-sm text-slate-100 placeholder:text-slate-600',
