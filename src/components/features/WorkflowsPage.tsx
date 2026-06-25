@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Star, Clock, Play, Loader2, Check, AlertCircle, Pencil, Trash2, Plus, Sparkles } from 'lucide-react';
 import type { Workflow } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { formatTimeAgo } from '@/services/software.service';
 import { hasActiveAiProvider } from '@/services/ai.service';
 import { cn } from '@/lib/utils';
@@ -244,6 +246,9 @@ export function WorkflowsPage() {
   const [aiOpen, setAiOpen] = useState(false);
   const [aiReady, setAiReady] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
+  const [loginHint, setLoginHint] = useState(false);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
+  const navigate = useNavigate();
   const favorite = workflows.filter((w) => w.isFavorite);
   const rest = workflows.filter((w) => !w.isFavorite);
 
@@ -262,8 +267,22 @@ export function WorkflowsPage() {
   }, []);
 
   const openCreate = () => {
+    if (!loggedIn) {
+      setLoginHint(true);
+      setTimeout(() => setLoginHint(false), 3000);
+      return;
+    }
     setEditingWorkflow(null);
     setEditorOpen(true);
+  };
+
+  const openAi = () => {
+    if (!loggedIn) {
+      setLoginHint(true);
+      setTimeout(() => setLoginHint(false), 3000);
+      return;
+    }
+    setAiOpen(true);
   };
 
   const openEdit = useCallback((workflow: Workflow) => {
@@ -281,8 +300,13 @@ export function WorkflowsPage() {
         <div className="flex items-center gap-2">
           {aiReady && (
             <button
-              onClick={() => setAiOpen(true)}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-500/20 to-fuchsia-500/15 text-violet-300 text-sm font-medium border border-violet-500/30 hover:from-violet-500/30 hover:to-fuchsia-500/25 transition-colors flex items-center gap-1.5"
+              onClick={openAi}
+              className={cn(
+                'px-4 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center gap-1.5',
+                loggedIn
+                  ? 'bg-gradient-to-r from-violet-500/20 to-fuchsia-500/15 text-violet-300 border-violet-500/30 hover:from-violet-500/30 hover:to-fuchsia-500/25'
+                  : 'bg-slate-800/40 text-slate-500 border-slate-700/40 cursor-not-allowed'
+              )}
             >
               <Sparkles className="w-4 h-4" />
               AI 生成
@@ -290,13 +314,33 @@ export function WorkflowsPage() {
           )}
           <button
             onClick={openCreate}
-            className="px-4 py-2 rounded-xl bg-violet-500/20 text-violet-300 text-sm font-medium border border-violet-500/30 hover:bg-violet-500/30 transition-colors flex items-center gap-1.5"
+            className={cn(
+              'px-4 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center gap-1.5',
+              loggedIn
+                ? 'bg-violet-500/20 text-violet-300 border-violet-500/30 hover:bg-violet-500/30'
+                : 'bg-slate-800/40 text-slate-500 border-slate-700/40 cursor-not-allowed'
+            )}
           >
             <Plus className="w-4 h-4" />
             创建工作流
           </button>
         </div>
       </div>
+
+      {loginHint && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>请先登录账号后再创建工作流</span>
+          <button
+            onClick={() => navigate('/account')}
+            className="ml-auto px-3 py-1 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-medium hover:bg-amber-500/30 transition-colors"
+          >
+            去登录
+          </button>
+        </div>
+      )}
 
       {favorite.length > 0 && (
         <div>
