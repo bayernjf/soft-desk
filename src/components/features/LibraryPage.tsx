@@ -7,7 +7,7 @@ import { SoftwareCard } from '@/components/features/SoftwareCard';
 import { LazyMount } from '@/components/features/LazyMount';
 import { useSemanticSearch } from '@/hooks/useSemanticSearch';
 import { hasActiveAiProvider } from '@/services/ai.service';
-import { batchFillDescriptions } from '@/services/description.service';
+import { batchFillDescriptions, findVersionChanged } from '@/services/description.service';
 import { fieldMatches } from '@/lib/searchMatch';
 import { cn } from '@/lib/utils';
 
@@ -143,6 +143,7 @@ export function LibraryPage() {
 
   const aiExtraCount = filtered.length - localFiltered.length;
   const setAiDescription = useSoftwareStore((s) => s.setAiDescription);
+  const descriptionMeta = useSoftwareStore((s) => s.descriptionMeta);
   const batchFilledRef = useRef(false);
 
   useEffect(() => {
@@ -159,13 +160,15 @@ export function LibraryPage() {
 
     const activeSoftware = software.filter((s) => !s.uninstalled && !s.deleted);
     const missing = activeSoftware.filter((s) => !s.aiDescription);
-    if (missing.length === 0) return;
+    const versionChanged = findVersionChanged(activeSoftware, descriptionMeta);
+
+    if (missing.length === 0 && versionChanged.length === 0) return;
 
     batchFilledRef.current = true;
-    void batchFillDescriptions(activeSoftware, (id, desc) => {
-      setAiDescription(id, desc);
-    });
-  }, [software, aiReady, aiSearchEnabled, setAiDescription]);
+    void batchFillDescriptions(activeSoftware, (id, desc, version) => {
+      setAiDescription(id, desc, version);
+    }, { forceIds: versionChanged });
+  }, [software, aiReady, aiSearchEnabled, setAiDescription, descriptionMeta]);
 
   return (
     <div className="space-y-6">
