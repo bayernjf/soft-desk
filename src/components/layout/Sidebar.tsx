@@ -3,6 +3,7 @@ import { useState } from 'react';
 import {
   LayoutDashboard,
   Library,
+  Star,
   Workflow,
   BarChart3,
   Trash2,
@@ -23,6 +24,7 @@ const COLLAPSED_CATEGORY_COUNT = 5;
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: '工作台' },
   { path: '/library', icon: Library, label: '软件库' },
+  { path: '/favorites', icon: Star, label: '收藏夹' },
   { path: '/workflows', icon: Workflow, label: '工作流' },
   { path: '/statistics', icon: BarChart3, label: '统计分析' },
   { path: '/uninstall', icon: Trash2, label: '软件清理' },
@@ -30,6 +32,7 @@ const navItems = [
 
 export function Sidebar() {
   const software = useSoftwareStore((s) => s.software);
+  const favoriteIds = useSoftwareStore((s) => s.favoriteIds);
   const selectedCategory = useSoftwareStore((s) => s.selectedCategory);
   const loggedIn = useAuthStore((s) => s.loggedIn);
   const profile = useAuthStore((s) => s.profile);
@@ -90,6 +93,9 @@ export function Sidebar() {
                   )}
                 />
                 <span className="flex-1">{item.label}</span>
+                {item.path === '/favorites' && favoriteIds.length > 0 && (
+                  <span className="text-[10px] text-slate-500 tabular-nums">{favoriteIds.length}</span>
+                )}
                 {isActive && <ChevronRight className="w-3.5 h-3.5 text-violet-400" />}
               </NavLink>
             );

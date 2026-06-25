@@ -65,6 +65,7 @@ function segmentOfHour(hour: number): TimeSegment {
 export function Dashboard() {
   const software = useSoftwareStore((s) => s.software);
   const workflows = useSoftwareStore((s) => s.workflows);
+  const favoriteIds = useSoftwareStore((s) => s.favoriteIds);
   const createWorkflow = useSoftwareStore((s) => s.createWorkflow);
   const isElectron = useSoftwareStore((s) => s.isElectron);
   const aiSuggestionsEnabled = useSettingsStore((s) => s.prefs.aiSuggestions);
@@ -303,6 +304,26 @@ export function Dashboard() {
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {favoriteIds.length > 0 && (
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-slate-200">我的收藏</h2>
+                <Link to="/favorites" className="text-xs text-violet-400 hover:text-violet-300 transition-colors">
+                  查看全部 →
+                </Link>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {favoriteIds
+                  .map((id) => software.find((s) => s.id === id))
+                  .filter((s): s is NonNullable<typeof s> => !!s && !s.uninstalled && !s.deleted)
+                  .slice(0, 4)
+                  .map((sw) => (
+                    <SoftwareCard key={sw.id} software={sw} />
+                  ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-slate-200">常用软件</h2>

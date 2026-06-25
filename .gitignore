@@ -27,3 +27,6 @@ dist-electron
 release
 
 .electron-data
+
+.env*
+!.env.example
