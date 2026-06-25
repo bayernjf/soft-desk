@@ -142,11 +142,14 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
               }}
               placeholder="例如：代码开发环境"
               className={cn(
-                'w-full px-3.5 py-2.5 rounded-xl bg-slate-900/60 border border-slate-800',
-                'text-sm text-slate-100 placeholder:text-slate-600',
-                'focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all'
+                'w-full px-3.5 py-2.5 rounded-xl bg-slate-900/60 border text-sm text-slate-100 placeholder:text-slate-600',
+                'focus:outline-none focus:ring-2 transition-all',
+                error
+                  ? 'border-rose-500/60 focus:border-rose-500/80 focus:ring-rose-500/20'
+                  : 'border-slate-800 focus:border-violet-500/50 focus:ring-violet-500/20'
               )}
             />
+            {error && <p className="mt-1.5 text-xs text-rose-400">{error}</p>}
           </div>
 
           <div>
@@ -274,8 +277,6 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
               )}
             </div>
           </div>
-
-          {error && <p className="text-xs text-rose-400">{error}</p>}
         </div>
 
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-800">
