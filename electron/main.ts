@@ -154,7 +154,7 @@ function createWindow() {
     height: 832,
     minWidth: 1024,
     minHeight: 768,
-    backgroundColor: '#0d1117',
+    backgroundColor: '#161618',
     show: !windowPrefs.startMinimized,
     titleBarStyle: 'hiddenInset',
     webPreferences: {

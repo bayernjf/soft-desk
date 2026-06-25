@@ -96,7 +96,7 @@ export function Layout() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-[#0a0a0f] text-slate-100 font-sans antialiased overflow-hidden">
+    <div className="h-screen flex flex-col bg-[#161618] text-slate-100 font-sans antialiased overflow-hidden">
       {/* 顶部窗口拖拽区:固定在窗口最顶部、横跨整宽、高约 1cm,透明且不占布局。
           通过 -webkit-app-region: drag 实现拖动窗口;双击调用主进程 IPC 切换最大化/还原。
           故意不加 isElectron 条件——避免该常量在模块加载时因 preload 时序为 false 而导致拖拽区不渲染。
@@ -112,7 +112,7 @@ export function Layout() {
         <main
           className={cn(
             'flex-1 flex flex-col overflow-hidden',
-            'bg-gradient-to-br from-[#0a0a0f] via-[#0d0d14] to-[#0a0a0f]'
+            'bg-gradient-to-br from-[#161618] via-[#1a1a1c] to-[#161618]'
           )}
         >
           {isScanning && (

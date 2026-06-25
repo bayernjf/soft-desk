@@ -71,7 +71,7 @@ export function Account() {
           <p className="text-sm text-slate-500 dark:text-slate-500 mt-1">管理你的登录账号与会员状态</p>
         </div>
 
-        <div className="max-w-2xl rounded-2xl border border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-[#0d0d14]/80 p-6 shadow-sm dark:shadow-none">
+        <div className="max-w-2xl rounded-2xl border border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-[#1a1a1c]/80 p-6 shadow-sm dark:shadow-none">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-amber-400 flex items-center justify-center text-2xl font-bold text-white shadow-lg shadow-violet-500/20">
               {initial}
@@ -143,7 +143,7 @@ export function Account() {
         </p>
       </div>
 
-      <div className="max-w-md rounded-2xl border border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-[#0d0d14]/80 p-6 shadow-sm dark:shadow-none">
+      <div className="max-w-md rounded-2xl border border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-[#1a1a1c]/80 p-6 shadow-sm dark:shadow-none">
         <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800/40 mb-6">
           {(['login', 'register'] as Mode[]).map((m) => (
             <button
