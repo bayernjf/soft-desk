@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/stores/settings.store';
 import { useAuthStore } from '@/stores/auth.store';
 import type { Recommendation } from '@/services/recommendation.service';
 import { addCloudFavorite, removeCloudFavorite } from '@/services/favorites.service';
+import { upsertCloudWorkflow, deleteCloudWorkflow } from '@/services/workflows.service';
 
 export interface WorkflowLaunchResult {
   total: number;
@@ -52,6 +53,8 @@ interface SoftwareStore {
   setRecommendationLoading: (loading: boolean) => void;
   toggleFavorite: (id: string) => Promise<void>;
   setFavoriteIds: (ids: string[]) => void;
+  setWorkflows: (workflows: Workflow[]) => void;
+  clearWorkflows: () => void;
 }
 
 export interface WorkflowInput {
@@ -152,9 +155,10 @@ export const useSoftwareStore = create<SoftwareStore>()(
     const missing = wf.softwareIds.length - paths.length;
 
     const updateStats = () => {
+      const now = new Date().toISOString();
       const workflows = get().workflows.map((w) =>
         w.id === id
-          ? { ...w, usageCount: w.usageCount + 1, lastUsed: new Date().toISOString() }
+          ? { ...w, usageCount: w.usageCount + 1, lastUsed: now, updatedAt: now }
           : w
       );
       set({ workflows });
@@ -195,14 +199,23 @@ export const useSoftwareStore = create<SoftwareStore>()(
   },
 
   toggleWorkflowFavorite: (id) => {
+    const now = new Date().toISOString();
     const workflows = get().workflows.map((w) =>
-      w.id === id ? { ...w, isFavorite: !w.isFavorite } : w
+      w.id === id ? { ...w, isFavorite: !w.isFavorite, updatedAt: now } : w
     );
     set({ workflows });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (!userId) return;
+    const updated = workflows.find((w) => w.id === id);
+    if (updated) {
+      void upsertCloudWorkflow(userId, updated);
+    }
   },
 
   createWorkflow: (data) => {
     const existing = get().workflows;
+    const now = new Date().toISOString();
     const workflow: Workflow = {
       id: `wf-${Date.now()}`,
       name: data.name.trim(),
@@ -210,14 +223,22 @@ export const useSoftwareStore = create<SoftwareStore>()(
       softwareIds: data.softwareIds,
       color: data.color || WORKFLOW_COLORS[existing.length % WORKFLOW_COLORS.length],
       usageCount: 0,
-      lastUsed: new Date().toISOString(),
+      lastUsed: now,
       isFavorite: false,
+      updatedAt: now,
     };
     set({ workflows: [...existing, workflow] });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (userId) {
+      void upsertCloudWorkflow(userId, workflow);
+    }
+
     return workflow;
   },
 
   updateWorkflow: (id, data) => {
+    const now = new Date().toISOString();
     const workflows = get().workflows.map((w) =>
       w.id === id
         ? {
@@ -226,15 +247,31 @@ export const useSoftwareStore = create<SoftwareStore>()(
             description: data.description.trim(),
             softwareIds: data.softwareIds,
             color: data.color || w.color,
+            updatedAt: now,
           }
         : w
     );
     set({ workflows });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (!userId) return;
+    const updated = workflows.find((w) => w.id === id);
+    if (updated) {
+      void upsertCloudWorkflow(userId, updated);
+    }
   },
 
   deleteWorkflow: (id) => {
     set({ workflows: get().workflows.filter((w) => w.id !== id) });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (userId) {
+      void deleteCloudWorkflow(userId, id);
+    }
   },
+
+  setWorkflows: (workflows) => set({ workflows }),
+  clearWorkflows: () => set({ workflows: [] }),
 
   uninstallSoftware: (id) => {
     const software = get().software.map((s) =>
