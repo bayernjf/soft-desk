@@ -24,6 +24,7 @@ interface AuthStore {
     nickname?: string
   ) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
+  updateProfile: (data: { nickname?: string; avatar?: number }) => Promise<{ ok: boolean; error?: string }>;
 }
 
 async function syncSupabaseSession(): Promise<void> {
@@ -60,11 +61,16 @@ export const useAuthStore = create<AuthStore>()(
             profile: session.profile ?? null,
             ready: true,
           });
-          // 恢复登录后异步合并云端 AI 配置
+          // 恢复登录后异步合并云端 AI 配置与工作流
           if (session.loggedIn && session.profile?.userId) {
             queueMicrotask(async () => {
               const { useSettingsStore } = await import('@/stores/settings.store');
               await useSettingsStore.getState().mergeCloudAiProviders();
+              const { useSoftwareStore } = await import('@/stores/software.store');
+              const { syncWorkflowsOnLogin } = await import('@/services/workflows.service');
+              const localWorkflows = useSoftwareStore.getState().workflows;
+              const merged = await syncWorkflowsOnLogin(session.profile!.userId, localWorkflows);
+              useSoftwareStore.getState().setWorkflows(merged);
             });
           }
         } catch {
@@ -86,7 +92,7 @@ export const useAuthStore = create<AuthStore>()(
           profile: res.profile,
           lastEmail: get().rememberMe ? email : '',
         });
-        // 登录成功后异步拉取云端收藏与 AI 配置，避免循环依赖
+        // 登录成功后异步拉取云端收藏、AI 配置与工作流，避免循环依赖
         queueMicrotask(async () => {
           const { useSoftwareStore } = await import('@/stores/software.store');
           const { fetchCloudFavorites } = await import('@/services/favorites.service');
@@ -96,6 +102,10 @@ export const useAuthStore = create<AuthStore>()(
           }
           const { useSettingsStore } = await import('@/stores/settings.store');
           await useSettingsStore.getState().mergeCloudAiProviders();
+          const { syncWorkflowsOnLogin } = await import('@/services/workflows.service');
+          const localWorkflows = useSoftwareStore.getState().workflows;
+          const merged = await syncWorkflowsOnLogin(res.profile.userId, localWorkflows);
+          useSoftwareStore.getState().setWorkflows(merged);
         });
         return { ok: true };
       },
@@ -122,10 +132,23 @@ export const useAuthStore = create<AuthStore>()(
           await window.softdesk.logoutAccount();
         }
         await clearSupabaseSession();
-        set({ loggedIn: false, profile: null });
-        // 退出后清空本地收藏（收藏数据与账号绑定）
+        // 退出后清空本地收藏与工作流（数据与账号绑定）
         const { useSoftwareStore } = await import('@/stores/software.store');
         useSoftwareStore.getState().setFavoriteIds([]);
+        useSoftwareStore.getState().clearWorkflows();
+        set({ loggedIn: false, profile: null });
+      },
+
+      updateProfile: async (data) => {
+        if (typeof window === 'undefined' || !window.softdesk?.updateProfile) {
+          return { ok: false, error: '当前环境不支持更新资料' };
+        }
+        const res = await window.softdesk.updateProfile(data);
+        if (!res.success) {
+          return { ok: false, error: 'error' in res ? res.error : '更新失败' };
+        }
+        set({ profile: res.profile });
+        return { ok: true };
       },
     }),
     {
