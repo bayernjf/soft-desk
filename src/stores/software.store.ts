@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { Software, Workflow, SoftwareCategory } from '@/types';
 import { WORKFLOW_COLORS } from '@/data/categories';
 import { useSettingsStore } from '@/stores/settings.store';
+import type { Recommendation } from '@/services/recommendation.service';
 
 export interface WorkflowLaunchResult {
   total: number;
@@ -18,6 +19,9 @@ interface SoftwareStore {
   workflows: Workflow[];
   uninstalledIds: string[];
   descriptionCache: Record<string, string>;
+  descriptionMeta: Record<string, { version?: string }>;
+  recommendations: Recommendation[];
+  recommendationLoading: boolean;
   selectedCategory: SoftwareCategory | 'all';
   searchQuery: string;
   sortBy: 'name' | 'usage' | 'recent' | 'size';
@@ -40,7 +44,9 @@ interface SoftwareStore {
   removeSoftware: (id: string) => Promise<{ success: boolean; error?: string }>;
   reinstallSoftware: (id: string) => void;
   purgeSoftware: (id: string) => void;
-  setAiDescription: (id: string, description: string) => void;
+  setAiDescription: (id: string, description: string, version?: string) => void;
+  setRecommendations: (recommendations: Recommendation[]) => void;
+  setRecommendationLoading: (loading: boolean) => void;
 }
 
 export interface WorkflowInput {
@@ -59,6 +65,9 @@ export const useSoftwareStore = create<SoftwareStore>()(
   workflows: [],
   uninstalledIds: [],
   descriptionCache: {},
+  descriptionMeta: {},
+  recommendations: [],
+  recommendationLoading: false,
   selectedCategory: 'all',
   searchQuery: '',
   sortBy: 'recent',
@@ -257,13 +266,20 @@ export const useSoftwareStore = create<SoftwareStore>()(
     });
   },
 
-  setAiDescription: (id, description) => {
+  setAiDescription: (id, description, version) => {
     const software = get().software.map((s) =>
       s.id === id ? { ...s, aiDescription: description } : s
     );
     const descriptionCache = { ...get().descriptionCache, [id]: description };
-    set({ software, descriptionCache });
+    const descriptionMeta = { ...get().descriptionMeta };
+    if (version) {
+      descriptionMeta[id] = { ...descriptionMeta[id], version };
+    }
+    set({ software, descriptionCache, descriptionMeta });
   },
+
+  setRecommendations: (recommendations) => set({ recommendations }),
+  setRecommendationLoading: (recommendationLoading) => set({ recommendationLoading }),
 }),
     {
       name: 'softdesk-store',
@@ -271,6 +287,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
         workflows: state.workflows,
         uninstalledIds: state.uninstalledIds,
         descriptionCache: state.descriptionCache,
+        descriptionMeta: state.descriptionMeta,
       }),
     }
   )
