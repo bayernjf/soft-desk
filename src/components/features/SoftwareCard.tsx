@@ -5,6 +5,7 @@ import type { Software } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
 import { AppIcon } from './AppIcon';
+import { SoftwareCardTooltip } from './SoftwareCardTooltip';
 import { cn } from '@/lib/utils';
 
 interface SoftwareCardProps {
@@ -215,23 +216,25 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
   if (variant === 'compact') {
     return (
       <div ref={wrapperRef} className="relative">
-        <button
-          onClick={handleClick}
-          className={cn(
-            'w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition-all duration-200',
-            'bg-slate-900/40 hover:bg-slate-800/70 border border-slate-800/60 hover:border-slate-700',
-            inactive && 'grayscale opacity-50 hover:opacity-70'
-          )}
-        >
-          <AppIcon software={software} size={36} rounded="rounded-lg" />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-slate-100 truncate">{software.name}</div>
-            <div className="text-xs text-slate-500 truncate">
-              {inactive ? statusLabel : categoryMeta?.name}
+        <SoftwareCardTooltip software={software}>
+          <button
+            onClick={handleClick}
+            className={cn(
+              'w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition-all duration-200',
+              'bg-slate-900/40 hover:bg-slate-800/70 border border-slate-800/60 hover:border-slate-700',
+              inactive && 'grayscale opacity-50 hover:opacity-70'
+            )}
+          >
+            <AppIcon software={software} size={36} rounded="rounded-lg" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-100 truncate">{software.name}</div>
+              <div className="text-xs text-slate-500 truncate">
+                {inactive ? statusLabel : categoryMeta?.name}
+              </div>
             </div>
-          </div>
-          <Play className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-        </button>
+            <Play className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+          </button>
+        </SoftwareCardTooltip>
         {overlay}
       </div>
     );
@@ -240,64 +243,66 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
   if (variant === 'large') {
     return (
       <div ref={wrapperRef} className="relative">
-        <button
-          onClick={handleClick}
-          className={cn(
-            'w-full p-4 rounded-2xl text-left transition-all duration-300 group',
-            'bg-slate-900/50 hover:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700/60',
-            'hover:shadow-lg hover:shadow-slate-900/50 hover:-translate-y-0.5',
-            inactive && 'grayscale opacity-50 hover:opacity-70 hover:translate-y-0'
-          )}
-        >
-          <div className="flex items-start gap-4">
-            <AppIcon software={software} size={48} rounded="rounded-xl" />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="text-base font-semibold text-white truncate group-hover:text-white">
-                    {software.name}
-                    {inactive && (
-                      <span className="ml-2 text-xs font-medium text-slate-500">{statusLabel}</span>
-                    )}
-                  </h3>
-                  <p className="text-sm text-slate-500 mt-0.5 truncate">{software.description}</p>
+        <SoftwareCardTooltip software={software}>
+          <button
+            onClick={handleClick}
+            className={cn(
+              'w-full p-4 rounded-2xl text-left transition-all duration-300 group',
+              'bg-slate-900/50 hover:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700/60',
+              'hover:shadow-lg hover:shadow-slate-900/50 hover:-translate-y-0.5',
+              inactive && 'grayscale opacity-50 hover:opacity-70 hover:translate-y-0'
+            )}
+          >
+            <div className="flex items-start gap-4">
+              <AppIcon software={software} size={48} rounded="rounded-xl" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-semibold text-white truncate group-hover:text-white">
+                      {software.name}
+                      {inactive && (
+                        <span className="ml-2 text-xs font-medium text-slate-500">{statusLabel}</span>
+                      )}
+                    </h3>
+                    <p className="text-sm text-slate-500 mt-0.5 truncate">{software.description}</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: software.color }} />
+                    {categoryMeta?.name}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" />
+                    {formatTimeAgo(software.lastUsed)}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <HardDrive className="w-3 h-3" />
+                    {software.size} MB
+                  </span>
+                  {software.tags.length > 0 && (
+                    <span className="flex items-center gap-1.5">
+                      {software.tags.slice(0, 2).map((t) => (
+                        <span key={t} className="px-1.5 py-0.5 rounded-md bg-slate-800/60 text-slate-400">
+                          {t}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </div>
               </div>
-
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: software.color }} />
-                  {categoryMeta?.name}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Clock className="w-3 h-3" />
-                  {formatTimeAgo(software.lastUsed)}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <HardDrive className="w-3 h-3" />
-                  {software.size} MB
-                </span>
-                {software.tags.length > 0 && (
-                  <span className="flex items-center gap-1.5">
-                    {software.tags.slice(0, 2).map((t) => (
-                      <span key={t} className="px-1.5 py-0.5 rounded-md bg-slate-800/60 text-slate-400">
-                        {t}
-                      </span>
-                    ))}
-                  </span>
+              <div
+                className={cn(
+                  'w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200',
+                  'bg-slate-800/60 text-slate-400 group-hover:bg-violet-500/20 group-hover:text-violet-300'
                 )}
+              >
+                <Play className="w-5 h-5 ml-0.5" />
               </div>
             </div>
-            <div
-              className={cn(
-                'w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200',
-                'bg-slate-800/60 text-slate-400 group-hover:bg-violet-500/20 group-hover:text-violet-300'
-              )}
-            >
-              <Play className="w-5 h-5 ml-0.5" />
-            </div>
-          </div>
-        </button>
+          </button>
+        </SoftwareCardTooltip>
         {overlay}
       </div>
     );
@@ -305,48 +310,50 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
 
   return (
     <div ref={wrapperRef} className="relative">
-      <button
-        onClick={handleClick}
-        className={cn(
-          'w-full p-3.5 rounded-2xl text-left transition-all duration-200 group',
-          'bg-slate-900/40 hover:bg-slate-800/70 border border-slate-800/60 hover:border-slate-700/80',
-          inactive && 'grayscale opacity-50 hover:opacity-70'
-        )}
-      >
-        <div className="flex items-center gap-3">
-          <AppIcon
-            software={software}
-            size={40}
-            rounded="rounded-xl"
-            className="transition-transform duration-200 group-hover:scale-105"
-          />
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-slate-100 truncate">
-              {software.name}
-              {inactive && (
-                <span className="ml-2 text-xs font-medium text-slate-500">{statusLabel}</span>
-              )}
-            </h3>
-            <p className="text-xs text-slate-500 truncate mt-0.5">{software.description}</p>
-            <div className="flex items-center gap-2.5 mt-1.5 text-xs text-slate-500">
-              <span>{categoryMeta?.name}</span>
-              <span className="text-slate-700">•</span>
-              <span>{formatMinutes(software.usageMinutes)}</span>
-            </div>
-          </div>
-          {isDeleted ? (
-            <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors shrink-0" />
-          ) : context === 'uninstall' ? (
-            isUninstalled ? (
-              <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors shrink-0" />
-            ) : (
-              <Trash2 className="w-4 h-4 text-slate-600 group-hover:text-rose-400 transition-colors shrink-0" />
-            )
-          ) : (
-            <Play className="w-4 h-4 text-slate-600 group-hover:text-violet-400 transition-colors shrink-0" />
+      <SoftwareCardTooltip software={software}>
+        <button
+          onClick={handleClick}
+          className={cn(
+            'w-full p-3.5 rounded-2xl text-left transition-all duration-200 group',
+            'bg-slate-900/40 hover:bg-slate-800/70 border border-slate-800/60 hover:border-slate-700/80',
+            inactive && 'grayscale opacity-50 hover:opacity-70'
           )}
-        </div>
-      </button>
+        >
+          <div className="flex items-center gap-3">
+            <AppIcon
+              software={software}
+              size={40}
+              rounded="rounded-xl"
+              className="transition-transform duration-200 group-hover:scale-105"
+            />
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-slate-100 truncate">
+                {software.name}
+                {inactive && (
+                  <span className="ml-2 text-xs font-medium text-slate-500">{statusLabel}</span>
+                )}
+              </h3>
+              <p className="text-xs text-slate-500 truncate mt-0.5">{software.description}</p>
+              <div className="flex items-center gap-2.5 mt-1.5 text-xs text-slate-500">
+                <span>{categoryMeta?.name}</span>
+                <span className="text-slate-700">•</span>
+                <span>{formatMinutes(software.usageMinutes)}</span>
+              </div>
+            </div>
+            {isDeleted ? (
+              <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors shrink-0" />
+            ) : context === 'uninstall' ? (
+              isUninstalled ? (
+                <Download className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors shrink-0" />
+              ) : (
+                <Trash2 className="w-4 h-4 text-slate-600 group-hover:text-rose-400 transition-colors shrink-0" />
+              )
+            ) : (
+              <Play className="w-4 h-4 text-slate-600 group-hover:text-violet-400 transition-colors shrink-0" />
+            )}
+          </div>
+        </button>
+      </SoftwareCardTooltip>
       {overlay}
     </div>
   );
