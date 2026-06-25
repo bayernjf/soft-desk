@@ -28,3 +28,5 @@ Always split all staged changes into multiple separate atomic commits, never com
 Group files by business module, file type, feature function, bug fix, documentation, config, test code respectively.
 Each group must generate its own independent complete conventional commit message with subject and body.
 Do not merge unrelated file changes together. Prioritize small, single-purpose commits for clean git history.
+
+Commit messages must be in English.
