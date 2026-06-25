@@ -3,6 +3,7 @@ import { ArrowUpRight, Clock, Sparkles, TrendingUp, Loader2 } from 'lucide-react
 import type { LucideIcon } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { useSettingsStore } from '@/stores/settings.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
@@ -68,6 +69,7 @@ export function Dashboard() {
   const favoriteIds = useSoftwareStore((s) => s.favoriteIds);
   const createWorkflow = useSoftwareStore((s) => s.createWorkflow);
   const isElectron = useSoftwareStore((s) => s.isElectron);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
   const aiSuggestionsEnabled = useSettingsStore((s) => s.prefs.aiSuggestions);
   const navigate = useNavigate();
   const [coUsage, setCoUsage] = useState<CoUsagePair[]>([]);
@@ -207,10 +209,21 @@ export function Dashboard() {
   }, [coUsage, segmentUsage, software, workflows]);
 
   const handleCreateSuggested = () => {
+    if (!loggedIn) {
+      navigate('/account');
+      return;
+    }
     if (!suggestion) return;
     const name = suggestion.segment
       ? `${SEGMENT_LABEL[suggestion.segment]}工作流`
       : `${suggestion.apps[0].name} 工作流`;
+    const duplicate = workflows.find(
+      (w) => w.name.trim().toLowerCase() === name.trim().toLowerCase()
+    );
+    if (duplicate) {
+      navigate('/workflows');
+      return;
+    }
     createWorkflow({
       name,
       description: suggestion.segment
@@ -225,11 +238,22 @@ export function Dashboard() {
   // 由某条 AI 建议直接落地为工作流(过滤掉已不可用的软件 id 后创建)
   const byId = useMemo(() => new Map(software.map((s) => [s.id, s])), [software]);
   const handleCreateAiSuggestion = (sug: AiWorkflowSuggestion) => {
+    if (!loggedIn) {
+      navigate('/account');
+      return;
+    }
     const ids = sug.softwareIds.filter((id) => {
       const sw = byId.get(id);
       return sw && !sw.uninstalled && !sw.deleted;
     });
     if (ids.length < 2) return;
+    const duplicate = workflows.find(
+      (w) => w.name.trim().toLowerCase() === sug.name.trim().toLowerCase()
+    );
+    if (duplicate) {
+      navigate('/workflows');
+      return;
+    }
     createWorkflow({
       name: sug.name,
       description: sug.description || '由 AI 基于你的使用习惯推荐',
