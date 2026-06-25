@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('softdesk', {
     return () => ipcRenderer.removeListener('ai:searchStream:delta', handler);
   },
   hasAiProvider: () => ipcRenderer.invoke('ai:hasProvider'),
+  generateDescription: (input: { name: string; bundleId: string; category: string }) =>
+    ipcRenderer.invoke('ai:generateDescription', input),
   registerAccount: (input: { email: string; password: string; nickname?: string }) =>
     ipcRenderer.invoke('auth:register', input),
   loginAccount: (input: { email: string; password: string }) =>

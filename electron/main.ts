@@ -14,6 +14,7 @@ import {
   suggestWorkflows,
   semanticSearch,
   semanticSearchStream,
+  generateSoftwareDescription,
   type AiChatMessage,
   type SearchCandidate,
 } from './ai';
@@ -533,6 +534,22 @@ ipcMain.handle('ai:suggestWorkflows', async (_event, raw: unknown) => {
 // 报告当前是否有启用的 AI 模型,供渲染层决定是否展示 AI 入口
 ipcMain.handle('ai:hasProvider', () => {
   return { hasProvider: getActiveProvider() !== null };
+});
+
+// 生成软件核心功能简介;无启用模型/失败时返回 { description: null }
+ipcMain.handle('ai:generateDescription', async (_event, raw: unknown) => {
+  if (!getActiveProvider()) return { description: null };
+  const input = (raw && typeof raw === 'object' ? raw : {}) as {
+    name?: string;
+    bundleId?: string;
+    category?: string;
+  };
+  const name = typeof input.name === 'string' ? input.name : '';
+  const bundleId = typeof input.bundleId === 'string' ? input.bundleId : '';
+  const category = typeof input.category === 'string' ? input.category : '';
+  if (!name) return { description: null };
+  const description = await generateSoftwareDescription(name, bundleId, category);
+  return { description };
 });
 
 // 自然语言语义搜索:把查询 + 精简候选送模型,返回按相关度排序的软件 id;

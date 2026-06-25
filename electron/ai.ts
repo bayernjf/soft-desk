@@ -186,7 +186,31 @@ async function completeOpenAi(
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) return { success: false, error: await extractError(res) };
+  if (!res.ok) {
+    const errorText = await extractError(res);
+    if (
+      options.expectJson &&
+      (errorText.includes('response_format') ||
+        errorText.includes('response format') ||
+        errorText.includes('InvalidParameter'))
+    ) {
+      delete body.response_format;
+      const retryRes = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (!retryRes.ok) return { success: false, error: await extractError(retryRes) };
+      const retryData = (await retryRes.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+      return { success: true, content: retryData?.choices?.[0]?.message?.content ?? '' };
+    }
+    return { success: false, error: errorText };
+  }
   const data = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
   };
@@ -384,6 +408,39 @@ export async function classifyApps(items: ClassifyInput[]): Promise<Record<strin
     }
   }
   return out;
+}
+
+const DESCRIBE_SYSTEM = `你是一个 macOS 软件简介生成助手。请根据应用名称和分类，用一句话（不超过 80 字）精准概括该软件的核心功能和主要用途。只输出 JSON：{"description":"..."}，不要任何解释。`;
+
+export async function generateSoftwareDescription(
+  name: string,
+  bundleId: string,
+  category: string
+): Promise<string | null> {
+  const config = getActiveProvider();
+  if (!config) return null;
+
+  const result = await complete(config, {
+    messages: [
+      { role: 'system', content: DESCRIBE_SYSTEM },
+      {
+        role: 'user',
+        content: JSON.stringify({ name, bundleId, category }),
+      },
+    ],
+    expectJson: true,
+    temperature: 0.3,
+    maxTokens: 256,
+  });
+
+  if (!result.success) return null;
+
+  const parsed = parseJsonLoose<{ description?: string }>(result.content);
+  if (parsed?.description) {
+    return parsed.description.trim().slice(0, 120);
+  }
+
+  return null;
 }
 
 export interface SuggestAppInput {
