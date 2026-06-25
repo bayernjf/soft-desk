@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AuthProfile } from '@/types/electron';
+import { setSupabaseSession, clearSupabaseSession } from '@/lib/supabase';
 
 // 渲染层会话状态(见 Technical-Architecture.md §6.5.3):
 // - 登录态 + 脱敏资料(profile)= 运行时内存态,以主进程会话为权威,启动时拉取回填;
@@ -25,6 +26,14 @@ interface AuthStore {
   logout: () => Promise<void>;
 }
 
+async function syncSupabaseSession(): Promise<void> {
+  if (typeof window === 'undefined' || !window.softdesk?.getAuthTokens) return;
+  const tokens = await window.softdesk.getAuthTokens();
+  if (tokens) {
+    await setSupabaseSession(tokens.accessToken, tokens.refreshToken);
+  }
+}
+
 export const useAuthStore = create<AuthStore>()(
   persist(
     (set, get) => ({
@@ -43,11 +52,21 @@ export const useAuthStore = create<AuthStore>()(
         }
         try {
           const session = await window.softdesk.getAuthSession();
+          if (session.loggedIn) {
+            await syncSupabaseSession();
+          }
           set({
             loggedIn: session.loggedIn,
             profile: session.profile ?? null,
             ready: true,
           });
+          // 恢复登录后异步合并云端 AI 配置
+          if (session.loggedIn && session.profile?.userId) {
+            queueMicrotask(async () => {
+              const { useSettingsStore } = await import('@/stores/settings.store');
+              await useSettingsStore.getState().mergeCloudAiProviders();
+            });
+          }
         } catch {
           set({ loggedIn: false, profile: null, ready: true });
         }
@@ -61,10 +80,22 @@ export const useAuthStore = create<AuthStore>()(
         if (!res.success) {
           return { ok: false, error: 'error' in res ? res.error : '登录失败' };
         }
+        await syncSupabaseSession();
         set({
           loggedIn: true,
           profile: res.profile,
           lastEmail: get().rememberMe ? email : '',
+        });
+        // 登录成功后异步拉取云端收藏与 AI 配置，避免循环依赖
+        queueMicrotask(async () => {
+          const { useSoftwareStore } = await import('@/stores/software.store');
+          const { fetchCloudFavorites } = await import('@/services/favorites.service');
+          const cloudIds = await fetchCloudFavorites(res.profile.userId);
+          if (cloudIds.length > 0) {
+            useSoftwareStore.getState().setFavoriteIds(cloudIds);
+          }
+          const { useSettingsStore } = await import('@/stores/settings.store');
+          await useSettingsStore.getState().mergeCloudAiProviders();
         });
         return { ok: true };
       },
@@ -77,6 +108,7 @@ export const useAuthStore = create<AuthStore>()(
         if (!res.success) {
           return { ok: false, error: 'error' in res ? res.error : '注册失败' };
         }
+        await syncSupabaseSession();
         set({
           loggedIn: true,
           profile: res.profile,
@@ -89,7 +121,11 @@ export const useAuthStore = create<AuthStore>()(
         if (typeof window !== 'undefined' && window.softdesk?.logoutAccount) {
           await window.softdesk.logoutAccount();
         }
+        await clearSupabaseSession();
         set({ loggedIn: false, profile: null });
+        // 退出后清空本地收藏（收藏数据与账号绑定）
+        const { useSoftwareStore } = await import('@/stores/software.store');
+        useSoftwareStore.getState().setFavoriteIds([]);
       },
     }),
     {

@@ -222,6 +222,8 @@ export interface SoftdeskBridge {
   logoutAccount: () => Promise<{ success: boolean }>;
   /** 查询当前登录态与脱敏资料(渲染层无法拿到明文 Token) */
   getAuthSession: () => Promise<AuthSession>;
+  /** 获取当前用户的 Supabase JWT Token(用于渲染层设置 Supabase 会话) */
+  getAuthTokens: () => Promise<{ accessToken: string; refreshToken: string } | null>;
   toggleMaximize: () => Promise<{ maximized: boolean }>;
   /** 监听由托盘菜单或全局快捷键触发的"打开快速启动器"事件,返回取消监听函数 */
   onOpenLauncher: (callback: () => void) => () => void;

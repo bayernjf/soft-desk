@@ -1,14 +1,11 @@
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
-import { randomBytes, scryptSync, timingSafeEqual, randomUUID } from 'node:crypto';
 import { app, safeStorage } from 'electron';
+import { createClient, SupabaseClient, type User } from '@supabase/supabase-js';
+import WebSocket from 'ws';
+import { createLogger } from './lib/logger';
 
-// 登录模块数据归属(见 Technical-Architecture.md §6.5):
-// - 账号身份(userId/email/密码哈希/会员状态)= 云端最小必要集;本仓库无独立后端,
-//   由主进程以 accounts.json 模拟"账号服务器",密码仅以 scrypt 加盐哈希存储,绝不存明文。
-//   真实部署时,把本文件内的 register/login 替换为对远程 API 的调用即可。
-// - 登录 Token = 本机敏感凭证,经 safeStorage 加密后落盘 session.bin,严禁进 localStorage。
-// - 软件清单/使用记录/AI 密钥等业务数据全部本地,绝不出现在账号库或会话中。
+const logger = createLogger('auth');
 
 export interface AuthProfile {
   userId: string;
@@ -30,23 +27,11 @@ export type AuthResult =
   | { success: true; profile: AuthProfile }
   | { success: false; error: string };
 
-interface AccountRecord extends AuthProfile {
-  passwordHash: string;
-  salt: string;
-}
-
 interface StoredSession {
   userId: string;
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
-}
-
-const SCRYPT_KEYLEN = 64;
-const ACCESS_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7;
-
-function accountsPath(): string {
-  return path.join(app.getPath('userData'), 'accounts.json');
 }
 
 function sessionPath(): string {
@@ -61,57 +46,43 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function loadAccounts(): AccountRecord[] {
-  try {
-    const raw = JSON.parse(readFileSync(accountsPath(), 'utf-8'));
-    return Array.isArray(raw) ? (raw as AccountRecord[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistAccounts(accounts: AccountRecord[]): void {
-  try {
-    writeFileSync(accountsPath(), JSON.stringify(accounts), 'utf-8');
-  } catch {
-    // 落盘失败不抛出,避免阻断登录主流程
-  }
-}
-
-function hashPassword(password: string, salt: string): string {
-  return scryptSync(password, salt, SCRYPT_KEYLEN).toString('hex');
-}
-
-function verifyPassword(password: string, salt: string, expectedHash: string): boolean {
-  const actual = scryptSync(password, salt, SCRYPT_KEYLEN);
-  const expected = Buffer.from(expectedHash, 'hex');
-  if (actual.length !== expected.length) return false;
-  return timingSafeEqual(actual, expected);
-}
-
-// 仅暴露脱敏资料给渲染层:绝不包含 passwordHash / salt / Token
-function toProfile(record: AccountRecord): AuthProfile {
+function userToProfile(user: User): AuthProfile {
   return {
-    userId: record.userId,
-    email: record.email,
-    nickname: record.nickname,
-    avatarUrl: record.avatarUrl,
-    plan: record.plan,
-    emailVerified: record.emailVerified,
-    createdAt: record.createdAt,
-    lastLoginAt: record.lastLoginAt,
+    userId: user.id,
+    email: user.email ?? '',
+    nickname: (user.user_metadata?.nickname as string) || (user.email?.split('@')[0] ?? ''),
+    avatarUrl: (user.user_metadata?.avatar_url as string | null) || user.user_metadata?.picture as string | null || null,
+    plan: (user.user_metadata?.plan as 'free' | 'pro') || 'free',
+    emailVerified: !!user.email_confirmed_at,
+    createdAt: user.created_at,
+    lastLoginAt: new Date().toISOString(),
   };
 }
 
-// 用 safeStorage 加密 Token 后落盘;不可用时(部分 Linux 无 keyring)安全跳过持久化,
-// 仅维持内存会话,绝不明文落盘。
+let supabase: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient {
+  if (supabase) return supabase;
+  const url = process.env.VITE_SUPABASE_URL;
+  const key = process.env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) {
+    throw new Error('Supabase 未配置，请在 .env 中设置 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY');
+  }
+  supabase = createClient(url, key, {
+    realtime: {
+      transport: WebSocket as never,
+    },
+  });
+  return supabase;
+}
+
 function persistSession(session: StoredSession): void {
   try {
     if (!safeStorage.isEncryptionAvailable()) return;
     const encrypted = safeStorage.encryptString(JSON.stringify(session));
     writeFileSync(sessionPath(), encrypted);
   } catch {
-    // 落盘失败仅影响"重启后保持登录",不影响本次会话
+    // 落盘失败仅影响"重启后保持登录"，不影响本次会话
   }
 }
 
@@ -145,17 +116,7 @@ function ensureSessionLoaded(): void {
   currentSession = readStoredSession();
 }
 
-function issueSession(userId: string): void {
-  currentSession = {
-    userId,
-    accessToken: randomBytes(32).toString('hex'),
-    refreshToken: randomBytes(32).toString('hex'),
-    expiresAt: Date.now() + ACCESS_TOKEN_TTL_MS,
-  };
-  persistSession(currentSession);
-}
-
-export function register(rawEmail: unknown, rawPassword: unknown, rawNickname?: unknown): AuthResult {
+export async function register(rawEmail: unknown, rawPassword: unknown, rawNickname?: unknown): Promise<AuthResult> {
   const email = normalizeEmail(rawEmail);
   const password = typeof rawPassword === 'string' ? rawPassword : '';
   const nickname =
@@ -164,73 +125,123 @@ export function register(rawEmail: unknown, rawPassword: unknown, rawNickname?: 
   if (!isValidEmail(email)) return { success: false, error: '请输入有效的邮箱地址' };
   if (password.length < 6) return { success: false, error: '密码至少 6 位' };
 
-  const accounts = loadAccounts();
-  if (accounts.some((a) => a.email === email)) {
-    return { success: false, error: '该邮箱已注册' };
+  try {
+    const sb = getSupabase();
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { nickname, plan: 'free' },
+      },
+    });
+
+    if (error) {
+      logger.error('Supabase signUp failed:', error.message);
+      return { success: false, error: error.message.includes('already registered') ? '该邮箱已注册' : error.message };
+    }
+
+    if (!data.user) {
+      return { success: false, error: '注册失败' };
+    }
+
+    if (data.session) {
+      currentSession = {
+        userId: data.user.id,
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+        expiresAt: Date.now() + (data.session.expires_in || 3600) * 1000,
+      };
+      persistSession(currentSession);
+      sessionLoaded = true;
+    }
+
+    return { success: true, profile: userToProfile(data.user) };
+  } catch (err) {
+    logger.error('register unexpected error:', err);
+    return { success: false, error: err instanceof Error ? err.message : '注册失败' };
   }
-
-  const salt = randomBytes(16).toString('hex');
-  const now = new Date().toISOString();
-  const record: AccountRecord = {
-    userId: randomUUID(),
-    email,
-    nickname,
-    avatarUrl: null,
-    plan: 'free',
-    emailVerified: false,
-    createdAt: now,
-    lastLoginAt: now,
-    passwordHash: hashPassword(password, salt),
-    salt,
-  };
-  accounts.push(record);
-  persistAccounts(accounts);
-
-  issueSession(record.userId);
-  return { success: true, profile: toProfile(record) };
 }
 
-export function login(rawEmail: unknown, rawPassword: unknown): AuthResult {
+export async function login(rawEmail: unknown, rawPassword: unknown): Promise<AuthResult> {
   const email = normalizeEmail(rawEmail);
   const password = typeof rawPassword === 'string' ? rawPassword : '';
 
   if (!isValidEmail(email)) return { success: false, error: '请输入有效的邮箱地址' };
   if (!password) return { success: false, error: '请输入密码' };
 
-  const accounts = loadAccounts();
-  const record = accounts.find((a) => a.email === email);
-  // 不区分"邮箱不存在"与"密码错误",避免账号枚举
-  if (!record || !verifyPassword(password, record.salt, record.passwordHash)) {
-    return { success: false, error: '邮箱或密码错误' };
+  try {
+    const sb = getSupabase();
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+
+    if (error || !data.user || !data.session) {
+      return { success: false, error: '邮箱或密码错误' };
+    }
+
+    currentSession = {
+      userId: data.user.id,
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      expiresAt: Date.now() + (data.session.expires_in || 3600) * 1000,
+    };
+    persistSession(currentSession);
+    sessionLoaded = true;
+
+    return { success: true, profile: userToProfile(data.user) };
+  } catch (err) {
+    logger.error('login unexpected error:', err);
+    return { success: false, error: err instanceof Error ? err.message : '登录失败' };
   }
-
-  record.lastLoginAt = new Date().toISOString();
-  persistAccounts(accounts);
-
-  issueSession(record.userId);
-  return { success: true, profile: toProfile(record) };
 }
 
-export function logout(): void {
+export async function logout(): Promise<void> {
+  try {
+    const sb = getSupabase();
+    await sb.auth.signOut();
+  } catch (err) {
+    logger.error('logout error:', err);
+  }
   currentSession = null;
   clearStoredSession();
 }
 
-export function getSession(): AuthSession {
+export async function getSession(): Promise<AuthSession> {
   ensureSessionLoaded();
   if (!currentSession) return { loggedIn: false };
 
-  if (currentSession.expiresAt <= Date.now()) {
-    // Token 过期:清理会话,要求重新登录(此处未接入远程 refresh)
-    logout();
-    return { loggedIn: false };
-  }
+  try {
+    const sb = getSupabase();
+    const { data, error } = await sb.auth.setSession({
+      access_token: currentSession.accessToken,
+      refresh_token: currentSession.refreshToken,
+    });
 
-  const accounts = loadAccounts();
-  const record = accounts.find((a) => a.userId === currentSession!.userId);
-  if (!record) {
+    if (error || !data.session || !data.user) {
+      logout();
+      return { loggedIn: false };
+    }
+
+    // Token 可能已被刷新，更新本地存储
+    currentSession = {
+      userId: data.user.id,
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      expiresAt: Date.now() + (data.session.expires_in || 3600) * 1000,
+    };
+    persistSession(currentSession);
+
+    return { loggedIn: true, profile: userToProfile(data.user) };
+  } catch (err) {
+    logger.error('getSession error:', err);
     logout();
     return { loggedIn: false };
   }
-  return { loggedIn: true, profile: toProfile(record) };
+}
+
+export function getTokens(): { accessToken: string; refreshToken: string } | null {
+  ensureSessionLoaded();
+  if (!currentSession) return null;
+  return {
+    accessToken: currentSession.accessToken,
+    refreshToken: currentSession.refreshToken,
+  };
 }

@@ -6,6 +6,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
+    "restart": "pkill -f 'soft-desk.*Electron' 2>/dev/null || true; sleep 1; npm run dev",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -15,6 +16,7 @@
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
     "better-sqlite3": "^12.11.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.511.0",
@@ -24,6 +26,7 @@
     "react-router-dom": "^7.3.0",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.0.2",
+    "ws": "^8.21.0",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
@@ -33,6 +36,7 @@
     "@types/node": "^22.15.30",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
     "babel-plugin-react-dev-locator": "^1.0.0",
