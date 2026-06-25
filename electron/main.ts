@@ -15,8 +15,11 @@ import {
   semanticSearch,
   semanticSearchStream,
   generateSoftwareDescription,
+  recommendApps,
   type AiChatMessage,
   type SearchCandidate,
+  type RecommendAppInput,
+  type UserProfileInput,
 } from './ai';
 import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession } from './auth';
 
@@ -550,6 +553,20 @@ ipcMain.handle('ai:generateDescription', async (_event, raw: unknown) => {
   if (!name) return { description: null };
   const description = await generateSoftwareDescription(name, bundleId, category);
   return { description };
+});
+
+// 智能推荐:基于需求语义 + 用户画像 + 活跃应用，返回推荐软件列表
+ipcMain.handle('ai:recommend', async (_event, raw: unknown) => {
+  if (!getActiveProvider()) return { recommendations: [] };
+  const input = (raw && typeof raw === 'object' ? raw : {}) as {
+    query?: string;
+    apps?: RecommendAppInput[];
+    profile?: UserProfileInput;
+  };
+  const apps = Array.isArray(input.apps) ? input.apps : [];
+  const profile = input.profile ?? { topApps: [], frequentPairs: [], activeApps: [] };
+  const recommendations = await recommendApps(input.query, apps, profile);
+  return { recommendations };
 });
 
 // 自然语言语义搜索:把查询 + 精简候选送模型,返回按相关度排序的软件 id;

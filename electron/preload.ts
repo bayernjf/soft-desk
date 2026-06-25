@@ -54,6 +54,11 @@ contextBridge.exposeInMainWorld('softdesk', {
   hasAiProvider: () => ipcRenderer.invoke('ai:hasProvider'),
   generateDescription: (input: { name: string; bundleId: string; category: string }) =>
     ipcRenderer.invoke('ai:generateDescription', input),
+  recommendApps: (input: {
+    query?: string;
+    apps: { id: string; name: string; category: string; aiDescription?: string; usageMinutes: number }[];
+    profile: { topApps: string[]; frequentPairs: { a: string; b: string; count: number }[]; activeApps: string[] };
+  }) => ipcRenderer.invoke('ai:recommend', input),
   registerAccount: (input: { email: string; password: string; nickname?: string }) =>
     ipcRenderer.invoke('auth:register', input),
   loginAccount: (input: { email: string; password: string }) =>

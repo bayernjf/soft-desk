@@ -202,6 +202,14 @@ export interface SoftdeskBridge {
     bundleId: string;
     category: string;
   }) => Promise<{ description: string | null }>;
+  /** 智能推荐:基于需求语义 + 用户画像 + 活跃应用 */
+  recommendApps: (input: {
+    query?: string;
+    apps: { id: string; name: string; category: string; aiDescription?: string; usageMinutes: number }[];
+    profile: { topApps: string[]; frequentPairs: { a: string; b: string; count: number }[]; activeApps: string[] };
+  }) => Promise<{
+    recommendations: { id: string; reason: string; type: 'query' | 'behavior' | 'workflow' | 'complement' }[];
+  }>;
   /** 邮箱+密码注册账号;成功返回脱敏资料,Token 由主进程加密落盘 */
   registerAccount: (input: {
     email: string;
