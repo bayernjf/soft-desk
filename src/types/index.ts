@@ -45,6 +45,7 @@ export interface Workflow {
   lastUsed: string;
   isFavorite: boolean;
   color: string;
+  updatedAt: string;
 }
 
 export interface SearchState {
