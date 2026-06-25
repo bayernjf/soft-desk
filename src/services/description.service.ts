@@ -52,30 +52,50 @@ export async function lazyGenerateDescription(
 
 export async function batchFillDescriptions(
   software: Software[],
-  onUpdate: (id: string, description: string) => void,
-  batchSize = 5,
-  delayMs = 800
+  onUpdate: (id: string, description: string, version?: string) => void,
+  options?: { batchSize?: number; delayMs?: number; forceIds?: string[] }
 ): Promise<void> {
-  const missing = software.filter((s) => !s.aiDescription && !getBuiltinDescription(s.name, s.id));
-  if (missing.length === 0) return;
+  const forceSet = new Set(options?.forceIds ?? []);
+  const targets = software.filter((s) => {
+    if (forceSet.has(s.id)) return true;
+    return !s.aiDescription && !getBuiltinDescription(s.name, s.id);
+  });
+  if (targets.length === 0) return;
   if (typeof window === 'undefined' || !window.softdesk?.generateDescription) return;
 
-  for (let i = 0; i < missing.length; i += batchSize) {
-    const batch = missing.slice(i, i + batchSize);
+  const batchSize = options?.batchSize ?? 5;
+  const delayMs = options?.delayMs ?? 800;
+
+  for (let i = 0; i < targets.length; i += batchSize) {
+    const batch = targets.slice(i, i + batchSize);
     await Promise.all(
       batch.map(async (s) => {
         if (generatingIds.has(s.id)) return;
         generatingIds.add(s.id);
         try {
           const description = await generateDescription(s.name, s.id, s.category);
-          if (description) onUpdate(s.id, description);
+          if (description) onUpdate(s.id, description, s.version);
         } finally {
           generatingIds.delete(s.id);
         }
       })
     );
-    if (i + batchSize < missing.length) {
+    if (i + batchSize < targets.length) {
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
+}
+
+export function findVersionChanged(
+  software: Software[],
+  descriptionMeta: Record<string, { version?: string }>
+): string[] {
+  return software
+    .filter((s) => {
+      if (!s.version) return false;
+      const cached = descriptionMeta[s.id];
+      if (!cached) return false;
+      return cached.version !== s.version;
+    })
+    .map((s) => s.id);
 }
