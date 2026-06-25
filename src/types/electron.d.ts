@@ -196,6 +196,12 @@ export interface SoftdeskBridge {
   onSearchStreamDelta: (callback: (delta: AiSearchStreamDelta) => void) => () => void;
   /** 查询当前是否有启用且配置完整的 AI 模型 */
   hasAiProvider: () => Promise<{ hasProvider: boolean }>;
+  /** 生成软件核心功能简介 */
+  generateDescription: (input: {
+    name: string;
+    bundleId: string;
+    category: string;
+  }) => Promise<{ description: string | null }>;
   /** 邮箱+密码注册账号;成功返回脱敏资料,Token 由主进程加密落盘 */
   registerAccount: (input: {
     email: string;
