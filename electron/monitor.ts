@@ -1,8 +1,10 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { recordSession } from './database';
+import { createLogger } from './lib/logger';
 
 const execFileAsync = promisify(execFile);
+const logger = createLogger('monitor');
 
 const POLL_INTERVAL_MS = 5000;
 // 长会话期间每累计约 1 分钟增量落库一次,避免崩溃/断电丢失整段时长
@@ -53,7 +55,7 @@ function flushCurrent(): void {
         duration
       );
     } catch (err) {
-      console.error('[softdesk] recordSession failed:', err);
+      logger.error('recordSession failed:', err);
     }
   }
   current = null;

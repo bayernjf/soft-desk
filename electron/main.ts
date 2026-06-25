@@ -21,7 +21,10 @@ import {
   type RecommendAppInput,
   type UserProfileInput,
 } from './ai';
-import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession } from './auth';
+import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession, getTokens as authGetTokens } from './auth';
+import { createLogger } from './lib/logger';
+
+const logger = createLogger('main');
 
 function todayKey(): string {
   const d = new Date();
@@ -243,12 +246,12 @@ async function classifyUncategorized(apps: ScannedApp[]): Promise<ScannedApp[]> 
     );
     for (const a of pending) aiClassifiedIds.add(a.id);
     if (Object.keys(mapping).length === 0) {
-      console.log(`[softdesk] AI classify: ${pending.length} 个待分类应用，模型未返回有效结果`);
+      logger.info(`AI classify: ${pending.length} 个待分类应用，模型未返回有效结果`);
       return apps;
     }
 
-    console.log(
-      `[softdesk] AI classify: ${pending.length} 个待分类，命中 ${Object.keys(mapping).length} 个`,
+    logger.info(
+      `AI classify: ${pending.length} 个待分类，命中 ${Object.keys(mapping).length} 个`,
       mapping
     );
     await applyAiCategories(mapping as Record<string, ScannedCategory>);
@@ -260,7 +263,7 @@ async function classifyUncategorized(apps: ScannedApp[]): Promise<ScannedApp[]> 
       return a;
     });
   } catch (err) {
-    console.error('[softdesk] AI classify failed:', err);
+    logger.error('AI classify failed:', err);
     return apps;
   }
 }
@@ -274,7 +277,7 @@ async function scanWithUsage(): Promise<ScannedApp[]> {
   try {
     summary = getUsageSummary();
   } catch (dbErr) {
-    console.error('[softdesk] getUsageSummary failed:', dbErr);
+    logger.error('getUsageSummary failed:', dbErr);
   }
   const byId = new Map(summary.map((s) => [s.softwareId, s]));
   return classified.map((appItem) => {
@@ -298,7 +301,7 @@ ipcMain.handle('usage:getSuggestions', async () => {
   try {
     return getCoUsage();
   } catch (err) {
-    console.error('[softdesk] getCoUsage failed:', err);
+    logger.error('getCoUsage failed:', err);
     return [];
   }
 });
@@ -308,7 +311,7 @@ ipcMain.handle('usage:getSegmentSuggestions', async () => {
   try {
     return getCoUsageBySegment();
   } catch (err) {
-    console.error('[softdesk] getCoUsageBySegment failed:', err);
+    logger.error('getCoUsageBySegment failed:', err);
     return [];
   }
 });
@@ -319,7 +322,7 @@ ipcMain.handle('usage:getHourlyUsage', async (_event, windowDays?: unknown) => {
     const days = typeof windowDays === 'number' && windowDays > 0 ? windowDays : 30;
     return getHourlyUsage(days);
   } catch (err) {
-    console.error('[softdesk] getHourlyUsage failed:', err);
+    logger.error('getHourlyUsage failed:', err);
     return [];
   }
 });
@@ -330,7 +333,7 @@ ipcMain.handle('usage:getSegmentByApp', async (_event, windowDays?: unknown) => 
     const days = typeof windowDays === 'number' && windowDays > 0 ? windowDays : 30;
     return getSegmentUsageByApp(days);
   } catch (err) {
-    console.error('[softdesk] getSegmentUsageByApp failed:', err);
+    logger.error('getSegmentUsageByApp failed:', err);
     return [];
   }
 });
@@ -358,7 +361,7 @@ ipcMain.handle('software:launch', async (_event, appPath: string, softwareId?: s
     try {
       recordLaunch(softwareId, todayKey());
     } catch (dbErr) {
-      console.error('[softdesk] recordLaunch failed:', dbErr);
+      logger.error('recordLaunch failed:', dbErr);
     }
   }
   return { success: true };
@@ -646,13 +649,17 @@ ipcMain.handle('auth:login', (_event, raw: unknown) => {
   return authLogin(input.email, input.password);
 });
 
-ipcMain.handle('auth:logout', () => {
-  authLogout();
+ipcMain.handle('auth:logout', async () => {
+  await authLogout();
   return { success: true };
 });
 
-ipcMain.handle('auth:getSession', () => {
+ipcMain.handle('auth:getSession', async () => {
   return authGetSession();
+});
+
+ipcMain.handle('auth:getTokens', () => {
+  return authGetTokens();
 });
 
 ipcMain.handle('software:remove', async (_event, appPath: string) => {
@@ -686,7 +693,7 @@ app.whenReady().then(() => {
       const apps = await scanWithUsage();
       win?.webContents.send('software:changed', apps);
     } catch (err) {
-      console.error('[softdesk] watcher rescan failed:', err);
+      logger.error('watcher rescan failed:', err);
     }
   });
 });
