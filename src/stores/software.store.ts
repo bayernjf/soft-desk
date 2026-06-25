@@ -3,7 +3,9 @@ import { persist } from 'zustand/middleware';
 import type { Software, Workflow, SoftwareCategory } from '@/types';
 import { WORKFLOW_COLORS } from '@/data/categories';
 import { useSettingsStore } from '@/stores/settings.store';
+import { useAuthStore } from '@/stores/auth.store';
 import type { Recommendation } from '@/services/recommendation.service';
+import { addCloudFavorite, removeCloudFavorite } from '@/services/favorites.service';
 
 export interface WorkflowLaunchResult {
   total: number;
@@ -18,6 +20,7 @@ interface SoftwareStore {
   software: Software[];
   workflows: Workflow[];
   uninstalledIds: string[];
+  favoriteIds: string[];
   descriptionCache: Record<string, string>;
   descriptionMeta: Record<string, { version?: string }>;
   recommendations: Recommendation[];
@@ -47,6 +50,8 @@ interface SoftwareStore {
   setAiDescription: (id: string, description: string, version?: string) => void;
   setRecommendations: (recommendations: Recommendation[]) => void;
   setRecommendationLoading: (loading: boolean) => void;
+  toggleFavorite: (id: string) => Promise<void>;
+  setFavoriteIds: (ids: string[]) => void;
 }
 
 export interface WorkflowInput {
@@ -64,6 +69,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
   software: [],
   workflows: [],
   uninstalledIds: [],
+  favoriteIds: [],
   descriptionCache: {},
   descriptionMeta: {},
   recommendations: [],
@@ -280,12 +286,34 @@ export const useSoftwareStore = create<SoftwareStore>()(
 
   setRecommendations: (recommendations) => set({ recommendations }),
   setRecommendationLoading: (recommendationLoading) => set({ recommendationLoading }),
+
+  toggleFavorite: async (id) => {
+    const nextIds = get().favoriteIds.includes(id)
+      ? get().favoriteIds.filter((x) => x !== id)
+      : [...get().favoriteIds, id];
+    set({ favoriteIds: nextIds });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (!userId) return;
+
+    const software = get().software.find((s) => s.id === id);
+    if (!software) return;
+
+    if (nextIds.includes(id)) {
+      void addCloudFavorite(userId, software);
+    } else {
+      void removeCloudFavorite(userId, id);
+    }
+  },
+
+  setFavoriteIds: (ids) => set({ favoriteIds: ids }),
 }),
     {
       name: 'softdesk-store',
       partialize: (state) => ({
         workflows: state.workflows,
         uninstalledIds: state.uninstalledIds,
+        favoriteIds: state.favoriteIds,
         descriptionCache: state.descriptionCache,
         descriptionMeta: state.descriptionMeta,
       }),
