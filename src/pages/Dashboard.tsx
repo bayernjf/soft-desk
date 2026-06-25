@@ -9,6 +9,7 @@ import { formatMinutes, formatTimeAgo } from '@/services/software.service';
 import { fetchWorkflowSuggestions, hasActiveAiProvider } from '@/services/ai.service';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
 import { AppIcon } from '@/components/features/AppIcon';
+import { SmartRecommendations } from '@/components/features/SmartRecommendations';
 import { cn } from '@/lib/utils';
 import type { CoUsagePair, AiWorkflowSuggestion, SegmentCoUsage, TimeSegment } from '@/types/electron';
 
@@ -361,6 +362,8 @@ export function Dashboard() {
         </div>
 
         <aside className="space-y-6">
+          <SmartRecommendations />
+
           <section>
             <h2 className="text-sm font-semibold text-slate-200 mb-4">分类概览</h2>
             <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60 space-y-3">
