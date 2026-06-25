@@ -6,6 +6,8 @@ import {
   type AiProviderConfig,
   type AiProviderInput,
 } from '@/data/aiProviders';
+import { useAuthStore } from '@/stores/auth.store';
+import { syncAiConfigsToCloud, fetchCloudAiConfigs, mergeWithLocal } from '@/services/ai-configs.service';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -34,6 +36,7 @@ interface SettingsStore {
   deleteAiProvider: (id: string) => void;
   toggleAiProvider: (id: string) => void;
   hydrateAiProviders: () => void;
+  mergeCloudAiProviders: () => Promise<void>;
 }
 
 const DEFAULT_PREFS: AppPreferences = {
@@ -62,7 +65,6 @@ export function applyTheme(theme: ThemeMode) {
   root.classList.add(isDark ? 'dark' : 'light');
 }
 
-// 持续监听系统明暗变化:仅当用户选择"跟随系统"时,系统切换主题会实时同步到应用
 let systemThemeWatching = false;
 export function watchSystemTheme() {
   if (systemThemeWatching || typeof window === 'undefined' || !window.matchMedia) return;
@@ -73,7 +75,6 @@ export function watchSystemTheme() {
   });
 }
 
-// 把与窗口行为相关的偏好推送到 Electron 主进程并持久化(浏览器环境下无 bridge,安全跳过)
 export function syncWindowPrefs(prefs: AppPreferences) {
   if (typeof window === 'undefined' || !window.softdesk?.syncSettings) return;
   void window.softdesk.syncSettings({
@@ -82,15 +83,11 @@ export function syncWindowPrefs(prefs: AppPreferences) {
   });
 }
 
-// 把含明文 apiKey 的 provider 列表同步到主进程落盘,使所有推理在主进程发起;
-// 浏览器环境无 bridge 时安全跳过。任何 provider 变更后都应调用一次。
 export function syncAiProviders(providers: AiProviderConfig[]) {
   if (typeof window === 'undefined' || !window.softdesk?.syncAiProviders) return;
   void window.softdesk.syncAiProviders(providers);
 }
 
-// 从落盘的原始对象还原前端 AiProviderConfig:容错校验关键字段,缺失项补默认值。
-// 主进程保存的就是前端曾存入的完整对象,因此通常字段齐全。
 function reviveProviderConfig(raw: unknown): AiProviderConfig | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -116,8 +113,6 @@ function reviveProviderConfig(raw: unknown): AiProviderConfig | null {
   };
 }
 
-// 把 AI provider 输入规整为本地存储用的配置;apiKey 以明文存本地(localStorage),
-// 卡片仅展示 buildApiKeyHint 生成的脱敏提示,不上传任何服务器。
 function buildProviderConfig(input: AiProviderInput, base?: AiProviderConfig): AiProviderConfig {
   const now = new Date().toISOString();
   const provider = normalizeProvider(input.provider);
@@ -134,6 +129,13 @@ function buildProviderConfig(input: AiProviderInput, base?: AiProviderConfig): A
     createdAt: base?.createdAt ?? now,
     updatedAt: now,
   };
+}
+
+function syncToCloudIfLoggedIn(providers: AiProviderConfig[]) {
+  const userId = useAuthStore.getState().profile?.userId;
+  if (userId) {
+    void syncAiConfigsToCloud(userId, providers);
+  }
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -157,6 +159,7 @@ export const useSettingsStore = create<SettingsStore>()(
         const aiProviders = [...get().aiProviders, buildProviderConfig(input)];
         set({ aiProviders });
         syncAiProviders(aiProviders);
+        syncToCloudIfLoggedIn(aiProviders);
       },
       updateAiProvider: (id, input) => {
         const aiProviders = get().aiProviders.map((p) =>
@@ -164,11 +167,13 @@ export const useSettingsStore = create<SettingsStore>()(
         );
         set({ aiProviders });
         syncAiProviders(aiProviders);
+        syncToCloudIfLoggedIn(aiProviders);
       },
       deleteAiProvider: (id) => {
         const aiProviders = get().aiProviders.filter((p) => p.id !== id);
         set({ aiProviders });
         syncAiProviders(aiProviders);
+        syncToCloudIfLoggedIn(aiProviders);
       },
       toggleAiProvider: (id) => {
         const aiProviders = get().aiProviders.map((p) =>
@@ -176,10 +181,8 @@ export const useSettingsStore = create<SettingsStore>()(
         );
         set({ aiProviders });
         syncAiProviders(aiProviders);
+        syncToCloudIfLoggedIn(aiProviders);
       },
-      // 启动时从主进程(唯一权威数据源)拉取已落盘的 provider 列表回填 store。
-      // 主进程有数据则以主进程为准;主进程为空但本地尚存配置时,反向把本地补写回主进程,
-      // 完成一次性数据迁移(兼容此前仅存在 localStorage 的旧配置)。
       hydrateAiProviders: () => {
         if (typeof window === 'undefined' || !window.softdesk?.getAiProviders) return;
         void window.softdesk.getAiProviders().then((res) => {
@@ -190,16 +193,25 @@ export const useSettingsStore = create<SettingsStore>()(
           if (revived.length > 0) {
             set({ aiProviders: revived });
           } else if (get().aiProviders.length > 0) {
-            // 主进程没有但本地有(旧版本遗留),迁移补写回主进程
             syncAiProviders(get().aiProviders);
           }
+          // 本地回填完成后，异步合并云端配置
+          void get().mergeCloudAiProviders();
         });
+      },
+      mergeCloudAiProviders: async () => {
+        const userId = useAuthStore.getState().profile?.userId;
+        if (!userId) return;
+        const cloudConfigs = await fetchCloudAiConfigs(userId);
+        const merged = mergeWithLocal(cloudConfigs, get().aiProviders);
+        set({ aiProviders: merged });
+        syncAiProviders(merged);
+        // 登录后将本地配置（含之前未登录时添加的）同步到云端
+        void syncAiConfigsToCloud(userId, merged);
       },
     }),
     {
       name: 'softdesk-settings',
-      // apiKey 不持久化进 localStorage:provider 配置以主进程 ai-providers.json 为权威,
-      // 启动时由 hydrateAiProviders 回填,避免敏感密钥冗余存放在渲染层存储。
       partialize: (state) => ({
         theme: state.theme,
         prefs: state.prefs,
@@ -212,8 +224,6 @@ export const useSettingsStore = create<SettingsStore>()(
       onRehydrateStorage: () => (state) => {
         if (state) {
           applyTheme(state.theme);
-          // 不再用前端(可能为空的)localStorage 反向覆盖主进程;
-          // 而是从主进程权威数据回填,彻底规避 origin 隔离/缓存清理导致的配置丢失。
           state.hydrateAiProviders();
         }
       },
