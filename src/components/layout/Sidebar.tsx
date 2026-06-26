@@ -13,14 +13,24 @@ import {
   ChevronRight,
   ChevronDown,
   UserRound,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
+import { useSettingsStore, type ThemeMode } from '@/stores/settings.store';
 import { CATEGORIES } from '@/data/categories';
 import { cn } from '@/lib/utils';
 import { getAvatarSvg } from '@/lib/avatars';
 
 const COLLAPSED_CATEGORY_COUNT = 5;
+
+const THEME_OPTIONS: { id: ThemeMode; icon: typeof Sun; label: string }[] = [
+  { id: 'light', icon: Sun, label: '浅色' },
+  { id: 'dark', icon: Moon, label: '深色' },
+  { id: 'system', icon: Monitor, label: '跟随系统' },
+];
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: '工作台' },
@@ -37,6 +47,8 @@ export function Sidebar() {
   const selectedCategory = useSoftwareStore((s) => s.selectedCategory);
   const loggedIn = useAuthStore((s) => s.loggedIn);
   const profile = useAuthStore((s) => s.profile);
+  const theme = useSettingsStore((s) => s.theme);
+  const setTheme = useSettingsStore((s) => s.setTheme);
   const location = useLocation();
   const inLibrary = location.pathname === '/library';
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -184,6 +196,26 @@ export function Sidebar() {
       </div>
 
       <div className="p-3 border-t border-slate-800/60 space-y-1">
+        <div className="flex items-center gap-1 px-2 py-1.5 mb-1 rounded-xl bg-slate-800/40">
+          {THEME_OPTIONS.map(({ id, icon: Icon, label }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTheme(id)}
+              title={label}
+              aria-label={label}
+              aria-pressed={theme === id}
+              className={cn(
+                'flex flex-1 items-center justify-center py-1.5 rounded-lg transition-all duration-200',
+                theme === id
+                  ? 'bg-slate-700 text-white shadow-sm'
+                  : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
+              )}
+            >
+              <Icon className="w-4 h-4" />
+            </button>
+          ))}
+        </div>
         <NavLink
           to="/account"
           className={({ isActive }) =>
