@@ -271,16 +271,22 @@ html.light ::-webkit-scrollbar-thumb:hover {
   }
 
   /* —— 主内容区深色渐变背景:浅色下改为奶咖渐变 —— */
-  html.light .from-\[\#0a0a0f\] {
+  html.light .bg-\[\#161618\] {
+    background-color: var(--l-bg);
+  }
+  html.light .from-\[\#0a0a0f\],
+  html.light .from-\[\#161618\] {
     --tw-gradient-from: #efe7da var(--tw-gradient-from-position);
     --tw-gradient-to: rgb(239 231 218 / 0) var(--tw-gradient-to-position);
     --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-stops);
   }
-  html.light .via-\[\#0d0d14\] {
+  html.light .via-\[\#0d0d14\],
+  html.light .via-\[\#1a1a1c\] {
     --tw-gradient-to: rgb(245 240 233 / 0) var(--tw-gradient-to-position);
     --tw-gradient-stops: var(--tw-gradient-from), #f5f0e9 var(--tw-gradient-via-position), var(--tw-gradient-to);
   }
-  html.light .to-\[\#0a0a0f\] {
+  html.light .to-\[\#0a0a0f\],
+  html.light .to-\[\#161618\] {
     --tw-gradient-to: #efe7da var(--tw-gradient-to-position);
   }
 }
