@@ -14,6 +14,7 @@ export interface CloudFavorite {
   icon: string | null;
   color: string | null;
   group_id: string | null;
+  sort_order: number | null;
   created_at: string;
 }
 
@@ -22,6 +23,7 @@ export interface CloudFavoriteGroup {
   user_id: string;
   group_id: string;
   name: string;
+  sort_order: number | null;
   created_at: string;
 }
 
@@ -32,6 +34,7 @@ export async function fetchCloudFavorites(userId: string): Promise<string[]> {
       .from('favorites')
       .select('software_id')
       .eq('user_id', userId)
+      .order('sort_order', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false });
     if (error) {
       logger.error('fetch error:', error);
@@ -50,6 +53,7 @@ export async function fetchCloudFavoriteDetails(userId: string): Promise<CloudFa
       .from('favorites')
       .select('*')
       .eq('user_id', userId)
+      .order('sort_order', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false });
     if (error) {
       logger.error('fetch details error:', error);
@@ -134,6 +138,7 @@ export async function fetchCloudFavoriteGroups(userId: string): Promise<CloudFav
       .from('favorite_groups')
       .select('*')
       .eq('user_id', userId)
+      .order('sort_order', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: true });
     if (error) {
       logger.error('fetch groups error:', error);
@@ -264,6 +269,52 @@ export async function moveCloudFavoritesToGroup(
     }
     return true;
   } catch {
+    return false;
+  }
+}
+
+/* ── 排序持久化 ── */
+
+export async function reorderCloudFavorites(
+  userId: string,
+  orderedSoftwareIds: string[]
+): Promise<boolean> {
+  if (!isSupabaseConfigured() || !supabase || orderedSoftwareIds.length === 0) return false;
+  try {
+    await Promise.all(
+      orderedSoftwareIds.map((softwareId, index) =>
+        supabase!
+          .from('favorites')
+          .update({ sort_order: index })
+          .eq('user_id', userId)
+          .eq('software_id', softwareId)
+      )
+    );
+    return true;
+  } catch {
+    logger.error('reorder favorites error');
+    return false;
+  }
+}
+
+export async function reorderCloudFavoriteGroups(
+  userId: string,
+  orderedGroupIds: string[]
+): Promise<boolean> {
+  if (!isSupabaseConfigured() || !supabase || orderedGroupIds.length === 0) return false;
+  try {
+    await Promise.all(
+      orderedGroupIds.map((groupId, index) =>
+        supabase!
+          .from('favorite_groups')
+          .update({ sort_order: index })
+          .eq('user_id', userId)
+          .eq('group_id', groupId)
+      )
+    );
+    return true;
+  } catch {
+    logger.error('reorder groups error');
     return false;
   }
 }
