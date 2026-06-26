@@ -15,6 +15,7 @@ import {
   Square,
   SquareCheck,
   ListChecks,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
@@ -26,18 +27,74 @@ import type { CloudFavorite } from '@/services/favorites.service';
 import type { FavoriteGroup, Software } from '@/types';
 import { cn } from '@/lib/utils';
 
-/* ── 软件卡片包装器（含多选 checkbox） ── */
+/* ── 软件卡片包装器（含多选 checkbox / 拖拽排序） ── */
 interface CardWrapperProps {
   software: Software;
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
+  sortMode?: boolean;
+  isDragging?: boolean;
+  isDragOver?: boolean;
+  onDragStart?: () => void;
+  onDragEnter?: () => void;
+  onDragEnd?: () => void;
+  onDrop?: () => void;
   children?: React.ReactNode;
 }
 
-function CardWrapper({ software, selectMode, selected, onToggleSelect, children }: CardWrapperProps) {
+function CardWrapper({
+  software,
+  selectMode,
+  selected,
+  onToggleSelect,
+  sortMode = false,
+  isDragging = false,
+  isDragOver = false,
+  onDragStart,
+  onDragEnter,
+  onDragEnd,
+  onDrop,
+  children,
+}: CardWrapperProps) {
   return (
-    <div className="relative group/card">
+    <div
+      className={cn(
+        'relative group/card transition-all',
+        sortMode && 'cursor-grab active:cursor-grabbing',
+        isDragging && 'opacity-40',
+        isDragOver && 'ring-2 ring-violet-400/70 rounded-2xl'
+      )}
+      draggable={sortMode}
+      onDragStart={
+        sortMode
+          ? (e) => {
+              e.stopPropagation();
+              e.dataTransfer.effectAllowed = 'move';
+              onDragStart?.();
+            }
+          : undefined
+      }
+      onDragEnter={
+        sortMode
+          ? (e) => {
+              e.stopPropagation();
+              onDragEnter?.();
+            }
+          : undefined
+      }
+      onDragOver={sortMode ? (e) => e.preventDefault() : undefined}
+      onDrop={
+        sortMode
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDrop?.();
+            }
+          : undefined
+      }
+      onDragEnd={sortMode ? () => onDragEnd?.() : undefined}
+    >
       {selectMode && (
         <button
           onClick={(e) => {
@@ -59,7 +116,19 @@ function CardWrapper({ software, selectMode, selected, onToggleSelect, children 
         </button>
       )}
       <SoftwareCard software={software} />
-      {!selectMode && children}
+      {selectMode && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect();
+          }}
+          className="absolute inset-0 z-10 cursor-pointer"
+          aria-label={selected ? '取消选择' : '选择'}
+        />
+      )}
+      {sortMode && <div className="absolute inset-0 z-10" aria-hidden="true" />}
+      {!selectMode && !sortMode && children}
     </div>
   );
 }
@@ -74,6 +143,14 @@ interface GroupSectionProps {
   selectMode: boolean;
   selectedIds: string[];
   onToggleSelect: (id: string) => void;
+  sortMode: boolean;
+  onReorder: (groupId: string, orderedIds: string[]) => void;
+  isGroupDragging: boolean;
+  isGroupDragOver: boolean;
+  onGroupDragStart: () => void;
+  onGroupDragEnter: () => void;
+  onGroupDragEnd: () => void;
+  onGroupDrop: () => void;
 }
 
 function GroupSection({
@@ -85,12 +162,22 @@ function GroupSection({
   selectMode,
   selectedIds,
   onToggleSelect,
+  sortMode,
+  onReorder,
+  isGroupDragging,
+  isGroupDragOver,
+  onGroupDragStart,
+  onGroupDragEnter,
+  onGroupDragEnd,
+  onGroupDrop,
 }: GroupSectionProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(group.name);
   const [renameError, setRenameError] = useState('');
   const [moveMenuOpen, setMoveMenuOpen] = useState<string | false>(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -137,16 +224,66 @@ function GroupSection({
     moveFavoriteToGroup(softwareId, null);
   };
 
-  const installedInGroup = softwareList.filter(
-    (s) => group.softwareIds.includes(s.id) && !s.uninstalled && !s.deleted
-  );
+  const installedInGroup = group.softwareIds
+    .map((id) => softwareList.find((s) => s.id === id))
+    .filter((s): s is Software => Boolean(s) && !s!.uninstalled && !s!.deleted);
 
   const allSelected = installedInGroup.length > 0 && installedInGroup.every((s) => selectedIds.includes(s.id));
   const someSelected = installedInGroup.some((s) => selectedIds.includes(s.id)) && !allSelected;
 
+  const handleDrop = (targetId: string) => {
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      setOverId(null);
+      return;
+    }
+    const ids = installedInGroup.map((s) => s.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(targetId);
+    if (from === -1 || to === -1) {
+      setDragId(null);
+      setOverId(null);
+      return;
+    }
+    const next = [...ids];
+    next.splice(from, 1);
+    next.splice(to, 0, dragId);
+    onReorder(group.id, next);
+    setDragId(null);
+    setOverId(null);
+  };
+
   return (
-    <section>
-      <div className="flex items-center gap-2 mb-3">
+    <section
+      className={cn(
+        'transition-all rounded-2xl',
+        isGroupDragging && 'opacity-40',
+        isGroupDragOver && 'ring-2 ring-violet-400/70'
+      )}
+      onDragEnter={sortMode ? () => onGroupDragEnter() : undefined}
+      onDragOver={sortMode ? (e) => e.preventDefault() : undefined}
+      onDrop={
+        sortMode
+          ? (e) => {
+              e.preventDefault();
+              onGroupDrop();
+            }
+          : undefined
+      }
+    >
+      <div
+        className={cn('flex items-center gap-2 mb-3', sortMode && 'cursor-grab active:cursor-grabbing')}
+        draggable={sortMode}
+        onDragStart={
+          sortMode
+            ? (e) => {
+                e.dataTransfer.effectAllowed = 'move';
+                onGroupDragStart();
+              }
+            : undefined
+        }
+        onDragEnd={sortMode ? () => onGroupDragEnd() : undefined}
+      >
         {selectMode && installedInGroup.length > 0 && (
           <button
             onClick={() => {
@@ -276,6 +413,16 @@ function GroupSection({
                   selectMode={selectMode}
                   selected={selectedIds.includes(sw.id)}
                   onToggleSelect={() => onToggleSelect(sw.id)}
+                  sortMode={sortMode}
+                  isDragging={dragId === sw.id}
+                  isDragOver={overId === sw.id && dragId !== sw.id}
+                  onDragStart={() => setDragId(sw.id)}
+                  onDragEnter={() => setOverId(sw.id)}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setOverId(null);
+                  }}
+                  onDrop={() => handleDrop(sw.id)}
                 >
                   {!selectMode && (
                     <div className="absolute top-2 right-10 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity">
@@ -346,6 +493,9 @@ export function Favorites() {
   const createFavoriteGroup = useSoftwareStore((s) => s.createFavoriteGroup);
   const moveFavoriteToGroup = useSoftwareStore((s) => s.moveFavoriteToGroup);
   const moveFavoritesToGroup = useSoftwareStore((s) => s.moveFavoritesToGroup);
+  const reorderFavoritesInGroup = useSoftwareStore((s) => s.reorderFavoritesInGroup);
+  const reorderUngroupedFavorites = useSoftwareStore((s) => s.reorderUngroupedFavorites);
+  const reorderFavoriteGroups = useSoftwareStore((s) => s.reorderFavoriteGroups);
   const toggleFavorite = useSoftwareStore((s) => s.toggleFavorite);
   const loggedIn = useAuthStore((s) => s.loggedIn);
   const profile = useAuthStore((s) => s.profile);
@@ -367,6 +517,13 @@ export function Favorites() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchMoveOpen, setBatchMoveOpen] = useState(false);
   const batchMoveRef = useRef<HTMLDivElement>(null);
+
+  /* ── 排序状态 ── */
+  const [sortMode, setSortMode] = useState(false);
+  const [groupDragId, setGroupDragId] = useState<string | null>(null);
+  const [groupOverId, setGroupOverId] = useState<string | null>(null);
+  const [ungroupedDragId, setUngroupedDragId] = useState<string | null>(null);
+  const [ungroupedOverId, setUngroupedOverId] = useState<string | null>(null);
 
   /* ── 同步：仅在登录态变化时从云端拉取一次，避免被 software 周期性刷新覆盖本地分组 ── */
   useEffect(() => {
@@ -442,9 +599,9 @@ export function Favorites() {
     (s) => favoriteIds.includes(s.id) && !s.uninstalled && !s.deleted
   );
 
-  const ungroupedFavorites = installedFavorites.filter(
-    (s) => !groupedSoftwareIds.has(s.id)
-  );
+  const ungroupedFavorites = favoriteIds
+    .map((id) => installedFavorites.find((s) => s.id === id))
+    .filter((s): s is Software => Boolean(s) && !groupedSoftwareIds.has(s!.id));
 
   const uninstalledFavorites = cloudFavorites.filter(
     (f) => !software.some((s) => s.id === f.software_id && !s.uninstalled && !s.deleted)
@@ -476,6 +633,52 @@ export function Favorites() {
     moveFavoritesToGroup(selectedIds, groupId);
     setSelectedIds([]);
     setBatchMoveOpen(false);
+  };
+
+  /* ── 拖拽排序：分组之间 ── */
+  const handleGroupDrop = (targetId: string) => {
+    if (!groupDragId || groupDragId === targetId) {
+      setGroupDragId(null);
+      setGroupOverId(null);
+      return;
+    }
+    const ids = favoriteGroups.map((g) => g.id);
+    const from = ids.indexOf(groupDragId);
+    const to = ids.indexOf(targetId);
+    if (from === -1 || to === -1) {
+      setGroupDragId(null);
+      setGroupOverId(null);
+      return;
+    }
+    const next = [...ids];
+    next.splice(from, 1);
+    next.splice(to, 0, groupDragId);
+    reorderFavoriteGroups(next);
+    setGroupDragId(null);
+    setGroupOverId(null);
+  };
+
+  /* ── 拖拽排序：未分组区域 ── */
+  const handleUngroupedDrop = (targetId: string) => {
+    if (!ungroupedDragId || ungroupedDragId === targetId) {
+      setUngroupedDragId(null);
+      setUngroupedOverId(null);
+      return;
+    }
+    const ids = ungroupedFavorites.map((s) => s.id);
+    const from = ids.indexOf(ungroupedDragId);
+    const to = ids.indexOf(targetId);
+    if (from === -1 || to === -1) {
+      setUngroupedDragId(null);
+      setUngroupedOverId(null);
+      return;
+    }
+    const next = [...ids];
+    next.splice(from, 1);
+    next.splice(to, 0, ungroupedDragId);
+    reorderUngroupedFavorites(next);
+    setUngroupedDragId(null);
+    setUngroupedOverId(null);
   };
 
   const handleCreateGroup = () => {
@@ -616,6 +819,7 @@ export function Favorites() {
                       setSelectedIds([]);
                     } else {
                       setSelectMode(true);
+                      setSortMode(false);
                     }
                   }}
                   className={cn(
@@ -628,6 +832,31 @@ export function Favorites() {
                   <ListChecks className="w-3.5 h-3.5" />
                   {selectMode ? '完成' : '选择'}
                 </button>
+
+                <button
+                  onClick={() => {
+                    if (sortMode) {
+                      setSortMode(false);
+                    } else {
+                      setSortMode(true);
+                      setSelectMode(false);
+                      setSelectedIds([]);
+                    }
+                  }}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
+                    sortMode
+                      ? 'bg-violet-500/20 text-violet-300 border-violet-500/30'
+                      : 'bg-slate-800/40 text-slate-400 hover:bg-slate-800/70 hover:text-slate-200 border-slate-800/60 hover:border-slate-700/60'
+                  )}
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  {sortMode ? '完成' : '排序'}
+                </button>
+
+                {sortMode && (
+                  <span className="text-xs text-slate-500">拖动卡片可调整顺序</span>
+                )}
 
                 {selectMode && installedFavorites.length > 0 && (
                   <button
@@ -654,6 +883,17 @@ export function Favorites() {
                       selectMode={selectMode}
                       selectedIds={selectedIds}
                       onToggleSelect={handleToggleSelect}
+                      sortMode={sortMode}
+                      onReorder={reorderFavoritesInGroup}
+                      isGroupDragging={groupDragId === group.id}
+                      isGroupDragOver={groupOverId === group.id && groupDragId !== group.id}
+                      onGroupDragStart={() => setGroupDragId(group.id)}
+                      onGroupDragEnter={() => setGroupOverId(group.id)}
+                      onGroupDragEnd={() => {
+                        setGroupDragId(null);
+                        setGroupOverId(null);
+                      }}
+                      onGroupDrop={() => handleGroupDrop(group.id)}
                     />
                   ))}
                 </div>
@@ -710,6 +950,16 @@ export function Favorites() {
                           selectMode={selectMode}
                           selected={selectedIds.includes(sw.id)}
                           onToggleSelect={() => handleToggleSelect(sw.id)}
+                          sortMode={sortMode}
+                          isDragging={ungroupedDragId === sw.id}
+                          isDragOver={ungroupedOverId === sw.id && ungroupedDragId !== sw.id}
+                          onDragStart={() => setUngroupedDragId(sw.id)}
+                          onDragEnter={() => setUngroupedOverId(sw.id)}
+                          onDragEnd={() => {
+                            setUngroupedDragId(null);
+                            setUngroupedOverId(null);
+                          }}
+                          onDrop={() => handleUngroupedDrop(sw.id)}
                         >
                           {!selectMode && favoriteGroups.length > 0 && (
                             <div className="absolute top-2 right-10 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity">
