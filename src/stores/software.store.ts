@@ -2,8 +2,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Software, Workflow, SoftwareCategory, FavoriteGroup } from '@/types';
 import { WORKFLOW_COLORS } from '@/data/categories';
-import { useSettingsStore } from '@/stores/settings.store';
+import { useSettingsStore, registerRadialSyncBridge } from '@/stores/settings.store';
 import { useAuthStore } from '@/stores/auth.store';
+import { syncRadialToMain } from '@/services/radial.service';
 import type { Recommendation } from '@/services/recommendation.service';
 import {
   addCloudFavorite,
@@ -130,6 +131,9 @@ export const useSoftwareStore = create<SoftwareStore>()(
     }
 
     set({ software: merged });
+
+    // 应用列表(含 path/icon)刷新后,把 radial 配置 resolve 并重新同步给主进程
+    syncRadialToMain(useSettingsStore.getState().radial, merged, get().workflows);
   },
 
   scanSoftware: async () => {
@@ -515,3 +519,10 @@ export const useSoftwareStore = create<SoftwareStore>()(
     }
   )
 );
+
+// 注册 radial 同步桥:settings.store 配置变更时,用 software.store 的最新数据
+// resolve(补 name/icon/path)后同步进主进程。放在此处避免 settings→software 循环依赖。
+registerRadialSyncBridge((config) => {
+  const { software, workflows } = useSoftwareStore.getState();
+  return syncRadialToMain(config, software, workflows);
+});

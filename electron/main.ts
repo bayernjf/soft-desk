@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage, screen } from 'electron';
 import path from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { scanInstalledApps, applyAiCategories, startAppWatcher, stopAppWatcher, type ScannedApp, type ScannedCategory } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
 import { getStats, getUsageSummary, getCoUsage, getCoUsageBySegment, getHourlyUsage, getSegmentUsageByApp, recordLaunch, closeDb } from './database';
@@ -59,6 +60,7 @@ if (VITE_DEV_SERVER_URL) {
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+let radialWin: BrowserWindow | null = null;
 
 // 窗口行为偏好,由渲染进程(设置页)通过 settings:sync 同步,并落盘持久化,
 // 以便下次冷启动前(创建窗口时)即可读取 startMinimized。
@@ -131,7 +133,258 @@ function showWindow(): void {
 
 function openLauncher(): void {
   showWindow();
-  win?.webContents.send('launcher:open');
+  win?.webContents.send('launcher:open', undefined);
+}
+
+// ============ 径向菜单(Radial Menu) ============
+// 渲染层(settings.store)resolve 后通过 radial:syncConfig 把完整配置(含 path/icon)
+// 同步进来并落盘;热键唤出时下发剔除 path 的展示项,启动时用 path 经白名单二次校验。
+
+interface RadialSyncItem {
+  slot: number;
+  type: 'app' | 'workflow';
+  targetId: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  appPath?: string;
+  workflowPaths?: string[];
+}
+
+interface RadialConfigState {
+  enabled: boolean;
+  hotkey: string;
+  mouseWheelToggle: boolean;
+  sectors: number;
+  items: RadialSyncItem[];
+}
+
+const DEFAULT_RADIAL_CONFIG: RadialConfigState = {
+  enabled: false,
+  hotkey: 'CommandOrControl+Shift+R',
+  mouseWheelToggle: false,
+  sectors: 6,
+  items: [],
+};
+
+let radialConfig: RadialConfigState = { ...DEFAULT_RADIAL_CONFIG };
+let radialRegisteredHotkey: string | null = null;
+
+function radialConfigPath(): string {
+  return path.join(app.getPath('userData'), 'radial-config.json');
+}
+
+function loadRadialConfig(): void {
+  try {
+    const raw = readFileSync(radialConfigPath(), 'utf-8');
+    const parsed = JSON.parse(raw) as Partial<RadialConfigState>;
+    radialConfig = {
+      enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : DEFAULT_RADIAL_CONFIG.enabled,
+      hotkey: typeof parsed.hotkey === 'string' && parsed.hotkey ? parsed.hotkey : DEFAULT_RADIAL_CONFIG.hotkey,
+      mouseWheelToggle:
+        typeof parsed.mouseWheelToggle === 'boolean'
+          ? parsed.mouseWheelToggle
+          : DEFAULT_RADIAL_CONFIG.mouseWheelToggle,
+      sectors: typeof parsed.sectors === 'number' ? parsed.sectors : DEFAULT_RADIAL_CONFIG.sectors,
+      items: Array.isArray(parsed.items) ? (parsed.items as RadialSyncItem[]) : [],
+    };
+  } catch {
+    // 首次启动或文件损坏,沿用默认值
+  }
+}
+
+function persistRadialConfig(): void {
+  try {
+    writeFileSync(radialConfigPath(), JSON.stringify(radialConfig), 'utf-8');
+  } catch {
+    // 落盘失败不阻断主流程
+  }
+}
+
+// 按当前 radialConfig.enabled/hotkey 注册或反注册全局热键;返回热键是否处于已注册状态
+function applyRadialHotkey(): boolean {
+  // 先清掉旧的 radial 热键,再按需重注册
+  if (radialRegisteredHotkey && globalShortcut.isRegistered(radialRegisteredHotkey)) {
+    globalShortcut.unregister(radialRegisteredHotkey);
+  }
+  radialRegisteredHotkey = null;
+  if (!radialConfig.enabled) return true;
+  try {
+    const ok = globalShortcut.register(radialConfig.hotkey, () => openRadial());
+    if (ok) {
+      radialRegisteredHotkey = radialConfig.hotkey;
+      return true;
+    }
+    logger.error('radial hotkey register failed (occupied):', radialConfig.hotkey);
+    return false;
+  } catch (err) {
+    logger.error('radial hotkey register error:', err);
+    return false;
+  }
+}
+
+// ——— 鼠标中键(滚轮键)全局监听:uiohook-napi 原生模块,需 macOS 辅助功能权限 ———
+// 懒加载:仅在首次需要时 require,加载失败(模块缺失/ABI 不匹配)静默降级为不支持。
+type UiohookModule = {
+  uIOhook: {
+    on: (event: 'mousedown', cb: (e: { button: number }) => void) => void;
+    start: () => void;
+    stop: () => void;
+  };
+  UiohookMouseButton: { Middle: number };
+};
+let uiohook: UiohookModule | null = null;
+let uiohookLoaded = false;
+let uiohookListening = false;
+let mouseListenerBound = false;
+
+function loadUiohook(): UiohookModule | null {
+  if (uiohookLoaded) return uiohook;
+  uiohookLoaded = true;
+  try {
+    // 用动态 require 避免打包期解析;external 已声明 uiohook-napi
+    const req = createRequire(import.meta.url);
+    uiohook = req('uiohook-napi') as UiohookModule;
+  } catch (err) {
+    logger.error('load uiohook-napi failed (鼠标中键唤出不可用):', err);
+    uiohook = null;
+  }
+  return uiohook;
+}
+
+// 按 enabled + mouseWheelToggle 启停鼠标中键监听
+function applyRadialMouse(): void {
+  const want = radialConfig.enabled && radialConfig.mouseWheelToggle;
+  const mod = want ? loadUiohook() : uiohook;
+  if (!mod) return;
+
+  if (want && !uiohookListening) {
+    if (!mouseListenerBound) {
+      // 重要:此回调运行在 uiohook-napi 的 tsfn 调用栈里。一旦在此抛出异常,
+      // uiohook-napi 会直接 abort 整个进程(FATAL: tsfn_to_js_proxy)。
+      // 因此这里必须绝不抛异常,且把真正的工作(openRadial 涉及 Electron API)
+      // 用 setImmediate 推迟到下一个事件循环 tick,彻底脱离 tsfn 栈。
+      mod.uIOhook.on('mousedown', (e) => {
+        try {
+          if (e.button !== mod.UiohookMouseButton.Middle) return;
+          if (!radialConfig.enabled || !radialConfig.mouseWheelToggle) return;
+          setImmediate(() => {
+            try {
+              openRadial();
+            } catch (err) {
+              logger.error('openRadial from mouse failed:', err);
+            }
+          });
+        } catch {
+          // 回调内绝不允许异常逃逸到 napi 层
+        }
+      });
+      mouseListenerBound = true;
+    }
+    try {
+      mod.uIOhook.start();
+      uiohookListening = true;
+      logger.info('uiohook started (鼠标中键监听已开启)');
+    } catch (err) {
+      logger.error('uiohook start failed:', err);
+    }
+  } else if (!want && uiohookListening) {
+    try {
+      mod.uIOhook.stop();
+    } catch (err) {
+      logger.error('uiohook stop failed:', err);
+    }
+    uiohookListening = false;
+  }
+}
+
+function loadRadialWindow(w: BrowserWindow): void {
+  if (VITE_DEV_SERVER_URL) {
+    w.loadURL(new URL('radial.html', VITE_DEV_SERVER_URL).toString());
+  } else {
+    w.loadFile(path.join(RENDERER_DIST, 'radial.html'));
+  }
+}
+
+function createRadialWindow(): BrowserWindow {
+  const w = new BrowserWindow({
+    width: 1,
+    height: 1,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    roundedCorners: false,
+    webPreferences: {
+      preload: PRELOAD_PATH,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: !SANDBOX_DISABLED,
+    },
+  });
+  w.setAlwaysOnTop(true, 'screen-saver');
+  w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // 失焦即隐藏(点击其它应用/桌面时收起)
+  w.on('blur', () => hideRadial());
+  loadRadialWindow(w);
+  return w;
+}
+
+function hideRadial(): void {
+  if (radialWin && !radialWin.isDestroyed()) {
+    radialWin.hide();
+  }
+}
+
+// 下发给渲染层的展示项:剔除 path(渲染层只需 name/icon/color + targetId/type)
+function radialRenderItems() {
+  return radialConfig.items.map((it) => ({
+    slot: it.slot,
+    type: it.type,
+    targetId: it.targetId,
+    name: it.name,
+    icon: it.icon,
+    color: it.color,
+  }));
+}
+
+function openRadial(atCenter = false): void {
+  const cursor = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursor);
+  const { x, y, width, height } = display.workArea;
+
+  if (!radialWin || radialWin.isDestroyed()) {
+    radialWin = createRadialWindow();
+  }
+  radialWin.setBounds({ x, y, width, height });
+
+  const localCursor = atCenter
+    ? { x: Math.round(width / 2), y: Math.round(height / 2) }
+    : { x: cursor.x - x, y: cursor.y - y };
+  const send = () => {
+    radialWin?.webContents.send('radial:open', {
+      cursor: localCursor,
+      sectors: radialConfig.sectors,
+      items: radialRenderItems(),
+    });
+  };
+
+  radialWin.showInactive();
+  radialWin.focus();
+
+  if (radialWin.webContents.isLoading()) {
+    radialWin.webContents.once('did-finish-load', send);
+  } else {
+    send();
+  }
 }
 
 function buildTrayMenu(): Electron.Menu {
@@ -353,6 +606,88 @@ ipcMain.handle('window:toggleMaximize', () => {
   }
   win.maximize();
   return { maximized: true };
+});
+
+// 径向菜单关闭(隐藏)
+ipcMain.handle('radial:close', () => {
+  hideRadial();
+});
+
+// 设置页"试一下":无视 enabled,在当前光标所在显示器的中央弹一次径向菜单预览
+ipcMain.handle('radial:preview', () => {
+  openRadial(true);
+  return { success: true };
+});
+
+// 渲染层主动拉取当前配置(冷启动兜底):只回展示项,不含 path
+ipcMain.handle('radial:getItems', () => ({
+  enabled: radialConfig.enabled,
+  hotkey: radialConfig.hotkey,
+  sectors: radialConfig.sectors,
+  items: radialRenderItems(),
+}));
+
+// 渲染层在配置变更时把 resolve 后的完整配置(含 path/icon)同步进来:缓存 + 落盘 + 重注册热键
+ipcMain.handle('radial:syncConfig', (_event, raw: unknown) => {
+  if (!raw || typeof raw !== 'object') return { success: false, error: '无效配置' };
+  const input = raw as Partial<RadialConfigState>;
+  radialConfig = {
+    enabled: typeof input.enabled === 'boolean' ? input.enabled : radialConfig.enabled,
+    hotkey: typeof input.hotkey === 'string' && input.hotkey ? input.hotkey : radialConfig.hotkey,
+    mouseWheelToggle:
+      typeof input.mouseWheelToggle === 'boolean'
+        ? input.mouseWheelToggle
+        : radialConfig.mouseWheelToggle,
+    sectors: typeof input.sectors === 'number' ? input.sectors : radialConfig.sectors,
+    items: Array.isArray(input.items) ? (input.items as RadialSyncItem[]) : [],
+  };
+  persistRadialConfig();
+  const hotkeyRegistered = applyRadialHotkey();
+  applyRadialMouse();
+  return { success: true, hotkeyRegistered };
+});
+
+// 径向菜单选中扇区后启动:只接受 targetId,主进程用同步进来的 path 并经扫描白名单二次校验
+ipcMain.handle('radial:launch', async (_event, raw: unknown) => {
+  const input = (raw && typeof raw === 'object' ? raw : {}) as {
+    type?: 'app' | 'workflow';
+    targetId?: string;
+  };
+  hideRadial();
+
+  const item = radialConfig.items.find(
+    (it) => it.type === input.type && it.targetId === input.targetId
+  );
+  if (!item) return { success: false, error: '未找到对应扇区配置' };
+
+  if (item.type === 'app') {
+    const appPath = item.appPath;
+    if (!isAllowedAppPath(appPath)) {
+      return { success: false, error: '无效或未授权的软件路径' };
+    }
+    const error = await shell.openPath(appPath);
+    if (error) return { success: false, error };
+    if (item.targetId.length > 0 && item.targetId.length <= 256) {
+      try {
+        recordLaunch(item.targetId, todayKey());
+      } catch (dbErr) {
+        logger.error('recordLaunch failed:', dbErr);
+      }
+    }
+    return { success: true };
+  }
+
+  // workflow:逐个启动(过滤白名单)并间隔 400ms,与 software:launchBatch 行为一致
+  const paths = (item.workflowPaths ?? []).filter((p): p is string => isAllowedAppPath(p));
+  let launched = 0;
+  for (let i = 0; i < paths.length; i++) {
+    const error = await shell.openPath(paths[i]);
+    if (!error) launched++;
+    if (i < paths.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+  }
+  return { success: launched > 0, error: launched === 0 ? '工作流内无可启动的应用' : undefined };
 });
 
 ipcMain.handle('software:launch', async (_event, appPath: string, softwareId?: string) => {
@@ -694,9 +1029,12 @@ ipcMain.handle('software:remove', async (_event, appPath: string) => {
 
 app.whenReady().then(() => {
   loadWindowPrefs();
+  loadRadialConfig();
   createWindow();
   createTray();
   globalShortcut.register('CommandOrControl+Shift+Space', openLauncher);
+  applyRadialHotkey();
+  applyRadialMouse();
   startMonitor();
   // FSEvents 监听应用目录的安装/卸载,变化时重扫(命中缓存极快)并推送给渲染进程
   startAppWatcher(async () => {
@@ -712,6 +1050,18 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   isQuitting = true;
   globalShortcut.unregisterAll();
+  if (uiohookListening && uiohook) {
+    try {
+      uiohook.uIOhook.stop();
+    } catch {
+      // 退出时停止失败可忽略
+    }
+    uiohookListening = false;
+  }
+  if (radialWin && !radialWin.isDestroyed()) {
+    radialWin.destroy();
+    radialWin = null;
+  }
   stopMonitor();
   stopAppWatcher();
   closeDb();

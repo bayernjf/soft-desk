@@ -79,4 +79,24 @@ contextBridge.exposeInMainWorld('softdesk', {
     ipcRenderer.on('software:changed', handler);
     return () => ipcRenderer.removeListener('software:changed', handler);
   },
+  onOpenRadial: (
+    callback: (payload: {
+      cursor: { x: number; y: number };
+      sectors: number;
+      items: unknown[];
+    }) => void
+  ) => {
+    const handler = (
+      _e: unknown,
+      payload: { cursor: { x: number; y: number }; sectors: number; items: unknown[] }
+    ) => callback(payload);
+    ipcRenderer.on('radial:open', handler);
+    return () => ipcRenderer.removeListener('radial:open', handler);
+  },
+  radialLaunch: (input: { type: 'app' | 'workflow'; targetId: string }) =>
+    ipcRenderer.invoke('radial:launch', input),
+  radialClose: () => ipcRenderer.invoke('radial:close'),
+  radialGetItems: () => ipcRenderer.invoke('radial:getItems'),
+  radialSyncConfig: (config: unknown) => ipcRenderer.invoke('radial:syncConfig', config),
+  radialPreview: () => ipcRenderer.invoke('radial:preview'),
 });

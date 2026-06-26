@@ -8,6 +8,7 @@ import {
 } from '@/data/aiProviders';
 import { useAuthStore } from '@/stores/auth.store';
 import { syncAiConfigsToCloud, fetchCloudAiConfigs, mergeWithLocal } from '@/services/ai-configs.service';
+import type { RadialMenuConfig, RadialItem } from '@/types';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -29,8 +30,11 @@ interface SettingsStore {
   theme: ThemeMode;
   prefs: AppPreferences;
   aiProviders: AiProviderConfig[];
+  radial: RadialMenuConfig;
   setTheme: (theme: ThemeMode) => void;
   togglePref: (key: keyof AppPreferences) => void;
+  setRadialConfig: (patch: Partial<Omit<RadialMenuConfig, 'items'>>) => void;
+  setRadialItem: (slot: number, item: Omit<RadialItem, 'slot'> | null) => void;
   addAiProvider: (input: AiProviderInput) => void;
   updateAiProvider: (id: string, input: AiProviderInput) => void;
   deleteAiProvider: (id: string) => void;
@@ -52,6 +56,24 @@ const DEFAULT_PREFS: AppPreferences = {
   anonymizeData: true,
   scanOnStartup: true,
 };
+
+const DEFAULT_RADIAL: RadialMenuConfig = {
+  enabled: false,
+  hotkey: 'CommandOrControl+Shift+R',
+  mouseWheelToggle: false,
+  sectors: 6,
+  items: [],
+};
+
+/** 把渲染层 radial 配置 resolve(补 name/icon/path)后同步进主进程。
+ *  resolve 依赖 software/workflow,放在 software.store 里订阅触发,这里只暴露占位 hook。 */
+export let radialSyncBridge: ((config: RadialMenuConfig) => void) | null = null;
+export function registerRadialSyncBridge(fn: (config: RadialMenuConfig) => void) {
+  radialSyncBridge = fn;
+}
+function triggerRadialSync(config: RadialMenuConfig) {
+  radialSyncBridge?.(config);
+}
 
 export function applyTheme(theme: ThemeMode) {
   if (typeof document === 'undefined') return;
@@ -144,6 +166,7 @@ export const useSettingsStore = create<SettingsStore>()(
       theme: 'dark',
       prefs: DEFAULT_PREFS,
       aiProviders: [],
+      radial: DEFAULT_RADIAL,
       setTheme: (theme) => {
         set({ theme });
         applyTheme(theme);
@@ -154,6 +177,18 @@ export const useSettingsStore = create<SettingsStore>()(
         if (key === 'startMinimized' || key === 'minimizeToTray') {
           syncWindowPrefs(prefs);
         }
+      },
+      setRadialConfig: (patch) => {
+        const radial = { ...get().radial, ...patch };
+        set({ radial });
+        triggerRadialSync(radial);
+      },
+      setRadialItem: (slot, item) => {
+        const others = get().radial.items.filter((it) => it.slot !== slot);
+        const items = item ? [...others, { slot, ...item }] : others;
+        const radial = { ...get().radial, items };
+        set({ radial });
+        triggerRadialSync(radial);
       },
       addAiProvider: (input) => {
         const aiProviders = [...get().aiProviders, buildProviderConfig(input)];
@@ -215,6 +250,7 @@ export const useSettingsStore = create<SettingsStore>()(
       partialize: (state) => ({
         theme: state.theme,
         prefs: state.prefs,
+        radial: state.radial,
         aiProviders: state.aiProviders.map((p) => {
           const rest = { ...p };
           delete rest.apiKey;

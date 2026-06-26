@@ -152,6 +152,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
 
   /* —— 背景:hover / 次级块 —— */
   html.light .bg-slate-800,
+  html.light .bg-slate-800\/30,
   html.light .bg-slate-800\/40,
   html.light .bg-slate-800\/50,
   html.light .bg-slate-800\/60,

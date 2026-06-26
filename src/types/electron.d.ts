@@ -1,4 +1,4 @@
-import type { Software } from './index';
+import type { Software, RadialOpenPayload, RadialMenuConfig } from './index';
 
 export interface BatchLaunchItem {
   path: string;
@@ -232,6 +232,23 @@ export interface SoftdeskBridge {
   onOpenLauncher: (callback: () => void) => () => void;
   /** 监听主进程文件系统监听器(FSEvents)推送的"已安装软件发生变化"事件,返回取消监听函数 */
   onSoftwareChanged: (callback: (apps: Software[]) => void) => () => void;
+  /** 监听由全局快捷键触发的"打开径向菜单"事件(带光标局部坐标与扇区配置),返回取消监听函数 */
+  onOpenRadial: (callback: (payload: RadialOpenPayload) => void) => () => void;
+  /** 径向菜单选中扇区后:启动单应用或整个工作流(只传 targetId,主进程映射白名单路径) */
+  radialLaunch: (input: {
+    type: 'app' | 'workflow';
+    targetId: string;
+  }) => Promise<{ success: boolean; error?: string }>;
+  /** 关闭(隐藏)径向菜单窗口 */
+  radialClose: () => Promise<void>;
+  /** 渲染层主动拉取当前径向菜单配置(冷启动兜底) */
+  radialGetItems: () => Promise<RadialMenuConfig>;
+  /** 渲染层在径向菜单配置变更时把配置同步进主进程并落盘(热键/启用状态/扇区绑定) */
+  radialSyncConfig: (
+    config: RadialMenuConfig
+  ) => Promise<{ success: boolean; error?: string; hotkeyRegistered?: boolean }>;
+  /** 设置页"试一下":无视 enabled,在屏幕中央弹一次径向菜单预览 */
+  radialPreview: () => Promise<{ success: boolean }>;
 }
 
 declare global {

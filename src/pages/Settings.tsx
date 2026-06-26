@@ -1,15 +1,17 @@
 import { useState } from 'react';
-import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog } from 'lucide-react';
+import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog, CircleDot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
 import { AiModelsSection } from '@/components/features/AiModelsSection';
+import { RadialMenuSection } from '@/components/features/RadialMenuSection';
 
-type TabId = 'appearance' | 'notifications' | 'data' | 'privacy' | 'ai' | 'help';
+type TabId = 'appearance' | 'notifications' | 'radial' | 'data' | 'privacy' | 'ai' | 'help';
 
 const tabs = [
   { id: 'appearance' as TabId, icon: Monitor, label: '外观' },
   { id: 'notifications' as TabId, icon: Bell, label: '通知' },
+  { id: 'radial' as TabId, icon: CircleDot, label: '径向菜单' },
   { id: 'data' as TabId, icon: Database, label: '数据与存储' },
   { id: 'privacy' as TabId, icon: Shield, label: '隐私安全' },
   { id: 'ai' as TabId, icon: Sparkles, label: 'AI 功能' },
@@ -141,6 +143,12 @@ export function Settings() {
                   description="关闭窗口时不退出程序，而是最小化到托盘"
                 />
               </div>
+            </div>
+          )}
+
+          {activeTab === 'radial' && (
+            <div className="max-w-2xl">
+              <RadialMenuSection />
             </div>
           )}
 

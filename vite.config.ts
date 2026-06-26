@@ -21,6 +21,25 @@ export default defineConfig({
   },
   build: {
     sourcemap: 'hidden',
+    rollupOptions: {
+      input: {
+        main: path.join(__dirname, 'index.html'),
+        radial: path.join(__dirname, 'radial.html'),
+      },
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (
+              /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler|use-sync-external-store)[\\/]/.test(
+                id
+              )
+            ) {
+              return 'react-vendor';
+            }
+          }
+        },
+      },
+    },
   },
   plugins: [
     react({
@@ -46,7 +65,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron',
-            rollupOptions: { external: ['electron', 'better-sqlite3', 'ws'] },
+            rollupOptions: { external: ['electron', 'better-sqlite3', 'ws', 'uiohook-napi'] },
           },
           define: {
             'process.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),
