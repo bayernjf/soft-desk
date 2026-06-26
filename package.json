@@ -26,6 +26,7 @@
     "react-router-dom": "^7.3.0",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.0.2",
+    "uiohook-napi": "^1.5.5",
     "ws": "^8.21.0",
     "zustand": "^5.0.3"
   },
@@ -68,7 +69,8 @@
       "dist-electron/**/*"
     ],
     "asarUnpack": [
-      "**/node_modules/better-sqlite3/**"
+      "**/node_modules/better-sqlite3/**",
+      "**/node_modules/uiohook-napi/**"
     ],
     "mac": {
       "icon": "build/icon.icns",
