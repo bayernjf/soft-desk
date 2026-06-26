@@ -48,6 +48,13 @@ export interface Workflow {
   updatedAt: string;
 }
 
+export interface FavoriteGroup {
+  id: string;
+  name: string;
+  softwareIds: string[];
+  createdAt: string;
+}
+
 export interface SearchState {
   query: string;
   results: Software[];
