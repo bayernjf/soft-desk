@@ -48,7 +48,13 @@ if (SANDBOX_DISABLED) {
   app.commandLine.appendSwitch('no-sandbox');
 }
 
-app.setPath('userData', path.join(process.env.APP_ROOT, '.electron-data'));
+// 仅开发模式把 userData 重定向到项目目录,便于调试查看落盘数据;
+// 打包模式必须使用 Electron 默认 userData(~/Library/Application Support/<productName>),
+// 否则会指向只读的 app.asar 内部路径,导致 radial-config.json 等配置无法落盘,
+// 进而出现"中键唤出径向菜单的开关重启后丢失/监听从不启动"的问题。
+if (VITE_DEV_SERVER_URL) {
+  app.setPath('userData', path.join(process.env.APP_ROOT, '.electron-data'));
+}
 
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
