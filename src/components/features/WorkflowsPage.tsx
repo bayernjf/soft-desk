@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, Clock, Play, Loader2, Check, AlertCircle, Pencil, Trash2, Plus, Sparkles } from 'lucide-react';
+import { Star, Clock, Play, Loader2, Check, AlertCircle, Pencil, Trash2, Plus, Sparkles, LogIn } from 'lucide-react';
 import type { Workflow } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
@@ -246,7 +246,6 @@ export function WorkflowsPage() {
   const [aiOpen, setAiOpen] = useState(false);
   const [aiReady, setAiReady] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
-  const [loginHint, setLoginHint] = useState(false);
   const loggedIn = useAuthStore((s) => s.loggedIn);
   const navigate = useNavigate();
   const favorite = workflows.filter((w) => w.isFavorite);
@@ -267,21 +266,11 @@ export function WorkflowsPage() {
   }, []);
 
   const openCreate = () => {
-    if (!loggedIn) {
-      setLoginHint(true);
-      setTimeout(() => setLoginHint(false), 3000);
-      return;
-    }
     setEditingWorkflow(null);
     setEditorOpen(true);
   };
 
   const openAi = () => {
-    if (!loggedIn) {
-      setLoginHint(true);
-      setTimeout(() => setLoginHint(false), 3000);
-      return;
-    }
     setAiOpen(true);
   };
 
@@ -295,91 +284,96 @@ export function WorkflowsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">工作流</h1>
-          <p className="text-sm text-slate-500 mt-1">一键启动你的高效工作组合</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {aiReady && (
-            <button
-              onClick={openAi}
-              className={cn(
-                'px-4 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center gap-1.5',
-                loggedIn
-                  ? 'bg-gradient-to-r from-violet-500/20 to-fuchsia-500/15 text-violet-300 border-violet-500/30 hover:from-violet-500/30 hover:to-fuchsia-500/25'
-                  : 'bg-slate-800/40 text-slate-500 border-slate-700/40 cursor-not-allowed'
-              )}
-            >
-              <Sparkles className="w-4 h-4" />
-              AI 生成
-            </button>
-          )}
-          <button
-            onClick={openCreate}
-            className={cn(
-              'px-4 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center gap-1.5',
-              loggedIn
-                ? 'bg-violet-500/20 text-violet-300 border-violet-500/30 hover:bg-violet-500/30'
-                : 'bg-slate-800/40 text-slate-500 border-slate-700/40 cursor-not-allowed'
-            )}
-          >
-            <Plus className="w-4 h-4" />
-            创建工作流
-          </button>
+          <p className="text-sm text-slate-500 mt-1">
+            {loggedIn ? '一键启动你的高效工作组合' : '登录账号后即可管理工作流'}
+          </p>
         </div>
       </div>
 
-      {loginHint && (
-        <div
-          className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm"
-        >
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>请先登录账号后再创建工作流</span>
+      {!loggedIn ? (
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-slate-800/40 flex items-center justify-center mb-4">
+            <LogIn className="w-7 h-7 text-slate-500" />
+          </div>
+          <h3 className="text-sm font-medium text-slate-300 mb-1">请先登录</h3>
+          <p className="text-xs text-slate-500 max-w-xs mb-5">
+            登录账号后即可创建工作流，并在多设备间同步
+          </p>
           <button
             onClick={() => navigate('/account')}
-            className="ml-auto px-3 py-1 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-medium hover:bg-amber-500/30 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 border border-violet-500/20 transition-colors"
           >
+            <LogIn className="w-4 h-4" />
             去登录
           </button>
         </div>
-      )}
-
-      {favorite.length > 0 && (
-        <div>
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-            ★ 收藏
-          </h2>
-          <div className="grid gap-3 lg:grid-cols-2">
-            {favorite.map((w) => (
-              <WorkflowCard key={w.id} workflow={w} onEdit={openEdit} />
-            ))}
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            {aiReady && (
+              <button
+                onClick={openAi}
+                className={cn(
+                  'px-4 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center gap-1.5',
+                  'bg-gradient-to-r from-violet-500/20 to-fuchsia-500/15 text-violet-300 border-violet-500/30 hover:from-violet-500/30 hover:to-fuchsia-500/25'
+                )}
+              >
+                <Sparkles className="w-4 h-4" />
+                AI 生成
+              </button>
+            )}
+            <button
+              onClick={openCreate}
+              className={cn(
+                'px-4 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center gap-1.5',
+                'bg-violet-500/20 text-violet-300 border-violet-500/30 hover:bg-violet-500/30'
+              )}
+            >
+              <Plus className="w-4 h-4" />
+              创建工作流
+            </button>
           </div>
-        </div>
-      )}
 
-      <div>
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-          全部工作流
-        </h2>
-        {rest.length === 0 && favorite.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-800 py-12 text-center">
-            <p className="text-sm text-slate-500">还没有工作流，点击右上角创建一个吧</p>
+          {favorite.length > 0 && (
+            <div>
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                ★ 收藏
+              </h2>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {favorite.map((w) => (
+                  <WorkflowCard key={w.id} workflow={w} onEdit={openEdit} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+              全部工作流
+            </h2>
+            {rest.length === 0 && favorite.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-800 py-12 text-center">
+                <p className="text-sm text-slate-500">还没有工作流，点击右上角创建一个吧</p>
+              </div>
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {rest.map((w) => (
+                  <WorkflowCard key={w.id} workflow={w} onEdit={openEdit} />
+                ))}
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {rest.map((w) => (
-              <WorkflowCard key={w.id} workflow={w} onEdit={openEdit} />
-            ))}
-          </div>
-        )}
-      </div>
 
-      {editorOpen && (
-        <WorkflowEditorModal
-          workflow={editingWorkflow}
-          onClose={() => setEditorOpen(false)}
-        />
+          {editorOpen && (
+            <WorkflowEditorModal
+              workflow={editingWorkflow}
+              onClose={() => setEditorOpen(false)}
+            />
+          )}
+
+          {aiOpen && <AiWorkflowModal onClose={() => setAiOpen(false)} />}
+        </>
       )}
-
-      {aiOpen && <AiWorkflowModal onClose={() => setAiOpen(false)} />}
     </div>
   );
 }

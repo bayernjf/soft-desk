@@ -137,7 +137,11 @@ export function AiWorkflowModal({ onClose }: AiWorkflowModalProps) {
           {phase.status === 'ready' && (
             <div className="space-y-3">
               {!loggedIn && (
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+                <div className={cn(
+                  'flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs',
+                  'bg-amber-100 border border-amber-300 text-amber-800',
+                  'dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300'
+                )}>
                   <LogIn className="w-3.5 h-3.5 shrink-0" />
                   <span>请先登录账号后再创建工作流</span>
                 </div>
