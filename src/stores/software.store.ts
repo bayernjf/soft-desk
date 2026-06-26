@@ -1,11 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Software, Workflow, SoftwareCategory } from '@/types';
+import type { Software, Workflow, SoftwareCategory, FavoriteGroup } from '@/types';
 import { WORKFLOW_COLORS } from '@/data/categories';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useAuthStore } from '@/stores/auth.store';
 import type { Recommendation } from '@/services/recommendation.service';
-import { addCloudFavorite, removeCloudFavorite } from '@/services/favorites.service';
+import {
+  addCloudFavorite,
+  removeCloudFavorite,
+  addCloudFavoriteGroup,
+  renameCloudFavoriteGroup,
+  removeCloudFavoriteGroup,
+  moveCloudFavoriteToGroup,
+  moveCloudFavoritesToGroup,
+} from '@/services/favorites.service';
 import { upsertCloudWorkflow, deleteCloudWorkflow } from '@/services/workflows.service';
 
 export interface WorkflowLaunchResult {
@@ -22,6 +30,7 @@ interface SoftwareStore {
   workflows: Workflow[];
   uninstalledIds: string[];
   favoriteIds: string[];
+  favoriteGroups: FavoriteGroup[];
   descriptionCache: Record<string, string>;
   descriptionMeta: Record<string, { version?: string }>;
   recommendations: Recommendation[];
@@ -55,6 +64,12 @@ interface SoftwareStore {
   setFavoriteIds: (ids: string[]) => void;
   setWorkflows: (workflows: Workflow[]) => void;
   clearWorkflows: () => void;
+  createFavoriteGroup: (name: string) => { success: boolean; error?: string; group?: FavoriteGroup };
+  renameFavoriteGroup: (id: string, name: string) => { success: boolean; error?: string };
+  deleteFavoriteGroup: (id: string) => void;
+  moveFavoriteToGroup: (softwareId: string, groupId: string | null) => void;
+  moveFavoritesToGroup: (softwareIds: string[], groupId: string | null) => void;
+  setFavoriteGroups: (groups: FavoriteGroup[]) => void;
 }
 
 export interface WorkflowInput {
@@ -73,6 +88,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
   workflows: [],
   uninstalledIds: [],
   favoriteIds: [],
+  favoriteGroups: [],
   descriptionCache: {},
   descriptionMeta: {},
   recommendations: [],
@@ -344,6 +360,104 @@ export const useSoftwareStore = create<SoftwareStore>()(
   },
 
   setFavoriteIds: (ids) => set({ favoriteIds: ids }),
+
+  createFavoriteGroup: (name) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return { success: false, error: '分组名称不能为空' };
+    }
+    const existing = get().favoriteGroups.find(
+      (g) => g.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (existing) {
+      return { success: false, error: '分组名称已存在' };
+    }
+    const group: FavoriteGroup = {
+      id: `fg-${Date.now()}`,
+      name: trimmed,
+      softwareIds: [],
+      createdAt: new Date().toISOString(),
+    };
+    set({ favoriteGroups: [...get().favoriteGroups, group] });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (userId) {
+      void addCloudFavoriteGroup(userId, group);
+    }
+    return { success: true, group };
+  },
+
+  renameFavoriteGroup: (id, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return { success: false, error: '分组名称不能为空' };
+    }
+    const existing = get().favoriteGroups.find(
+      (g) => g.id !== id && g.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (existing) {
+      return { success: false, error: '分组名称已存在' };
+    }
+    set({
+      favoriteGroups: get().favoriteGroups.map((g) =>
+        g.id === id ? { ...g, name: trimmed } : g
+      ),
+    });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (userId) {
+      void renameCloudFavoriteGroup(userId, id, trimmed);
+    }
+    return { success: true };
+  },
+
+  deleteFavoriteGroup: (id) => {
+    const group = get().favoriteGroups.find((g) => g.id === id);
+    if (!group) return;
+    set({
+      favoriteGroups: get().favoriteGroups.filter((g) => g.id !== id),
+    });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (userId) {
+      void removeCloudFavoriteGroup(userId, id);
+    }
+  },
+
+  moveFavoriteToGroup: (softwareId, groupId) => {
+    const groups = get().favoriteGroups.map((g) => {
+      const withoutCurrent = g.softwareIds.filter((sid) => sid !== softwareId);
+      if (g.id === groupId) {
+        return { ...g, softwareIds: [...withoutCurrent, softwareId] };
+      }
+      return { ...g, softwareIds: withoutCurrent };
+    });
+    set({ favoriteGroups: groups });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (userId) {
+      void moveCloudFavoriteToGroup(userId, softwareId, groupId);
+    }
+  },
+
+  moveFavoritesToGroup: (softwareIds, groupId) => {
+    const groups = get().favoriteGroups.map((g) => {
+      const withoutSelected = g.softwareIds.filter((sid) => !softwareIds.includes(sid));
+      if (g.id === groupId) {
+        const toAdd = softwareIds.filter((sid) => !withoutSelected.includes(sid));
+        return { ...g, softwareIds: [...withoutSelected, ...toAdd] };
+      }
+      return { ...g, softwareIds: withoutSelected };
+    });
+    set({ favoriteGroups: groups });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (userId) {
+      void moveCloudFavoritesToGroup(userId, softwareIds, groupId);
+    }
+  },
+
+  setFavoriteGroups: (groups) => set({ favoriteGroups: groups }),
 }),
     {
       name: 'softdesk-store',
@@ -351,6 +465,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
         workflows: state.workflows,
         uninstalledIds: state.uninstalledIds,
         favoriteIds: state.favoriteIds,
+        favoriteGroups: state.favoriteGroups,
         descriptionCache: state.descriptionCache,
         descriptionMeta: state.descriptionMeta,
       }),
