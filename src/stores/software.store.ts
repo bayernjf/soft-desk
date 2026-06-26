@@ -13,6 +13,8 @@ import {
   removeCloudFavoriteGroup,
   moveCloudFavoriteToGroup,
   moveCloudFavoritesToGroup,
+  reorderCloudFavorites,
+  reorderCloudFavoriteGroups,
 } from '@/services/favorites.service';
 import { upsertCloudWorkflow, deleteCloudWorkflow } from '@/services/workflows.service';
 
@@ -69,6 +71,9 @@ interface SoftwareStore {
   deleteFavoriteGroup: (id: string) => void;
   moveFavoriteToGroup: (softwareId: string, groupId: string | null) => void;
   moveFavoritesToGroup: (softwareIds: string[], groupId: string | null) => void;
+  reorderFavoritesInGroup: (groupId: string, orderedIds: string[]) => void;
+  reorderUngroupedFavorites: (orderedIds: string[]) => void;
+  reorderFavoriteGroups: (orderedGroupIds: string[]) => void;
   setFavoriteGroups: (groups: FavoriteGroup[]) => void;
 }
 
@@ -454,6 +459,44 @@ export const useSoftwareStore = create<SoftwareStore>()(
     const userId = useAuthStore.getState().profile?.userId;
     if (userId) {
       void moveCloudFavoritesToGroup(userId, softwareIds, groupId);
+    }
+  },
+
+  reorderFavoritesInGroup: (groupId, orderedIds) => {
+    set({
+      favoriteGroups: get().favoriteGroups.map((g) =>
+        g.id === groupId ? { ...g, softwareIds: orderedIds } : g
+      ),
+    });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (userId) {
+      void reorderCloudFavorites(userId, orderedIds);
+    }
+  },
+
+  reorderUngroupedFavorites: (orderedIds) => {
+    const groupedIds = new Set(get().favoriteGroups.flatMap((g) => g.softwareIds));
+    const others = get().favoriteIds.filter((id) => groupedIds.has(id));
+    set({ favoriteIds: [...orderedIds, ...others] });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (userId) {
+      void reorderCloudFavorites(userId, orderedIds);
+    }
+  },
+
+  reorderFavoriteGroups: (orderedGroupIds) => {
+    const byId = new Map(get().favoriteGroups.map((g) => [g.id, g]));
+    const reordered = orderedGroupIds
+      .map((id) => byId.get(id))
+      .filter((g): g is FavoriteGroup => Boolean(g));
+    const missing = get().favoriteGroups.filter((g) => !orderedGroupIds.includes(g.id));
+    set({ favoriteGroups: [...reordered, ...missing] });
+
+    const userId = useAuthStore.getState().profile?.userId;
+    if (userId) {
+      void reorderCloudFavoriteGroups(userId, orderedGroupIds);
     }
   },
 
