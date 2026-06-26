@@ -4,9 +4,9 @@ import tsconfigPaths from "vite-tsconfig-paths";
 import { traeBadgePlugin } from 'vite-plugin-trae-solo-badge';
 import electron from 'vite-plugin-electron';
 import renderer from 'vite-plugin-electron-renderer';
-import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildSync } from 'esbuild';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = loadEnv('', process.cwd(), 'VITE');
@@ -76,35 +76,21 @@ export default defineConfig({
               name: 'preload-force-cjs',
               // vite-plugin-electron 的 lib+cjs 在本插件版本下会产出混入 ESM 语法、
               // 且带重复尾巴的损坏代码,导致 sandbox preload 报 SyntaxError。
-              // 这里在写盘后重建一份纯净 CJS:把 import 改为 require,并通过括号配平
-              // 只保留 exposeInMainWorld 这一段完整调用,丢弃其后的重复垃圾代码。
+              // 早期通过字符串截取 exposeInMainWorld(...) 重建 CJS,但这会丢弃 esbuild
+              // 内联的 electron 命名空间变量(被压缩成 r),导致运行时 `r is not defined`。
+              // 这里改为直接用 esbuild 重新打包 preload,产出自洽的纯净 CJS 覆盖输出。
               closeBundle() {
                 const file = path.join(__dirname, 'dist-electron', 'preload.cjs');
-                try {
-                  const raw = readFileSync(file, 'utf-8');
-                  const start = raw.indexOf('exposeInMainWorld');
-                  if (start === -1) return;
-                  const parenStart = raw.indexOf('(', start);
-                  let depth = 0;
-                  let end = -1;
-                  for (let i = parenStart; i < raw.length; i++) {
-                    const ch = raw[i];
-                    if (ch === '(') depth++;
-                    else if (ch === ')') {
-                      depth--;
-                      if (depth === 0) {
-                        end = i;
-                        break;
-                      }
-                    }
-                  }
-                  if (end === -1) return;
-                  const call = raw.slice(parenStart + 1, end);
-                  const code = `"use strict";\nconst electron = require("electron");\nconst { contextBridge, ipcRenderer } = electron;\ncontextBridge.exposeInMainWorld(${call});\n`;
-                  writeFileSync(file, code, 'utf-8');
-                } catch {
-                  // 文件尚未生成时忽略
-                }
+                buildSync({
+                  entryPoints: [path.join(__dirname, 'electron', 'preload.ts')],
+                  outfile: file,
+                  bundle: true,
+                  platform: 'node',
+                  format: 'cjs',
+                  target: 'node18',
+                  minify: true,
+                  external: ['electron'],
+                });
               },
             },
           ],
