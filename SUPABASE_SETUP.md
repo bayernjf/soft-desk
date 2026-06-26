@@ -25,6 +25,8 @@ create table if not exists favorites (
   category text,
   icon text,
   color text,
+  group_id text,
+  sort_order integer,
   created_at timestamptz default now(),
   unique(user_id, software_id)
 );
@@ -55,6 +57,7 @@ create table if not exists favorite_groups (
   user_id text not null,
   group_id text not null,
   name text not null,
+  sort_order integer,
   created_at timestamptz default now(),
   unique(user_id, group_id)
 );
@@ -74,6 +77,10 @@ create policy "用户可读写自己的收藏分组"
 
 -- favorites 表增加 group_id 字段，用于关联分组
 alter table favorites add column if not exists group_id text;
+
+-- favorites / favorite_groups 增加 sort_order 字段，用于拖拽排序
+alter table favorites add column if not exists sort_order integer;
+alter table favorite_groups add column if not exists sort_order integer;
 ```
 
 ## 5. 创建 ai_configs 表（AI 配置跨设备同步）
