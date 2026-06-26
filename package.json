@@ -1,7 +1,9 @@
 {
   "name": "soft-desk",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "SoftDesk - 本地软件管理与智能启动工具",
+  "author": "SoftDesk",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
