@@ -11,13 +11,5 @@ export const CATEGORIES: CategoryMeta[] = [
   { id: 'security', name: '安全防护', icon: 'ShieldCheck', color: '#10b981' },
 ];
 
-export const CATEGORY_COLORS: Record<string, string> = {
-  'dev-tools': '#00d4aa',
-  'design': '#a371f7',
-  'productivity': '#58a6ff',
-  'communication': '#d29922',
-  'browsers': '#f85149',
-  'utilities': '#8b949e',
-  'media': '#ec4899',
-  'security': '#10b981',
-};
+/** 工作流主题色候选,供创建/编辑工作流时选择与轮转分配 */
+export const WORKFLOW_COLORS = ['#00d4aa', '#a371f7', '#58a6ff', '#d29922', '#f85149', '#ec4899'];

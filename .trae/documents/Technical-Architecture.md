@@ -161,9 +161,9 @@ softdesk/
 | 通道 | 用途 | 参数 |
 |------|------|------|
 | `software:scan` | 触发软件扫描 | 无 |
-| `software:launch` | 启动软件 | `{ path: string }` |
+| `software:launch` | 启动软件 | `(path: string, softwareId?: string)` |
 | `software:search` | 自然语言搜索 | `{ query: string }` |
-| `usage:getStats` | 获取使用统计 | `{ period: 'day' \| 'week' \| 'month' }` |
+| `usage:getStats` | 获取使用统计 | `period: 'day' \| 'week' \| 'month'` |
 | `uninstall:execute` | 执行卸载 | `{ paths: string[] }` |
 | `settings:update` | 更新设置 | `{ key: string, value: any }` |
 
@@ -397,6 +397,121 @@ class MonitorService {
 }
 ```
 
+#### 6.3.1 实际实现（macOS · 已落地）
+
+当前已实现的使用时长追踪由主进程的两个模块组成：
+
+- `electron/monitor.ts`：前台应用轮询监听器
+- `electron/database.ts`：基于 `better-sqlite3` 的持久化层
+
+**前台应用探测**
+
+最初采用 `osascript` 调用 `System Events` 枚举前台进程，但该方式需要「辅助功能」授权，未授权时会静默失败（macOS 报 -10004 权限违例），导致从不写库。因此改用 macOS 内置的 `lsappinfo`，**无需辅助功能授权**即可获取前台应用的 bundle id：
+
+```typescript
+async function getFrontmostApp(): Promise<string | null> {
+  const { stdout: asn } = await execFileAsync('lsappinfo', ['front']);
+  const asnId = asn.trim();
+  if (!asnId) return null;
+  const { stdout } = await execFileAsync('lsappinfo', ['info', '-only', 'bundleid', asnId]);
+  const match = stdout.match(/"CFBundleIdentifier"="([^"]+)"/);
+  return match ? match[1] : null;
+}
+```
+
+**计时与落库逻辑**
+
+- 每 5 秒轮询一次前台应用的 bundle id；
+- 前台应用未变化时，仅更新当前 session 的 `lastTick`；
+- 前台应用切换时，结束并 flush 上一段 session（写入 `sessions` 表），同时按天累加到 `usage_records.usage_time`；
+- 应用退出（`before-quit`）时 flush 当前 session 并关闭数据库连接。
+
+**软件标识对齐**：监听器与启动记录均以 bundle id 作为 `software_id`，与 `scanner.ts` 中扫描结果的 `id`（同样取 `CFBundleIdentifier`）一致，因此 `software:scan` 时可直接按 id 合并真实的 `usageMinutes / launchCount / lastUsed`。
+
+**懒加载**：数据库文件在首次写入（session flush / 启动记录 / 查询统计）时才创建，路径位于 `app.getPath('userData')/softdesk.db`，开启 WAL 模式。
+
+**IPC 通道**：渲染进程通过 `usage:getStats`（参数 `'day' | 'week' | 'month'`）读取按天聚合的统计数据。
+
+**原生模块处理**：`better-sqlite3` 为原生模块，需通过 `@electron/rebuild` 针对 Electron 重新编译；Vite 构建时将其列为 external，`electron-builder` 通过 `asarUnpack` 解包，确保打包后可正常加载。
+
+
+---
+
+## 6.5 登录模块与账号数据归属
+
+### 6.5.1 设计原则
+
+> 云端只是「身份证签发处」，本地才是「数据保险箱」。
+
+登录模块采用**邮箱 / 密码**方式，**数据完全不同步**：云端仅承担账号身份认证，登录成功后客户端仅持有一个身份令牌；所有软件信息、使用记录、AI 配置等业务数据从不离开本机。该策略与 PRD「所有数据本地存储，不上传云端」完全一致。
+
+判断一份数据放云端还是本地的依据：
+
+1. 是否需要跨设备 / 重装后恢复 → 本方案选择「完全不同步」，故仅账号身份相关数据上云；
+2. 是否属于隐私敏感的行为数据 → 是则强制本地；
+3. 泄露后的风险等级 → 高风险（明文密码、令牌、密钥）绝不上云。
+
+### 6.5.2 云端存储（账号服务器 · 最小必要集）
+
+| 数据项 | 说明 | 安全要求 |
+|--------|------|---------|
+| `userId` | 账号唯一主键 | — |
+| `email` | 登录账号 + 找回入口 | 传输全程 HTTPS |
+| `password_hash` | bcrypt / argon2 加盐哈希 | **绝不存明文，绝不下发客户端** |
+| `email_verified` | 邮箱验证状态 | — |
+| `nickname` / `avatar_url` | 基础资料（可选） | — |
+| `created_at` / `last_login_at` | 账号生命周期 | — |
+| `plan` / 会员状态（可选） | 决定 Pro 功能解锁 | **服务端二次校验** |
+
+> 云端**完全不出现**任何软件名、路径、使用时长、AI 密钥。
+
+### 6.5.3 本地存储（分三层 · 沿用现有架构）
+
+**A. 系统安全存储（主进程 `safeStorage` 加密落盘）— 敏感凭证**
+
+| 数据项 | 说明 |
+|--------|------|
+| `accessToken` / `refreshToken` | 维持登录态，**禁止放 localStorage** |
+| token 过期时间 | 用于静默刷新 |
+
+**B. 本地配置（localStorage / 主进程 JSON）— 体验类**
+
+| 数据项 | 说明 |
+|--------|------|
+| 上次登录邮箱、「记住我」标记 | 登录页回填 |
+| 当前用户脱敏资料缓存（昵称 / 头像） | 离线时展示头像 |
+| 是否已登录布尔态 | 渲染进程仅需此态 |
+
+**C. SQLite + 现有主进程存储 — 业务数据（全本地，不变）**
+
+| 数据项 | 现有位置 |
+|--------|---------|
+| 软件扫描清单 | `scanner.ts` / SQLite |
+| 使用时长、session、共现记录 | `softdesk.db` |
+| AI Provider 配置 + apiKey 明文 | 主进程 `ai-providers.json` |
+| 主题 / 偏好设置 | localStorage `softdesk-settings` |
+
+### 6.5.4 红线清单（绝不上云）
+
+明文密码、登录 Token（仅存本机加密区）、AI apiKey、本机软件清单、使用行为 / 时长、进程监控数据。
+
+### 6.5.5 落地要点
+
+1. **Token 走 `safeStorage`，不进 localStorage**：与现有 apiKey 不落 localStorage、改存主进程的做法保持一致。
+2. **离线 / 未登录可用**：登录仅用于账号身份与 Pro 解锁；无网或未登录时，软件管理、统计等本地功能照常运行。
+3. **Pro 权限服务端二次校验**：本地仅缓存「是否 Pro」用于 UI 展示，真正解锁付费能力时须带 Token 向服务端确认，防止本地篡改绕过。
+
+### 6.5.6 登录相关 IPC 通道（建议）
+
+| 通道 | 用途 | 参数 / 返回 |
+|------|------|------------|
+| `auth:login` | 邮箱密码登录 | `{ email, password }` → `{ ok, profile }` |
+| `auth:logout` | 退出登录，清除本机 Token | 无 |
+| `auth:getSession` | 渲染进程查询登录态 | → `{ loggedIn, profile? }` |
+| `auth:refresh` | 静默刷新 Token | 无（主进程内部） |
+
+> Token 由主进程通过 `safeStorage` 加密后落盘，渲染进程仅能拿到「是否已登录 + 脱敏资料」，无法直接读取明文 Token。
+
 ---
 
 ## 7. 打包与发布
@@ -462,7 +577,7 @@ class MonitorService {
 | Windows | 注册表读取 | 获取软件元信息 |
 | Windows | 进程查询 | 监控使用时长 |
 | macOS | 文件系统读取 | 扫描 Applications |
-| macOS | Accessibility | 获取前台应用信息 |
+| macOS | 无需特殊授权 | 通过内置 `lsappinfo` 获取前台应用，无需「辅助功能」授权 |
 | Both | 网络（可选） | 调用云端 AI API |
 
 ---

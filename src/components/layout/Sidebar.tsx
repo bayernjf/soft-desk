@@ -1,7 +1,9 @@
 import { NavLink, useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import {
   LayoutDashboard,
   Library,
+  Star,
   Workflow,
   BarChart3,
   Trash2,
@@ -9,26 +11,62 @@ import {
   FolderOpenDot,
   Sparkles,
   ChevronRight,
+  ChevronDown,
+  UserRound,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useAuthStore } from '@/stores/auth.store';
+import { useSettingsStore, type ThemeMode } from '@/stores/settings.store';
 import { CATEGORIES } from '@/data/categories';
 import { cn } from '@/lib/utils';
+import { getAvatarSvg } from '@/lib/avatars';
+
+const COLLAPSED_CATEGORY_COUNT = 5;
+
+const THEME_OPTIONS: { id: ThemeMode; icon: typeof Sun; label: string }[] = [
+  { id: 'light', icon: Sun, label: '浅色' },
+  { id: 'dark', icon: Moon, label: '深色' },
+  { id: 'system', icon: Monitor, label: '跟随系统' },
+];
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: '工作台' },
   { path: '/library', icon: Library, label: '软件库' },
+  { path: '/favorites', icon: Star, label: '收藏夹' },
   { path: '/workflows', icon: Workflow, label: '工作流' },
   { path: '/statistics', icon: BarChart3, label: '统计分析' },
   { path: '/uninstall', icon: Trash2, label: '软件清理' },
 ];
 
 export function Sidebar() {
-  const { software } = useSoftwareStore();
+  const software = useSoftwareStore((s) => s.software);
+  const favoriteIds = useSoftwareStore((s) => s.favoriteIds);
+  const selectedCategory = useSoftwareStore((s) => s.selectedCategory);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
+  const profile = useAuthStore((s) => s.profile);
+  const theme = useSettingsStore((s) => s.theme);
+  const setTheme = useSettingsStore((s) => s.setTheme);
   const location = useLocation();
+  const inLibrary = location.pathname === '/library';
+  const [showAllCategories, setShowAllCategories] = useState(false);
+
+  const visibleCategories = CATEGORIES.map((cat) => ({
+    ...cat,
+    count: software.filter((s) => s.category === cat.id).length,
+  })).filter((cat) => cat.count > 0);
+
+  const hasMoreCategories = visibleCategories.length > COLLAPSED_CATEGORY_COUNT;
+  const displayedCategories =
+    showAllCategories || !hasMoreCategories
+      ? visibleCategories
+      : visibleCategories.slice(0, COLLAPSED_CATEGORY_COUNT);
 
   return (
     <aside className="w-72 shrink-0 h-screen border-r border-slate-800/60 bg-[#0d0d14]/95 backdrop-blur-sm flex flex-col">
-      <div className="p-5">
+      <div className="p-5 pt-9">
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-amber-400 flex items-center justify-center shadow-lg shadow-violet-500/20">
@@ -68,6 +106,9 @@ export function Sidebar() {
                   )}
                 />
                 <span className="flex-1">{item.label}</span>
+                {item.path === '/favorites' && favoriteIds.length > 0 && (
+                  <span className="text-[10px] text-slate-500 tabular-nums">{favoriteIds.length}</span>
+                )}
                 {isActive && <ChevronRight className="w-3.5 h-3.5 text-violet-400" />}
               </NavLink>
             );
@@ -81,36 +122,123 @@ export function Sidebar() {
           </div>
 
           <div className="space-y-0.5">
-            {CATEGORIES.slice(0, 5).map((cat) => {
-              const count = software.filter((s) => s.category === cat.id).length;
-              if (count === 0) return null;
+            {displayedCategories.map((cat) => {
+              const count = cat.count;
+              const isSelected = inLibrary && selectedCategory === cat.id;
               return (
                 <NavLink
                   key={cat.id}
                   to="/library"
                   onClick={() => useSoftwareStore.getState().setSelectedCategory(cat.id)}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center gap-3 px-3.5 py-2 rounded-xl text-sm transition-all duration-200',
-                      'hover:bg-slate-800/40 hover:text-slate-200 text-slate-500',
-                      isActive && 'text-slate-300'
-                    )
+                  className={cn(
+                    'relative flex items-center gap-3 px-3.5 py-2 rounded-xl text-sm transition-all duration-200',
+                    isSelected
+                      ? 'text-white font-medium'
+                      : 'text-slate-500 hover:bg-slate-800/40 hover:text-slate-200'
+                  )}
+                  style={
+                    isSelected
+                      ? { backgroundColor: cat.color + '1f', boxShadow: `inset 0 0 0 1px ${cat.color}33` }
+                      : undefined
                   }
                 >
+                  {isSelected && (
+                    <span
+                      className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-1 rounded-r-full"
+                      style={{ backgroundColor: cat.color }}
+                    />
+                  )}
                   <div
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: cat.color }}
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full transition-all duration-200',
+                      isSelected && 'scale-150'
+                    )}
+                    style={{
+                      backgroundColor: cat.color,
+                      boxShadow: isSelected ? `0 0 8px ${cat.color}` : undefined,
+                    }}
                   />
                   <span className="flex-1 truncate">{cat.name}</span>
-                  <span className="text-xs text-slate-600 tabular-nums">{count}</span>
+                  <span
+                    className={cn(
+                      'text-xs tabular-nums transition-colors',
+                      isSelected ? 'text-slate-200' : 'text-slate-600'
+                    )}
+                  >
+                    {count}
+                  </span>
                 </NavLink>
               );
             })}
+
+            {hasMoreCategories && (
+              <button
+                type="button"
+                onClick={() => setShowAllCategories((v) => !v)}
+                aria-expanded={showAllCategories}
+                className="w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-sm text-slate-500 hover:bg-slate-800/40 hover:text-slate-200 transition-all duration-200"
+              >
+                <ChevronDown
+                  className={cn(
+                    'w-4 h-4 transition-transform duration-200',
+                    showAllCategories && 'rotate-180'
+                  )}
+                />
+                <span className="flex-1 text-left">
+                  {showAllCategories
+                    ? '收起'
+                    : `展开更多（${visibleCategories.length - COLLAPSED_CATEGORY_COUNT}）`}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="p-3 border-t border-slate-800/60">
+      <div className="p-3 border-t border-slate-800/60 space-y-1">
+        <div className="flex items-center gap-1 px-2 py-1.5 mb-1 rounded-xl bg-slate-800/40">
+          {THEME_OPTIONS.map(({ id, icon: Icon, label }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTheme(id)}
+              title={label}
+              aria-label={label}
+              aria-pressed={theme === id}
+              className={cn(
+                'flex flex-1 items-center justify-center py-1.5 rounded-lg transition-all duration-200',
+                theme === id
+                  ? 'bg-slate-700 text-white shadow-sm'
+                  : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
+              )}
+            >
+              <Icon className="w-4 h-4" />
+            </button>
+          ))}
+        </div>
+        <NavLink
+          to="/account"
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
+              isActive
+                ? 'bg-slate-800/60 text-white'
+                : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
+            )
+          }
+        >
+          {loggedIn && profile ? (
+            <div className="w-4 h-4" dangerouslySetInnerHTML={{ __html: getAvatarSvg(profile.avatar) }} />
+          ) : (
+            <UserRound className="w-4 h-4" />
+          )}
+          <span className="flex-1 truncate">
+            {loggedIn && profile ? profile.nickname : '登录账号'}
+          </span>
+          {loggedIn && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" aria-label="已登录" />
+          )}
+        </NavLink>
         <NavLink
           to="/settings"
           className={({ isActive }) =>
