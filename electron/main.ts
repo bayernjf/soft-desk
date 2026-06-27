@@ -227,12 +227,18 @@ function applyRadialHotkey(): boolean {
 // 懒加载:仅在首次需要时 require,加载失败(模块缺失/ABI 不匹配)静默降级为不支持。
 type UiohookModule = {
   uIOhook: {
-    on: (event: 'mousedown', cb: (e: { button: number }) => void) => void;
+    on: (event: 'mousedown', cb: (e: { button: unknown }) => void) => void;
     start: () => void;
     stop: () => void;
   };
-  UiohookMouseButton: { Middle: number };
 };
+
+// libuiohook 的鼠标按键编号:1=左键 2=右键 3=中键(滚轮键)。
+// 注意 uiohook-napi 并不导出 UiohookMouseButton 常量,只能用裸数值判断。
+const UIOHOOK_MOUSE_BUTTON_MIDDLE = 3;
+// 中键去抖窗口(ms):规避 uiohook-napi 在 macOS 上对单次中键重复派发的问题。
+const MIDDLE_CLICK_DEBOUNCE_MS = 250;
+let lastMiddleClickAt = 0;
 let uiohook: UiohookModule | null = null;
 let uiohookLoaded = false;
 let uiohookListening = false;
@@ -266,8 +272,14 @@ function applyRadialMouse(): void {
       // 用 setImmediate 推迟到下一个事件循环 tick,彻底脱离 tsfn 栈。
       mod.uIOhook.on('mousedown', (e) => {
         try {
-          if (e.button !== mod.UiohookMouseButton.Middle) return;
+          if (Number(e.button) !== UIOHOOK_MOUSE_BUTTON_MIDDLE) return;
           if (!radialConfig.enabled || !radialConfig.mouseWheelToggle) return;
+          // uiohook-napi 在 macOS 上会把一次中键按下重复派发两个 mousedown
+          // (间隔约 100ms),导致径向菜单"额外弹出一次"。这里做去抖:
+          // 250ms 内的重复中键事件只响应第一次。
+          const now = Date.now();
+          if (now - lastMiddleClickAt < MIDDLE_CLICK_DEBOUNCE_MS) return;
+          lastMiddleClickAt = now;
           setImmediate(() => {
             try {
               openRadial();
