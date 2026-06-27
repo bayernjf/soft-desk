@@ -1,15 +1,21 @@
 import { useState } from 'react';
-import { Monitor, Bell, Database, Shield, Sparkles } from 'lucide-react';
+import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog, CircleDot } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useSettingsStore } from '@/stores/settings.store';
+import { useSoftwareStore } from '@/stores/software.store';
+import { AiModelsSection } from '@/components/features/AiModelsSection';
+import { RadialMenuSection } from '@/components/features/RadialMenuSection';
 
-type TabId = 'appearance' | 'notifications' | 'data' | 'privacy' | 'ai';
+type TabId = 'appearance' | 'notifications' | 'radial' | 'data' | 'privacy' | 'ai' | 'help';
 
 const tabs = [
   { id: 'appearance' as TabId, icon: Monitor, label: '外观' },
   { id: 'notifications' as TabId, icon: Bell, label: '通知' },
+  { id: 'radial' as TabId, icon: CircleDot, label: '径向菜单' },
   { id: 'data' as TabId, icon: Database, label: '数据与存储' },
   { id: 'privacy' as TabId, icon: Shield, label: '隐私安全' },
   { id: 'ai' as TabId, icon: Sparkles, label: 'AI 功能' },
+  { id: 'help' as TabId, icon: LifeBuoy, label: '帮助' },
 ];
 
 interface ToggleProps {
@@ -27,6 +33,9 @@ function Toggle({ checked, onChange, label, description }: ToggleProps) {
       </div>
       <button
         onClick={() => onChange(!checked)}
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
         className={cn(
           'relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5',
           checked ? 'bg-violet-500' : 'bg-slate-700'
@@ -45,21 +54,21 @@ function Toggle({ checked, onChange, label, description }: ToggleProps) {
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState<TabId>('appearance');
-  const [theme, setTheme] = useState('dark');
-  const [prefs, setPrefs] = useState({
-    startMinimized: false,
-    minimizeToTray: true,
-    autoUpdates: true,
-    launchNotifications: true,
-    weeklyReport: true,
-    smartGrouping: true,
-    aiSuggestions: true,
-    sendAnalytics: false,
-    anonymizeData: true,
-    scanOnStartup: true,
-  });
+  const theme = useSettingsStore((s) => s.theme);
+  const setTheme = useSettingsStore((s) => s.setTheme);
+  const prefs = useSettingsStore((s) => s.prefs);
+  const togglePref = useSettingsStore((s) => s.togglePref);
+  const scanSoftware = useSoftwareStore((s) => s.scanSoftware);
 
-  const togglePref = (key: keyof typeof prefs) => setPrefs((p) => ({ ...p, [key]: !p[key] }));
+  // 切换"智能分类"后立即重扫,使新的分类策略即时反映到全局软件列表
+  const toggleSmartGrouping = () => {
+    togglePref('smartGrouping');
+    void scanSoftware();
+  };
+
+  const openStorage = () => {
+    window.softdesk?.openUserData?.();
+  };
 
   return (
     <div className="space-y-8">
@@ -99,17 +108,19 @@ export function Settings() {
               <div className="space-y-1">
                 <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">主题</div>
                 <div className="grid grid-cols-3 gap-2 p-1 bg-slate-800/40 rounded-xl w-fit">
-                  {[
+                  {([
                     { id: 'light', label: '浅色' },
                     { id: 'dark', label: '深色' },
                     { id: 'system', label: '跟随系统' },
-                  ].map((t) => (
+                  ] as const).map((t) => (
                     <button
                       key={t.id}
                       onClick={() => setTheme(t.id)}
                       className={cn(
-                        'px-4 py-2 rounded-lg text-xs font-medium transition-all',
-                        theme === t.id ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-300'
+                        'px-4 py-2 rounded-lg text-xs font-medium transition-all border',
+                        theme === t.id
+                          ? 'bg-gradient-to-r from-violet-500/15 to-fuchsia-500/10 text-violet-300 border-violet-500/20'
+                          : 'text-slate-400 border-transparent hover:text-slate-300'
                       )}
                     >
                       {t.label}
@@ -132,6 +143,12 @@ export function Settings() {
                   description="关闭窗口时不退出程序，而是最小化到托盘"
                 />
               </div>
+            </div>
+          )}
+
+          {activeTab === 'radial' && (
+            <div className="max-w-2xl">
+              <RadialMenuSection />
             </div>
           )}
 
@@ -172,8 +189,11 @@ export function Settings() {
               />
               <div className="p-4 rounded-xl bg-slate-800/40 mt-4">
                 <div className="text-xs font-semibold text-slate-300 mb-1">本地存储</div>
-                <div className="text-xs text-slate-500 font-mono">~/Library/Application Support/SoftDesk</div>
-                <button className="mt-3 px-3 py-1.5 rounded-lg bg-slate-700/70 text-slate-300 text-xs font-medium hover:bg-slate-700 transition-colors">
+                <div className="text-xs text-slate-500 leading-relaxed">软件使用记录与图标缓存存储在 SoftDesk 的应用数据目录中</div>
+                <button
+                  onClick={openStorage}
+                  className="mt-3 px-3 py-1.5 rounded-lg bg-slate-700/70 text-slate-300 text-xs font-medium hover:bg-slate-700 transition-colors"
+                >
                   打开存储位置
                 </button>
               </div>
@@ -200,21 +220,81 @@ export function Settings() {
           )}
 
           {activeTab === 'ai' && (
-            <div className="space-y-0 max-w-lg border-t border-slate-800/80">
+            <div className="space-y-0 max-w-2xl border-t border-slate-800/80">
               <h2 className="text-base font-semibold text-slate-100 mb-1 pt-0">AI 功能</h2>
               <p className="text-sm text-slate-500 mb-6">基于 AI 的智能建议与自动化</p>
-              <Toggle
-                checked={prefs.smartGrouping}
-                onChange={() => togglePref('smartGrouping')}
-                label="智能分类"
-                description="AI 自动将同类软件分组到合适的分类"
-              />
-              <Toggle
-                checked={prefs.aiSuggestions}
-                onChange={() => togglePref('aiSuggestions')}
-                label="工作流建议"
-                description="基于使用习惯，为你推荐常用的软件组合"
-              />
+              <div className="max-w-lg">
+                <Toggle
+                  checked={prefs.smartGrouping}
+                  onChange={toggleSmartGrouping}
+                  label="智能分类"
+                  description="AI 自动将同类软件分组到合适的分类"
+                />
+                <Toggle
+                  checked={prefs.aiSuggestions}
+                  onChange={() => togglePref('aiSuggestions')}
+                  label="工作流建议"
+                  description="基于使用习惯，为你推荐常用的软件组合"
+                />
+              </div>
+              <AiModelsSection />
+            </div>
+          )}
+
+          {activeTab === 'help' && (
+            <div className="space-y-6 max-w-xl">
+              <div>
+                <h2 className="text-base font-semibold text-slate-100 mb-1">帮助与常见问题</h2>
+                <p className="text-sm text-slate-500">遇到问题？这里是常见情况的解决办法</p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-800/40 border border-slate-800 overflow-hidden">
+                <div className="flex items-start gap-3 p-4 border-b border-slate-800/80">
+                  <div className="w-9 h-9 rounded-xl bg-rose-500/15 text-rose-400 flex items-center justify-center shrink-0">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-slate-200">
+                      移到废纸篓时提示「没有访问许可 / 没有权限」
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      这是 macOS 的安全限制：系统默认不允许 SoftDesk 删除其他应用。授予一次权限后即可正常使用，属于一次性设置。
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <FolderCog className="w-4 h-4 text-violet-400" />
+                      <h4 className="text-sm font-medium text-slate-200">解决步骤</h4>
+                    </div>
+                    <ol className="space-y-2 text-xs text-slate-400 leading-relaxed list-none">
+                      {[
+                        '打开「系统设置」→「隐私与安全性」。',
+                        '找到并进入「App 管理」（App Management）。',
+                        '在列表中打开 SoftDesk 的开关；若没有 SoftDesk，点「+」手动添加。',
+                        '如果仍失败，改为开启「完全磁盘访问权限」（Full Disk Access）中的 SoftDesk。',
+                        '完全退出并重新启动 SoftDesk，再次尝试移到废纸篓。',
+                      ].map((step, i) => (
+                        <li key={i} className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-violet-500/15 text-violet-300 flex items-center justify-center shrink-0 text-[11px] font-semibold tabular-nums">
+                            {i + 1}
+                          </span>
+                          <span className="pt-0.5">{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-3">
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      💡 <span className="text-slate-300">替代方案</span>
+                      ：你也可以直接在「访达 / 启动台」中手动把目标应用拖入废纸篓，效果相同。开发调试模式下权限申请对象为 Electron，建议在打包后的正式版中授权。
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </main>

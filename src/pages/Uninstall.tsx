@@ -1,31 +1,59 @@
-import { useMemo } from 'react';
-import { AlertCircle, Trash2, HardDrive, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { AlertCircle, HardDrive, Search, X } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
-import { formatMinutes, formatTimeAgo, formatSize } from '@/services/software.service';
+import { CATEGORIES } from '@/data/categories';
+import { formatSize } from '@/services/software.service';
+import { SoftwareCard } from '@/components/features/SoftwareCard';
+import { softwareMatches } from '@/lib/searchMatch';
+import type { SoftwareCategory } from '@/types';
 import { cn } from '@/lib/utils';
 
 export function Uninstall() {
-  const { software, uninstallSoftware } = useSoftwareStore();
+  const software = useSoftwareStore((s) => s.software);
+  const uninstallSoftware = useSoftwareStore((s) => s.uninstallSoftware);
+  const reinstallSoftware = useSoftwareStore((s) => s.reinstallSoftware);
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState<SoftwareCategory | 'all'>('all');
+  const [confirmClean, setConfirmClean] = useState(false);
+  const [cleanedIds, setCleanedIds] = useState<string[]>([]);
 
-  const bySize = useMemo(() => [...software].sort((a, b) => b.size - a.size).slice(0, 6), [software]);
+  const active = useMemo(() => software.filter((s) => !s.uninstalled), [software]);
   const unused = useMemo(
     () =>
-      [...software]
-        .filter((s) => new Date(s.lastUsed).getTime() < Date.now() - 7 * 24 * 60 * 60 * 1000)
-        .sort((a, b) => a.usageMinutes - b.usageMinutes),
-    [software]
+      active
+        .filter(
+          (s) =>
+            new Date(s.lastUsed).getTime() < Date.now() - 30 * 24 * 60 * 60 * 1000 &&
+            s.size >= 1024
+        )
+        .sort((a, b) => b.size - a.size),
+    [active]
   );
-  const largeSize = useMemo(() => software.filter((s) => s.size >= 500), [software]);
 
-  const totalSize = software.reduce((sum, s) => sum + s.size, 0);
+  const totalSize = active.reduce((sum, s) => sum + s.size, 0);
   const potentialFree = unused.reduce((sum, s) => sum + s.size, 0);
+
+  const filtered = useMemo(() => {
+    let result = software;
+    if (category !== 'all') {
+      result = result.filter((s) => s.category === category);
+    }
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      result = result.filter((s) => softwareMatches(s, q));
+    }
+    return [...result].sort((a, b) => {
+      if (!!a.uninstalled !== !!b.uninstalled) return a.uninstalled ? 1 : -1;
+      return b.size - a.size;
+    });
+  }, [software, category, query]);
 
   return (
     <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">软件清理</h1>
-          <p className="text-sm text-slate-500 mt-1">快速识别和移除不常用的软件，释放磁盘空间</p>
+          <p className="text-sm text-slate-500 mt-1">浏览全部软件，快速卸载不常用的应用以释放磁盘空间</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
@@ -40,97 +68,15 @@ export function Uninstall() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-4">
-          <section className="p-5 rounded-2xl bg-slate-900/40 border border-slate-800/60">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <HardDrive className="w-4 h-4 text-amber-400" />
-                <h2 className="text-sm font-semibold text-slate-200">占用空间最大</h2>
-              </div>
-              <span className="text-xs text-slate-500">Top {bySize.length}</span>
-            </div>
-            <div className="space-y-2.5">
-              {bySize.map((sw) => (
-                <div
-                  key={sw.id}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 transition-colors group"
-                >
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
-                    style={{ backgroundColor: sw.color + '25', color: sw.color }}
-                  >
-                    {sw.name.slice(0, 2)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-slate-200 truncate">{sw.name}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      {formatSize(sw.size)} · {formatMinutes(sw.usageMinutes)} · {formatTimeAgo(sw.lastUsed)} 使用
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => uninstallSoftware(sw.id)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors opacity-0 group-hover:opacity-100"
-                  >
-                    卸载
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="p-5 rounded-2xl bg-slate-900/40 border border-slate-800/60">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <Search className="w-4 h-4 text-violet-400" />
-                <h2 className="text-sm font-semibold text-slate-200">最近未使用</h2>
-              </div>
-              <span className="text-xs text-slate-500">{unused.length} 个软件 · 7+ 天未使用</span>
-            </div>
-            <div className="space-y-2.5">
-              {unused.length > 0 ? (
-                unused.slice(0, 5).map((sw) => (
-                  <div
-                    key={sw.id}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 transition-colors group"
-                  >
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
-                      style={{ backgroundColor: sw.color + '25', color: sw.color }}
-                    >
-                      {sw.name.slice(0, 2)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-slate-200 truncate">{sw.name}</div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        上次使用：{formatTimeAgo(sw.lastUsed)}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => uninstallSoftware(sw.id)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                      卸载
-                    </button>
-                  </div>
-                ))
-              ) : (
-                <div className="py-12 text-center text-sm text-slate-500">
-                  ✅ 所有软件都很活跃，继续保持！
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-
-        <aside className="space-y-4">
+      <div className="flow-root -mx-1.5">
+        <aside className="px-1.5 space-y-4 mb-5 lg:float-right lg:mb-5 lg:w-1/3">
           <section className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-slate-900/40 to-slate-900/40 border border-amber-500/20">
             <div className="flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <div>
                 <h3 className="text-sm font-semibold text-slate-200">清理建议</h3>
                 <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                  检测到 {unused.length} 个软件超过一周未使用，建议优先清理大型应用以释放更多空间。
+                  检测到 {unused.length} 个软件超过一个月未使用且体积大于 1GB，建议优先弃用以释放更多空间。
                 </p>
               </div>
             </div>
@@ -138,43 +84,156 @@ export function Uninstall() {
 
           <section className="p-5 rounded-2xl bg-slate-900/40 border border-slate-800/60">
             <div className="flex items-center gap-2 mb-3">
-              <Trash2 className="w-4 h-4 text-rose-400" />
+              <HardDrive className="w-4 h-4 text-rose-400" />
               <h3 className="text-sm font-semibold text-slate-200">大体积应用</h3>
             </div>
-            <div className="text-xs text-slate-500 mb-3">
-              {largeSize.length} 个应用 ≥ 500MB
-            </div>
-            <div className="space-y-2">
-              {largeSize.map((sw) => (
-                <div
-                  key={sw.id}
-                  className="flex items-center gap-2.5 text-xs group cursor-pointer"
-                  onClick={() => uninstallSoftware(sw.id)}
-                >
-                  <span
-                    className="px-2 py-0.5 rounded-md font-medium"
-                    style={{ backgroundColor: sw.color + '20', color: sw.color }}
-                  >
-                    {formatSize(sw.size)}
-                  </span>
-                  <span className="text-slate-400 truncate group-hover:text-slate-200 transition-colors">
-                    {sw.name}
-                  </span>
-                </div>
-              ))}
+            <div className="text-xs text-slate-500 mb-3">{unused.length} 个应用 ≥ 1GB 且超一个月未用</div>
+            <div className="space-y-2 max-h-[17.5rem] overflow-y-auto pr-1">
+              {unused.length > 0 ? (
+                unused.map((sw) => (
+                  <div key={sw.id} className="flex items-center gap-2.5 text-xs h-5">
+                    <span
+                      className="px-2 py-0.5 rounded-md font-medium tabular-nums shrink-0"
+                      style={{ backgroundColor: sw.color + '20', color: sw.color }}
+                    >
+                      {formatSize(sw.size)}
+                    </span>
+                    <span className="text-slate-400 truncate">{sw.name}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-xs text-slate-600">暂无符合条件的应用</div>
+              )}
             </div>
           </section>
 
-          <button
-            className={cn(
-              'w-full py-3.5 rounded-2xl text-sm font-semibold transition-all',
-              'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white',
-              'hover:shadow-lg hover:shadow-violet-500/20 active:scale-[0.99]'
-            )}
-          >
-            {unused.length > 0 ? `一键清理 ${unused.length} 个未使用应用` : '暂无待清理项'}
-          </button>
+          {confirmClean ? (
+            <div className="w-full p-4 rounded-2xl bg-slate-900/60 border border-rose-500/30 space-y-3">
+              <p className="text-xs text-slate-300 text-center">
+                确认弃用这 {unused.length} 个未使用应用？
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  onClick={() => {
+                    const ids = unused.map((sw) => sw.id);
+                    ids.forEach((id) => uninstallSoftware(id));
+                    setCleanedIds(ids);
+                    setConfirmClean(false);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  确认弃用
+                </button>
+                <button
+                  onClick={() => setConfirmClean(false)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          ) : cleanedIds.length > 0 ? (
+            <button
+              onClick={() => {
+                cleanedIds.forEach((id) => reinstallSoftware(id));
+                setCleanedIds([]);
+              }}
+              className={cn(
+                'w-full py-3.5 rounded-2xl text-sm font-semibold transition-all',
+                'bg-gradient-to-r from-emerald-500 to-teal-500 text-white',
+                'hover:shadow-lg hover:shadow-emerald-500/20 active:scale-[0.99]'
+              )}
+            >
+              一键重新使用 {cleanedIds.length} 个应用
+            </button>
+          ) : (
+            <button
+              onClick={() => setConfirmClean(true)}
+              disabled={unused.length === 0}
+              className={cn(
+                'w-full py-3.5 rounded-2xl text-sm font-semibold transition-all',
+                'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white',
+                'hover:shadow-lg hover:shadow-violet-500/20 active:scale-[0.99]',
+                'disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100'
+              )}
+            >
+              {unused.length > 0 ? `一键弃用 ${unused.length} 个未使用应用` : '暂无待清理项'}
+            </button>
+          )}
         </aside>
+
+        <div className="flow-root px-1.5 space-y-5 mb-5">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索软件名称、描述或标签（支持拼音、首字母）..."
+              className={cn(
+                'w-full pl-11 pr-10 py-3.5 rounded-2xl bg-slate-900/60 border border-slate-800',
+                'text-sm text-slate-100 placeholder:text-slate-600',
+                'focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all'
+              )}
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-slate-800 text-slate-500"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setCategory('all')}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                category === 'all'
+                  ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                  : 'bg-slate-800/50 text-slate-400 border border-slate-800/60 hover:bg-slate-800 hover:text-slate-300'
+              )}
+            >
+              全部
+            </button>
+            {CATEGORIES.filter((c) => software.some((s) => s.category === c.id)).map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setCategory(cat.id)}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                  category === cat.id
+                    ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                    : 'bg-slate-800/50 text-slate-400 border border-slate-800/60 hover:bg-slate-800 hover:text-slate-300'
+                )}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-200">全部软件</h2>
+            <span className="text-xs text-slate-500 tabular-nums">{filtered.length} 个</span>
+          </div>
+        </div>
+
+        <div className="text-[0]">
+          {filtered.map((sw) => (
+            <div
+              key={sw.id}
+              className="inline-block align-top w-full sm:w-1/2 lg:w-1/3 px-1.5 pb-3"
+            >
+              <SoftwareCard software={sw} context="uninstall" />
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="py-20 text-center">
+              <div className="text-slate-600 text-sm">没有找到匹配的软件</div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
