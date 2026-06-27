@@ -52,6 +52,22 @@ export function RadialMenu() {
     return () => unsub?.();
   }, []);
 
+  // radial 窗口为复用窗口(关闭仅 hide 不销毁)。再次唤出时窗口会先 show、
+  // 之后 radial:open 才异步到达;若不清空旧 state,窗口会先按上一次的光标位置
+  // 画出菜单(完整态)再跳到新位置重播入场动画,即"跳动一下"。
+  // 这里在窗口隐藏时清空 state,使下次 show 时为透明空白,等新 payload 到达再弹出。
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        setState(null);
+        setActive(null);
+        setMounted(false);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   // Esc 关闭
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
