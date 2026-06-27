@@ -149,7 +149,34 @@ create policy "用户可读写自己的工作流"
   with check (user_id = current_setting('app.current_user_id', true));
 ```
 
-## 7. 配置 .env
+## 7. 创建 radial_configs 表（径向菜单配置跨设备同步）
+
+在 Supabase SQL Editor 中执行：
+
+```sql
+-- 径向菜单配置表：整份配置按用户单行存储,items 用 jsonb 整存
+create table if not exists radial_configs (
+  user_id uuid references auth.users(id) primary key,
+  enabled boolean default false,
+  hotkey text not null default 'CommandOrControl+Shift+R',
+  mouse_wheel_toggle boolean default false,
+  sectors integer not null default 6,
+  items jsonb not null default '[]'::jsonb,
+  updated_at timestamptz default now()
+);
+
+-- 启用 RLS
+alter table radial_configs enable row level security;
+
+-- 策略：用户只能操作自己的径向菜单配置
+create policy "用户可读写自己的径向菜单配置"
+  on radial_configs
+  for all
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+```
+
+## 8. 配置 .env
 
 ```bash
 cp .env.example .env
