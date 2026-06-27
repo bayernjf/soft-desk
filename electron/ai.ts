@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 
 export type AiProvider = 'openai' | 'anthropic' | 'gemini' | 'openai-compatible';
 
@@ -52,6 +52,11 @@ let rawProviders: unknown[] = [];
 let providersLoaded = false;
 
 function providersPath(): string {
+  return path.join(app.getPath('userData'), 'ai-providers.bin');
+}
+
+// 旧版本明文落盘文件,仅用于一次性迁移到加密文件后删除
+function legacyProvidersPath(): string {
   return path.join(app.getPath('userData'), 'ai-providers.json');
 }
 
@@ -86,28 +91,60 @@ function sanitizeProviders(raw: unknown): AiProviderConfig[] {
 function loadProviders(): void {
   if (providersLoaded) return;
   providersLoaded = true;
+  // 优先读取加密文件;读不到时回退迁移旧的明文文件
   try {
-    const raw = JSON.parse(readFileSync(providersPath(), 'utf-8'));
-    rawProviders = Array.isArray(raw) ? raw : [];
-    providers = sanitizeProviders(rawProviders);
+    if (existsSync(providersPath()) && safeStorage.isEncryptionAvailable()) {
+      const buf = readFileSync(providersPath());
+      const json = safeStorage.decryptString(buf);
+      const raw = JSON.parse(json);
+      rawProviders = Array.isArray(raw) ? raw : [];
+      providers = sanitizeProviders(rawProviders);
+      return;
+    }
   } catch {
     rawProviders = [];
     providers = [];
   }
+  // 迁移:存在旧明文 ai-providers.json 时读入,加密重写后删除明文文件
+  try {
+    if (existsSync(legacyProvidersPath())) {
+      const raw = JSON.parse(readFileSync(legacyProvidersPath(), 'utf-8'));
+      rawProviders = Array.isArray(raw) ? raw : [];
+      providers = sanitizeProviders(rawProviders);
+      persistProviders();
+      try {
+        unlinkSync(legacyProvidersPath());
+      } catch {
+        // 明文文件删除失败不阻断,加密文件已写入
+      }
+      return;
+    }
+  } catch {
+    // 旧文件损坏/不可读,按空配置处理
+  }
+  rawProviders = [];
+  providers = [];
 }
 
-/** 渲染层(设置页)在 provider 配置变更时调用,把含明文 apiKey 的完整列表落盘到主进程,
+/** 把当前 rawProviders 用 safeStorage 加密后落盘到 ai-providers.bin。 */
+function persistProviders(): void {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return;
+    const encrypted = safeStorage.encryptString(JSON.stringify(rawProviders));
+    writeFileSync(providersPath(), encrypted);
+  } catch {
+    // 落盘失败不阻断,内存副本仍可用
+  }
+}
+
+/** 渲染层(设置页)在 provider 配置变更时调用,把含明文 apiKey 的完整列表加密落盘到主进程,
  *  之后所有推理在主进程发起,apiKey 不再依赖渲染层 localStorage 持久化。
- *  主进程的 ai-providers.json 是 provider 配置的唯一权威数据源。 */
+ *  主进程的 ai-providers.bin 是 provider 配置的唯一权威数据源。 */
 export function syncProviders(raw: unknown): void {
   rawProviders = Array.isArray(raw) ? raw : [];
   providers = sanitizeProviders(rawProviders);
   providersLoaded = true;
-  try {
-    writeFileSync(providersPath(), JSON.stringify(rawProviders), 'utf-8');
-  } catch {
-    // 落盘失败不阻断,内存副本仍可用
-  }
+  persistProviders();
 }
 
 /** 返回落盘的原始 provider 列表(完整字段),供渲染层启动时回填 store。 */
