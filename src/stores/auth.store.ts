@@ -66,6 +66,7 @@ export const useAuthStore = create<AuthStore>()(
             queueMicrotask(async () => {
               const { useSettingsStore } = await import('@/stores/settings.store');
               await useSettingsStore.getState().mergeCloudAiProviders();
+              await useSettingsStore.getState().mergeCloudRadialConfig();
               const { useSoftwareStore } = await import('@/stores/software.store');
               const { syncWorkflowsOnLogin } = await import('@/services/workflows.service');
               const localWorkflows = useSoftwareStore.getState().workflows;
@@ -102,6 +103,7 @@ export const useAuthStore = create<AuthStore>()(
           }
           const { useSettingsStore } = await import('@/stores/settings.store');
           await useSettingsStore.getState().mergeCloudAiProviders();
+          await useSettingsStore.getState().mergeCloudRadialConfig();
           const { syncWorkflowsOnLogin } = await import('@/services/workflows.service');
           const localWorkflows = useSoftwareStore.getState().workflows;
           const merged = await syncWorkflowsOnLogin(res.profile.userId, localWorkflows);
@@ -136,6 +138,9 @@ export const useAuthStore = create<AuthStore>()(
         const { useSoftwareStore } = await import('@/stores/software.store');
         useSoftwareStore.getState().setFavoriteIds([]);
         useSoftwareStore.getState().clearWorkflows();
+        // 退出后重置径向菜单为默认(数据与账号绑定)
+        const { useSettingsStore } = await import('@/stores/settings.store');
+        useSettingsStore.getState().resetRadial();
         set({ loggedIn: false, profile: null });
       },
 

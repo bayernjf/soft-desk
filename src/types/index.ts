@@ -103,6 +103,8 @@ export interface RadialMenuConfig {
   /** 扇区数量(决定每个扇区角度 = 360/sectors) */
   sectors: 4 | 6 | 8;
   items: RadialItem[];
+  /** 最后修改时间(ISO);云同步冲突按时间戳后写胜出 */
+  updatedAt?: string;
 }
 
 /**

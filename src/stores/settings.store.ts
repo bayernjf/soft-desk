@@ -8,6 +8,11 @@ import {
 } from '@/data/aiProviders';
 import { useAuthStore } from '@/stores/auth.store';
 import { syncAiConfigsToCloud, fetchCloudAiConfigs, mergeWithLocal } from '@/services/ai-configs.service';
+import {
+  syncRadialConfigToCloud,
+  fetchCloudRadialConfig,
+  mergeRadialConfig,
+} from '@/services/radial-config.service';
 import type { RadialMenuConfig, RadialItem } from '@/types';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -35,12 +40,14 @@ interface SettingsStore {
   togglePref: (key: keyof AppPreferences) => void;
   setRadialConfig: (patch: Partial<Omit<RadialMenuConfig, 'items'>>) => void;
   setRadialItem: (slot: number, item: Omit<RadialItem, 'slot'> | null) => void;
+  resetRadial: () => void;
   addAiProvider: (input: AiProviderInput) => void;
   updateAiProvider: (id: string, input: AiProviderInput) => void;
   deleteAiProvider: (id: string) => void;
   toggleAiProvider: (id: string) => void;
   hydrateAiProviders: () => void;
   mergeCloudAiProviders: () => Promise<void>;
+  mergeCloudRadialConfig: () => Promise<void>;
 }
 
 const DEFAULT_PREFS: AppPreferences = {
@@ -160,6 +167,13 @@ function syncToCloudIfLoggedIn(providers: AiProviderConfig[]) {
   }
 }
 
+function syncRadialToCloudIfLoggedIn(radial: RadialMenuConfig) {
+  const userId = useAuthStore.getState().profile?.userId;
+  if (userId) {
+    void syncRadialConfigToCloud(userId, radial);
+  }
+}
+
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
@@ -179,15 +193,23 @@ export const useSettingsStore = create<SettingsStore>()(
         }
       },
       setRadialConfig: (patch) => {
-        const radial = { ...get().radial, ...patch };
+        const radial = { ...get().radial, ...patch, updatedAt: new Date().toISOString() };
         set({ radial });
         triggerRadialSync(radial);
+        syncRadialToCloudIfLoggedIn(radial);
       },
       setRadialItem: (slot, item) => {
         const others = get().radial.items.filter((it) => it.slot !== slot);
         const items = item ? [...others, { slot, ...item }] : others;
-        const radial = { ...get().radial, items };
+        const radial = { ...get().radial, items, updatedAt: new Date().toISOString() };
         set({ radial });
+        triggerRadialSync(radial);
+        syncRadialToCloudIfLoggedIn(radial);
+      },
+      resetRadial: () => {
+        const radial = { ...DEFAULT_RADIAL };
+        set({ radial });
+        // 推主进程:反注册热键、停止中键监听;不回写云端(退出登录不改云端数据)
         triggerRadialSync(radial);
       },
       addAiProvider: (input) => {
@@ -243,6 +265,17 @@ export const useSettingsStore = create<SettingsStore>()(
         syncAiProviders(merged);
         // 登录后将本地配置（含之前未登录时添加的）同步到云端
         void syncAiConfigsToCloud(userId, merged);
+      },
+      mergeCloudRadialConfig: async () => {
+        const userId = useAuthStore.getState().profile?.userId;
+        if (!userId) return;
+        const cloud = await fetchCloudRadialConfig(userId);
+        const merged = mergeRadialConfig(get().radial, cloud);
+        set({ radial: merged });
+        // 合并结果推主进程(落盘 + 重注册热键/中键监听)
+        triggerRadialSync(merged);
+        // 回写云端,统一两端(本地更新或首次上云)
+        void syncRadialConfigToCloud(userId, merged);
       },
     }),
     {
