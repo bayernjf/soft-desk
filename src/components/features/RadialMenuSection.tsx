@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, X, AppWindow, Layers, Keyboard, Mouse, LogIn } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settings.store';
@@ -398,6 +398,14 @@ interface SlotEditorProps {
 function SlotEditor({ slot, current, availableSoftware, workflows, onPick, onClear }: SlotEditorProps) {
   const [tab, setTab] = useState<'app' | 'workflow'>(current?.type ?? 'app');
   const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // 点击扇区进入编辑(slot 变化)或切到「应用」tab 时,自动对焦搜索框,方便直接搜索
+  useEffect(() => {
+    if (tab === 'app') {
+      requestAnimationFrame(() => searchRef.current?.focus());
+    }
+  }, [slot, tab]);
 
   const filteredApps = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -443,6 +451,7 @@ function SlotEditor({ slot, current, availableSoftware, workflows, onPick, onCle
       {tab === 'app' ? (
         <>
           <input
+            ref={searchRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索应用…"
