@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, Clock, Sparkles, TrendingUp, Loader2 } from 'lucide-react';
+import { ArrowUpRight, Clock, Sparkles, TrendingUp, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSoftwareStore } from '@/stores/software.store';
@@ -77,6 +77,12 @@ export function Dashboard() {
   const [aiProviderReady, setAiProviderReady] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AiWorkflowSuggestion[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
+  // 工作流创建结果的轻量通知(页面居中浮现,不跳转页面)
+  const [toast, setToast] = useState<{ type: 'success' | 'info'; message: string } | null>(null);
+  const showToast = (type: 'success' | 'info', message: string) => {
+    setToast({ type, message });
+    window.setTimeout(() => setToast(null), 2600);
+  };
 
   const topApps = [...software].sort((a, b) => b.usageMinutes - a.usageMinutes).slice(0, 5);
   const recentApps = [...software]
@@ -221,7 +227,7 @@ export function Dashboard() {
       (w) => w.name.trim().toLowerCase() === name.trim().toLowerCase()
     );
     if (duplicate) {
-      navigate('/workflows');
+      showToast('info', `工作流「${name}」已存在`);
       return;
     }
     createWorkflow({
@@ -232,7 +238,7 @@ export function Dashboard() {
       softwareIds: suggestion.ids,
       color: '',
     });
-    navigate('/workflows');
+    showToast('success', `工作流「${name}」创建成功`);
   };
 
   // 由某条 AI 建议直接落地为工作流(过滤掉已不可用的软件 id 后创建)
@@ -251,7 +257,7 @@ export function Dashboard() {
       (w) => w.name.trim().toLowerCase() === sug.name.trim().toLowerCase()
     );
     if (duplicate) {
-      navigate('/workflows');
+      showToast('info', `工作流「${sug.name}」已存在`);
       return;
     }
     createWorkflow({
@@ -260,7 +266,7 @@ export function Dashboard() {
       softwareIds: ids,
       color: '',
     });
-    navigate('/workflows');
+    showToast('success', `工作流「${sug.name}」创建成功`);
   };
 
   // 回退文案:无共现数据时,基于使用时长 top 应用给出轻量建议
@@ -272,6 +278,25 @@ export function Dashboard() {
 
   return (
     <div className="space-y-8 animate-in">
+      {toast && (
+        <div className="fixed top-6 right-6 z-50 pointer-events-none animate-in">
+          <div
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 rounded-xl border shadow-lg text-sm font-medium backdrop-blur whitespace-nowrap',
+              toast.type === 'success'
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                : 'bg-slate-800/80 border-slate-700/60 text-slate-200'
+            )}
+          >
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0" />
+            )}
+            {toast.message}
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">
