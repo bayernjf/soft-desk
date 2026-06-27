@@ -149,6 +149,8 @@ interface RadialSyncItem {
   color?: string;
   appPath?: string;
   workflowPaths?: string[];
+  /** 跨设备本机不可用(未安装等):渲染层灰显,启动时拒绝 */
+  unavailable?: boolean;
 }
 
 interface RadialConfigState {
@@ -365,6 +367,7 @@ function radialRenderItems() {
     name: it.name,
     icon: it.icon,
     color: it.color,
+    unavailable: it.unavailable,
   }));
 }
 
@@ -671,6 +674,7 @@ ipcMain.handle('radial:launch', async (_event, raw: unknown) => {
     (it) => it.type === input.type && it.targetId === input.targetId
   );
   if (!item) return { success: false, error: '未找到对应扇区配置' };
+  if (item.unavailable) return { success: false, error: '该软件在本设备不可用' };
 
   if (item.type === 'app') {
     const appPath = item.appPath;

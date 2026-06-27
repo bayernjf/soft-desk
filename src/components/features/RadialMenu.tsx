@@ -116,14 +116,14 @@ export function RadialMenu() {
     setActive(slotAt(e.clientX, e.clientY));
   };
 
-  // 启动指定扇区的项目;扇区为空或无项目则仅关闭。
+  // 启动指定扇区的项目;扇区为空、不可用或无项目则仅关闭(不启动)。
   const launchSlot = (slot: number | null) => {
     if (slot === null) {
       close();
       return;
     }
     const item = itemBySlot.get(slot);
-    if (item) {
+    if (item && !item.unavailable) {
       window.softdesk?.radialLaunch?.({ type: item.type, targetId: item.targetId });
     }
     close();
@@ -161,6 +161,7 @@ export function RadialMenu() {
             const end = center + sectorAngle / 2;
             const isActive = active === slot;
             const item = itemBySlot.get(slot);
+            const isUnavailable = !!item?.unavailable;
             // 高亮扇区:外扩 + 图标/文字略微外移,增强"跟手"反馈
             const labelR = isActive ? LABEL_R + 6 : LABEL_R;
             const labelPos = polar(cursor.x, cursor.y, labelR, center);
@@ -174,7 +175,12 @@ export function RadialMenu() {
                   style={{ transition: 'fill 90ms ease-out' }}
                 />
                 {item ? (
-                  <>
+                  <g
+                    style={{
+                      opacity: isUnavailable ? 0.38 : 1,
+                      filter: isUnavailable ? 'grayscale(1)' : undefined,
+                    }}
+                  >
                     {item.icon &&
                     (item.icon.startsWith('data:image') || item.icon.startsWith('file://')) ? (
                       <image
@@ -206,7 +212,7 @@ export function RadialMenu() {
                     >
                       {item.name.length > 7 ? item.name.slice(0, 6) + '…' : item.name}
                     </text>
-                  </>
+                  </g>
                 ) : (
                   <text
                     x={labelPos.x}
@@ -232,17 +238,66 @@ export function RadialMenu() {
             stroke="rgba(148,163,184,0.2)"
             strokeWidth={1}
           />
-          <text
-            x={cursor.x}
-            y={cursor.y}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize={11}
-            fill="rgba(148,163,184,0.7)"
-            style={{ pointerEvents: 'none' }}
-          >
-            ESC
-          </text>
+          {(() => {
+            const activeItem = active !== null ? itemBySlot.get(active) : undefined;
+            // 高亮某个已绑定扇区时,中心区浮出完整软件名;
+            // 方案1+2:字号随名字长度自适应(11→9px),并限制最多 4 行,
+            // 超出部分用省略号收尾(替代静默裁切);否则显示 ESC 关闭提示。
+            if (activeItem) {
+              const len = activeItem.name.length;
+              const fontSize = len <= 10 ? 11 : len <= 20 ? 10 : 9;
+              return (
+                <foreignObject
+                  x={cursor.x - (INNER_R - 8)}
+                  y={cursor.y - (INNER_R - 12)}
+                  width={(INNER_R - 8) * 2}
+                  height={(INNER_R - 12) * 2}
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      textAlign: 'center',
+                      padding: '0 2px',
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: '-webkit-box',
+                        WebkitBoxOrient: 'vertical',
+                        WebkitLineClamp: 4,
+                        overflow: 'hidden',
+                        fontSize,
+                        lineHeight: 1.25,
+                        fontWeight: 600,
+                        color: activeItem.unavailable ? 'rgba(203,213,225,0.55)' : '#fff',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {activeItem.name}
+                    </span>
+                  </div>
+                </foreignObject>
+              );
+            }
+            return (
+              <text
+                x={cursor.x}
+                y={cursor.y}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={11}
+                fill="rgba(148,163,184,0.7)"
+                style={{ pointerEvents: 'none' }}
+              >
+                ESC
+              </text>
+            );
+          })()}
         </g>
       </svg>
     </div>

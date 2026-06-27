@@ -27,19 +27,43 @@ export function resolveRadialConfig(
   for (const item of config.items) {
     if (item.type === 'app') {
       const sw = softwareById.get(item.targetId);
-      if (!sw || sw.uninstalled || sw.deleted || !sw.path) continue;
-      items.push({
-        slot: item.slot,
-        type: 'app',
-        targetId: item.targetId,
-        name: sw.name,
-        icon: sw.icon,
-        color: sw.color,
-        appPath: sw.path,
-      });
+      const usable = sw && !sw.uninstalled && !sw.deleted && sw.path;
+      if (usable) {
+        items.push({
+          slot: item.slot,
+          type: 'app',
+          targetId: item.targetId,
+          name: sw.name,
+          icon: sw.icon,
+          color: sw.color,
+          appPath: sw.path,
+        });
+      } else {
+        // 跨设备未安装/已卸载:保留扇区并灰显,用配置时缓存的 name/icon 快照
+        items.push({
+          slot: item.slot,
+          type: 'app',
+          targetId: item.targetId,
+          name: sw?.name ?? item.name ?? '(不可用)',
+          icon: sw?.icon ?? item.icon,
+          color: sw?.color ?? item.color,
+          unavailable: true,
+        });
+      }
     } else {
       const wf = workflowById.get(item.targetId);
-      if (!wf) continue;
+      if (!wf) {
+        // 工作流在本机不存在:灰显
+        items.push({
+          slot: item.slot,
+          type: 'workflow',
+          targetId: item.targetId,
+          name: item.name ?? '(不可用)',
+          color: item.color,
+          unavailable: true,
+        });
+        continue;
+      }
       const paths = wf.softwareIds
         .map((sid) => softwareById.get(sid))
         .filter((s) => s && !s.uninstalled && !s.deleted && s.path)
@@ -51,6 +75,8 @@ export function resolveRadialConfig(
         name: wf.name,
         color: wf.color,
         workflowPaths: paths,
+        // 工作流内无任何可启动应用时也视为不可用
+        unavailable: paths.length === 0,
       });
     }
   }

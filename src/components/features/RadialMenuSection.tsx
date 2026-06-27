@@ -431,7 +431,7 @@ function SlotEditor({ slot, current, availableSoftware, workflows, onPick, onCle
               return (
                 <button
                   key={s.id}
-                  onClick={() => onPick({ type: 'app', targetId: s.id })}
+                  onClick={() => onPick({ type: 'app', targetId: s.id, name: s.name, icon: s.icon, color: s.color })}
                   className={cn(
                     'w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors',
                     active ? 'bg-violet-500/15' : 'hover:bg-slate-800/50'
@@ -454,7 +454,7 @@ function SlotEditor({ slot, current, availableSoftware, workflows, onPick, onCle
             return (
               <button
                 key={w.id}
-                onClick={() => onPick({ type: 'workflow', targetId: w.id })}
+                onClick={() => onPick({ type: 'workflow', targetId: w.id, name: w.name, color: w.color })}
                 className={cn(
                   'w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left transition-colors',
                   active ? 'bg-violet-500/15' : 'hover:bg-slate-800/50'

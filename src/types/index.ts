@@ -69,6 +69,12 @@ export interface RadialItem {
   type: RadialItemType;
   /** app → softwareId;workflow → workflowId */
   targetId: string;
+  /** 配置时写入的名称快照;跨设备该项不可用时仍可用于灰显 */
+  name?: string;
+  /** 配置时写入的图标快照(data URL);跨设备该项不可用时仍可用于灰显 */
+  icon?: string;
+  /** 配置时写入的颜色快照 */
+  color?: string;
 }
 
 /** 主进程下发给径向窗口渲染层的扇区项(已带展示所需的名称/图标/颜色) */
@@ -77,6 +83,8 @@ export interface RadialRenderItem extends RadialItem {
   /** 应用图标 data URL 或本地图标路径;无则渲染首字母占位 */
   icon?: string;
   color?: string;
+  /** 跨设备时该软件/工作流在本机不可用(未安装等):扇区置灰、禁止启动 */
+  unavailable?: boolean;
 }
 
 export interface RadialOpenPayload {
