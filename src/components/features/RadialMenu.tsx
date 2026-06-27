@@ -101,31 +101,41 @@ export function RadialMenu() {
 
   // 鼠标移动 → 仅当落在扇形环带内(内半径~外半径之间)才高亮;
   // 中心死区 或 圆环外侧空白 都不高亮(点击时等同点中心:仅关闭、不启动)
-  const onMouseMove = (e: React.MouseEvent) => {
-    const dx = e.clientX - cursor.x;
-    const dy = e.clientY - cursor.y;
+  const slotAt = (clientX: number, clientY: number): number | null => {
+    const dx = clientX - cursor.x;
+    const dy = clientY - cursor.y;
     const dist = Math.hypot(dx, dy);
-    if (dist < INNER_R || dist > OUTER_R) {
-      setActive(null);
-      return;
-    }
+    if (dist < INNER_R || dist > OUTER_R) return null;
     const deg = (Math.atan2(dy, dx) * 180) / Math.PI; // -180..180, 0=右
     let rel = deg - (-90 - sectorAngle / 2);
     rel = ((rel % 360) + 360) % 360;
-    const slot = Math.floor(rel / sectorAngle) % sectors;
-    setActive(slot);
+    return Math.floor(rel / sectorAngle) % sectors;
   };
 
-  const onClick = () => {
-    if (active === null) {
+  const onMouseMove = (e: React.MouseEvent) => {
+    setActive(slotAt(e.clientX, e.clientY));
+  };
+
+  // 启动指定扇区的项目;扇区为空或无项目则仅关闭。
+  const launchSlot = (slot: number | null) => {
+    if (slot === null) {
       close();
       return;
     }
-    const item = itemBySlot.get(active);
+    const item = itemBySlot.get(slot);
     if (item) {
       window.softdesk?.radialLaunch?.({ type: item.type, targetId: item.targetId });
     }
     close();
+  };
+
+  const onClick = () => launchSlot(active);
+
+  // 右键:在扇区内按下即启动该扇区(命中规则与左键一致),并屏蔽系统右键菜单。
+  // 右键路径走渲染层 DOM 事件,不经过全局 uiohook,无重复派发/去抖问题。
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    launchSlot(slotAt(e.clientX, e.clientY));
   };
 
   return (
@@ -133,6 +143,7 @@ export function RadialMenu() {
       className="fixed inset-0"
       onMouseMove={onMouseMove}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       style={{ background: 'transparent' }}
     >
       <svg className="absolute inset-0 w-full h-full overflow-visible">
