@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
-import { Play, X, AppWindow, Layers, Keyboard, Mouse } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Play, X, AppWindow, Layers, Keyboard, Mouse, LogIn } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { syncRadialToMain } from '@/services/radial.service';
 import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
@@ -92,6 +94,8 @@ export function RadialMenuSection() {
   const setRadialItem = useSettingsStore((s) => s.setRadialItem);
   const software = useSoftwareStore((s) => s.software);
   const workflows = useSoftwareStore((s) => s.workflows);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
+  const navigate = useNavigate();
 
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
   const [recording, setRecording] = useState(false);
@@ -206,9 +210,11 @@ export function RadialMenuSection() {
           role="switch"
           aria-checked={radial.enabled}
           aria-label="启用径向菜单"
+          disabled={!loggedIn}
           className={cn(
             'relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5',
-            radial.enabled ? 'bg-violet-500' : 'bg-slate-700'
+            radial.enabled ? 'bg-violet-500' : 'bg-slate-700',
+            !loggedIn && 'opacity-40 cursor-not-allowed'
           )}
         >
           <span
@@ -229,11 +235,13 @@ export function RadialMenuSection() {
             onClick={startRecording}
             onKeyDown={handleRecordKeyDown}
             onBlur={() => setRecording(false)}
+            disabled={!loggedIn}
             className={cn(
               'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors min-w-[120px] justify-center',
               recording
                 ? 'border-violet-500/60 bg-violet-500/15 text-violet-200 animate-pulse'
-                : 'border-slate-700 bg-slate-800/60 text-slate-200 hover:bg-slate-800'
+                : 'border-slate-700 bg-slate-800/60 text-slate-200 hover:bg-slate-800',
+              !loggedIn && 'opacity-40 cursor-not-allowed hover:bg-slate-800/60'
             )}
           >
             <Keyboard className="w-3.5 h-3.5" />
@@ -261,9 +269,11 @@ export function RadialMenuSection() {
           role="switch"
           aria-checked={radial.mouseWheelToggle}
           aria-label="按下鼠标滚轮唤出"
+          disabled={!loggedIn}
           className={cn(
             'relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5',
-            radial.mouseWheelToggle ? 'bg-violet-500' : 'bg-slate-700'
+            radial.mouseWheelToggle ? 'bg-violet-500' : 'bg-slate-700',
+            !loggedIn && 'opacity-40 cursor-not-allowed'
           )}
         >
           <span
@@ -358,6 +368,19 @@ export function RadialMenuSection() {
             </div>
           </div>
         </>
+      )}
+
+      {!loggedIn && (
+        <div className="flex flex-col items-center justify-center pt-8 pb-2 text-center">
+          <p className="text-xs text-slate-500 mb-3">登录账号后即可开启径向菜单，并在多设备间同步配置</p>
+          <button
+            onClick={() => navigate('/account')}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-violet-500/15 text-violet-500 dark:text-violet-300 hover:bg-violet-500/25 border border-violet-500/20 transition-colors"
+          >
+            <LogIn className="w-4 h-4" />
+            去登录
+          </button>
+        </div>
       )}
     </div>
   );
