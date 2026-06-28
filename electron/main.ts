@@ -345,7 +345,14 @@ function createRadialWindow(): BrowserWindow {
     },
   });
   w.setAlwaysOnTop(true, 'screen-saver');
-  w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // skipTransformProcessType: true 关键——默认调用会把整个 app 的进程类型在
+  // ForegroundApplication ↔ UIElementApplication(accessory)之间切换。一旦 app 变成
+  // UIElementApplication 类型,主窗口就不再被 macOS 台前调度(Stage Manager)纳管堆叠。
+  // 这里跳过进程类型转换,保持 app 始终为 ForegroundApplication,使主窗口正常参与台前调度。
+  w.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+    skipTransformProcessType: true,
+  });
   // 失焦即隐藏(点击其它应用/桌面时收起)
   w.on('blur', () => hideRadial());
   loadRadialWindow(w);
@@ -1044,6 +1051,12 @@ ipcMain.handle('software:remove', async (_event, appPath: string) => {
 });
 
 app.whenReady().then(() => {
+  // 显式锁定为常规(ForegroundApplication)激活策略:这是 macOS 台前调度
+  // (Stage Manager)纳管 app 窗口的前提。防止 radialWin 等浮层窗口的副作用
+  // 把 app 漂移成 accessory(UIElementApplication)类型而脱离台前调度堆叠。
+  if (process.platform === 'darwin') {
+    app.setActivationPolicy('regular');
+  }
   loadWindowPrefs();
   loadRadialConfig();
   createWindow();
