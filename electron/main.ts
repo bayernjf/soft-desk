@@ -23,6 +23,7 @@ import {
   type UserProfileInput,
 } from './ai';
 import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession, getTokens as authGetTokens, updateProfile as authUpdateProfile } from './auth';
+import { getAppWindowBounds, warpCursor } from './window-locator';
 import { createLogger } from './lib/logger';
 
 const logger = createLogger('main');
@@ -171,6 +172,9 @@ const DEFAULT_RADIAL_CONFIG: RadialConfigState = {
 
 let radialConfig: RadialConfigState = { ...DEFAULT_RADIAL_CONFIG };
 let radialRegisteredHotkey: string | null = null;
+// 记录最近一次唤出径向菜单时光标所在显示器的 id。启动软件后据此判断:
+// 若目标软件的已有窗口在其它显示器,则把光标移到该显示器中央;若就在本显示器则不动。
+let radialTriggerDisplayId: number | null = null;
 
 function radialConfigPath(): string {
   return path.join(app.getPath('userData'), 'radial-config.json');
@@ -382,6 +386,8 @@ function openRadial(atCenter = false): void {
   const cursor = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursor);
   const { x, y, width, height } = display.workArea;
+  // 记录唤出时光标所在显示器,供 radial:launch 后判断目标软件窗口是否需要跨屏移动光标
+  radialTriggerDisplayId = display.id;
 
   if (!radialWin || radialWin.isDestroyed()) {
     radialWin = createRadialWindow();
@@ -407,6 +413,41 @@ function openRadial(atCenter = false): void {
   } else {
     send();
   }
+}
+
+/**
+ * 通过径向菜单启动某软件后调用:
+ * - 若该软件已有可见窗口且窗口所在显示器与唤出径向菜单时光标所在显示器不同,
+ *   把光标移到目标窗口所在显示器的中央(方便用户立刻在该屏继续操作);
+ * - 若窗口就在唤出时的同一显示器(或软件未运行/无窗口/无法定位),光标保持不动。
+ * triggerDisplayId 为唤出径向菜单那一刻记录的显示器 id。
+ * 软件刚被 open 时窗口可能尚未创建,这里带几次轮询重试等待窗口出现。
+ */
+async function relocateCursorToAppWindow(
+  appPath: string,
+  triggerDisplayId: number | null
+): Promise<void> {
+  if (process.platform !== 'darwin' || triggerDisplayId == null) return;
+
+  let bounds: Awaited<ReturnType<typeof getAppWindowBounds>> = null;
+  // 启动已运行应用通常立刻有窗口;冷启动的应用窗口可能延迟出现,重试若干次。
+  for (let attempt = 0; attempt < 6; attempt++) {
+    bounds = await getAppWindowBounds(appPath);
+    if (bounds) break;
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+  if (!bounds) return;
+
+  const windowCenter = {
+    x: bounds.x + bounds.width / 2,
+    y: bounds.y + bounds.height / 2,
+  };
+  const targetDisplay = screen.getDisplayNearestPoint(windowCenter);
+  // 窗口已在唤出径向菜单时所在的显示器:无需移动光标
+  if (targetDisplay.id === triggerDisplayId) return;
+
+  const { x, y, width, height } = targetDisplay.workArea;
+  await warpCursor(x + width / 2, y + height / 2);
 }
 
 function buildTrayMenu(): Electron.Menu {
@@ -675,6 +716,8 @@ ipcMain.handle('radial:launch', async (_event, raw: unknown) => {
     type?: 'app' | 'workflow';
     targetId?: string;
   };
+  // 在隐藏窗口前抓取唤出时的显示器 id(hideRadial 不会改它,但用局部变量更稳妥)
+  const triggerDisplayId = radialTriggerDisplayId;
   hideRadial();
 
   const item = radialConfig.items.find(
@@ -697,6 +740,8 @@ ipcMain.handle('radial:launch', async (_event, raw: unknown) => {
         logger.error('recordLaunch failed:', dbErr);
       }
     }
+    // 若该软件已有窗口且不在唤出径向菜单的那块显示器,把光标移到目标窗口所在显示器中央
+    void relocateCursorToAppWindow(appPath, triggerDisplayId);
     return { success: true };
   }
 
