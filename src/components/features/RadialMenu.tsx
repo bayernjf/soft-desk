@@ -365,7 +365,7 @@ export function RadialMenu() {
                 fill="rgba(148,163,184,0.7)"
                 style={{ pointerEvents: 'none' }}
               >
-                ESC
+                {hasPage2 ? (page === 0 ? '第一页' : '第二页') : 'ESC'}
               </text>
             );
           })()}
