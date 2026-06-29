@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, memo } from 'react';
+import { useEffect, useMemo, useRef, useState, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { Play, Clock, HardDrive, Download, Trash2, RotateCcw, Star, Target } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CATEGORIES } from '@/data/categories';
@@ -15,21 +16,83 @@ interface SoftwareCardProps {
   software: Software;
   variant?: 'default' | 'compact' | 'large';
   context?: 'library' | 'uninstall';
+  extraActions?: React.ReactNode;
 }
 
-export function SoftwareCard({ software, variant = 'default', context = 'library' }: SoftwareCardProps) {
-  return <SoftwareCardImpl software={software} variant={variant} context={context} />;
+export function SoftwareCard({ software, variant = 'default', context = 'library', extraActions }: SoftwareCardProps) {
+  return <SoftwareCardImpl software={software} variant={variant} context={context} extraActions={extraActions} />;
+}
+
+const POPUP_SIZE = 240;
+const POPUP_INNER = 36;
+const POPUP_OUTER = 96;
+
+function popupPolar(cx: number, cy: number, r: number, deg: number) {
+  const a = (deg * Math.PI) / 180;
+  return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+}
+
+function popupSectorPath(cx: number, cy: number, startDeg: number, endDeg: number) {
+  const oStart = popupPolar(cx, cy, POPUP_OUTER, startDeg);
+  const oEnd = popupPolar(cx, cy, POPUP_OUTER, endDeg);
+  const iEnd = popupPolar(cx, cy, POPUP_INNER, endDeg);
+  const iStart = popupPolar(cx, cy, POPUP_INNER, startDeg);
+  const largeArc = endDeg - startDeg > 180 ? 1 : 0;
+  return [
+    `M ${oStart.x} ${oStart.y}`,
+    `A ${POPUP_OUTER} ${POPUP_OUTER} 0 ${largeArc} 1 ${oEnd.x} ${oEnd.y}`,
+    `L ${iEnd.x} ${iEnd.y}`,
+    `A ${POPUP_INNER} ${POPUP_INNER} 0 ${largeArc} 0 ${iStart.x} ${iStart.y}`,
+    'Z',
+  ].join(' ');
+}
+
+function usePopupTheme() {
+  const theme = useSettingsStore((s) => s.theme);
+  return useMemo(() => {
+    void theme;
+    const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light');
+    return isLight
+      ? {
+          sector: 'rgba(155,140,120,0.20)',
+          sectorHover: 'rgba(124,58,237,0.18)',
+          sectorCurrent: 'rgba(124,58,237,0.30)',
+          stroke: 'rgba(124,100,75,0.35)',
+          label: '#3b3127',
+          labelEmpty: '#9b8c78',
+          center: 'rgba(255,253,248,0.92)',
+          centerStroke: 'rgba(124,100,75,0.30)',
+          indicator: '#7c3aed',
+        }
+      : {
+          sector: 'rgba(51,65,85,0.35)',
+          sectorHover: 'rgba(139,92,246,0.20)',
+          sectorCurrent: 'rgba(139,92,246,0.35)',
+          stroke: 'rgba(148,163,184,0.3)',
+          label: '#cbd5e1',
+          labelEmpty: 'rgba(148,163,184,0.5)',
+          center: 'rgba(21,21,28,0.6)',
+          centerStroke: 'rgba(148,163,184,0.2)',
+          indicator: '#8b5cf6',
+        };
+  }, [theme]);
 }
 
 function RadialSlotPicker({ software, className }: { software: Software; className?: string }) {
   const [open, setOpen] = useState(false);
+  const [page, setPage] = useState(0);
+  const [justPicked, setJustPicked] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const radial = useSettingsStore((s) => s.radial);
   const setRadialItem = useSettingsStore((s) => s.setRadialItem);
   const softwareList = useSoftwareStore((s) => s.software);
   const workflows = useSoftwareStore((s) => s.workflows);
   const loggedIn = useAuthStore((s) => s.loggedIn);
   const navigate = useNavigate();
+  const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const pickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -42,24 +105,40 @@ function RadialSlotPicker({ software, className }: { software: Software; classNa
     return () => document.removeEventListener('mousedown', handle);
   }, [open]);
 
+  useEffect(() => {
+    return () => {
+      if (pickTimer.current) clearTimeout(pickTimer.current);
+    };
+  }, []);
+
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!loggedIn) {
       navigate('/account');
       return;
     }
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (rect) {
+      setPopupPos({ x: rect.right, y: rect.bottom });
+    }
     setOpen((v) => !v);
   };
 
-  const handlePick = (slot: number) => {
-    setRadialItem(slot, {
+  const handlePick = (visualSlot: number) => {
+    const actualSlot = visualSlot + page * radial.sectors;
+    setRadialItem(actualSlot, {
       type: 'app',
       targetId: software.id,
       name: software.name,
       icon: software.icon,
       color: software.color,
     });
+    setJustPicked(true);
+    if (pickTimer.current) clearTimeout(pickTimer.current);
+    pickTimer.current = setTimeout(() => setJustPicked(false), 2000);
     setOpen(false);
+    setToastMsg(`已添加到第${page + 1}页扇区 ${actualSlot + 1}`);
+    window.setTimeout(() => setToastMsg(null), 2600);
   };
 
   const softwareById = new Map(softwareList.map((s) => [s.id, s]));
@@ -72,64 +151,158 @@ function RadialSlotPicker({ software, className }: { software: Software; classNa
 
   const isInRadial = radial.items.some((it) => it.type === 'app' && it.targetId === software.id);
 
+  const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light');
+  const ring = usePopupTheme();
+  const cx = POPUP_SIZE / 2;
+  const cy = POPUP_SIZE / 2;
+  const sectorAngle = 360 / radial.sectors;
+
+  const panelWidth = 256;
+  const panelHeight = 320;
+  let panelLeft = popupPos.x - panelWidth + 8;
+  let panelTop = popupPos.y + 8;
+  if (panelLeft < 8) panelLeft = 8;
+  if (panelTop + panelHeight > window.innerHeight - 8) {
+    panelTop = popupPos.y - panelHeight - 8;
+  }
+
+  const popupContent = open ? (
+    <div
+      ref={panelRef}
+      className={cn(
+        'fixed z-[9999] w-64 rounded-xl border shadow-xl p-3',
+        isLight
+          ? 'bg-white border-slate-200 shadow-slate-300/20'
+          : 'bg-slate-900 border-slate-700/80 shadow-black/40'
+      )}
+      style={{ left: panelLeft, top: panelTop }}
+    >
+      {/* 页面切换 */}
+      <div className={cn('flex items-center gap-1 p-1 rounded-lg mb-3', isLight ? 'bg-slate-100' : 'bg-slate-800/40')}>
+        <button
+          onClick={(e) => { e.stopPropagation(); setPage(0); }}
+          className={cn(
+            'flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors',
+            page === 0
+              ? (isLight ? 'bg-violet-100 text-violet-600' : 'bg-violet-500/20 text-violet-300')
+              : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-slate-400 hover:text-slate-300')
+          )}
+        >
+          第一页
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setPage(1); }}
+          className={cn(
+            'flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors',
+            page === 1
+              ? (isLight ? 'bg-violet-100 text-violet-600' : 'bg-violet-500/20 text-violet-300')
+              : (isLight ? 'text-slate-500 hover:text-slate-700' : 'text-slate-400 hover:text-slate-300')
+          )}
+        >
+          第二页
+        </button>
+      </div>
+
+      {/* SVG 圆形径向菜单 */}
+      <div className="flex justify-center">
+        <svg width={POPUP_SIZE} height={POPUP_SIZE} className="overflow-visible">
+          {Array.from({ length: radial.sectors }).map((_, visualSlot) => {
+            const actualSlot = visualSlot + page * radial.sectors;
+            const center = visualSlot * sectorAngle - 90;
+            const start = center - sectorAngle / 2;
+            const end = center + sectorAngle / 2;
+            const item = radial.items.find((it) => it.slot === actualSlot);
+            const isCurrent = item?.type === 'app' && item.targetId === software.id;
+            const labelPos = popupPolar(cx, cy, (POPUP_INNER + POPUP_OUTER) / 2, center);
+            return (
+              <g
+                key={visualSlot}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePick(visualSlot);
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                <path
+                  d={popupSectorPath(cx, cy, start, end)}
+                  fill={isCurrent ? ring.sectorCurrent : item ? ring.sector : ring.sector}
+                  stroke={ring.stroke}
+                  strokeWidth={1}
+                />
+                <text
+                  x={labelPos.x}
+                  y={labelPos.y}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={10}
+                  fill={item ? ring.label : ring.labelEmpty}
+                >
+                  {item ? labelFor(item.targetId, item.type).slice(0, 5) : '+'}
+                </text>
+                {isCurrent && (
+                  <circle
+                    cx={labelPos.x + 16}
+                    cy={labelPos.y - 16}
+                    r={3}
+                    fill={ring.indicator}
+                  />
+                )}
+              </g>
+            );
+          })}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={POPUP_INNER - 2}
+            fill={ring.center}
+            stroke={ring.centerStroke}
+          />
+        </svg>
+      </div>
+
+      {isInRadial && (
+        <div className={cn('mt-2 text-[10px] text-center', isLight ? 'text-slate-400' : 'text-slate-500')}>
+          该应用已在径向菜单中
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const toastContent = toastMsg ? (
+    <div className="fixed top-6 right-6 z-[9999] animate-in">
+      <div className={cn(
+        'flex items-center gap-2 px-4 py-3 rounded-xl border shadow-lg text-sm font-medium whitespace-nowrap',
+        isLight
+          ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+          : 'bg-emerald-950/80 text-emerald-400 border-emerald-500/50'
+      )}>
+        <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        {toastMsg}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className={cn('relative', className)}>
       <button
+        ref={btnRef}
         onClick={handleToggle}
         className={cn(
           'p-1.5 rounded-lg transition-all duration-200',
-          isInRadial ? 'text-violet-400 hover:text-violet-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
+          isInRadial ? 'text-violet-400 hover:text-violet-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60',
+          justPicked && 'text-emerald-400'
         )}
         title={isInRadial ? '已加入径向菜单' : '发送到径向菜单'}
       >
         <Target className="w-4 h-4" />
       </button>
-      {open && (
-        <div
-          ref={panelRef}
-          className="absolute top-full right-0 mt-2 z-30 w-56 rounded-xl bg-slate-900 border border-slate-700/80 shadow-xl shadow-black/40 p-3"
-        >
-          <div className="text-xs font-medium text-slate-300 mb-2">选择扇区</div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {Array.from({ length: radial.sectors }).map((_, slot) => {
-              const item = radial.items.find((it) => it.slot === slot);
-              const isCurrent = item?.type === 'app' && item.targetId === software.id;
-              return (
-                <button
-                  key={slot}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handlePick(slot);
-                  }}
-                  className={cn(
-                    'relative flex flex-col items-center justify-center rounded-lg p-1.5 text-[10px] transition-colors border',
-                    isCurrent
-                      ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
-                      : item
-                        ? 'bg-slate-800/60 border-slate-700/50 text-slate-400 hover:bg-slate-700/60'
-                        : 'bg-slate-800/30 border-slate-700/40 text-slate-500 hover:bg-slate-800/60 hover:text-slate-300'
-                  )}
-                  title={item ? labelFor(item.targetId, item.type) : '空扇区'}
-                >
-                  <span className={cn('font-semibold', isCurrent && 'text-violet-300')}>{slot + 1}</span>
-                  <span className="truncate max-w-full mt-0.5 leading-tight">
-                    {item ? labelFor(item.targetId, item.type).slice(0, 4) : '+'}
-                  </span>
-                  {isCurrent && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-violet-400" />}
-                </button>
-              );
-            })}
-          </div>
-          {isInRadial && (
-            <div className="mt-2 text-[10px] text-slate-500 text-center">该应用已在径向菜单中</div>
-          )}
-        </div>
-      )}
+      {open && createPortal(popupContent, document.body)}
+      {toastContent && createPortal(toastContent, document.body)}
     </div>
   );
 }
 
-const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'default', context = 'library' }: SoftwareCardProps) {
+const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'default', context = 'library', extraActions }: SoftwareCardProps) {
   const navigate = useNavigate();
   const launchSoftware = useSoftwareStore((s) => s.launchSoftware);
   const removeSoftware = useSoftwareStore((s) => s.removeSoftware);
@@ -468,6 +641,7 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
   return (
     <div ref={wrapperRef} className="relative group/card">
       <div className="absolute top-2 right-2 z-10 flex items-center gap-0.5 transition-all duration-200 opacity-0 group-hover/card:opacity-100">
+        {extraActions}
         <RadialSlotPicker software={software} />
         <button
           onClick={handleFavoriteClick}
