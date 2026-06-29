@@ -421,7 +421,7 @@ function openRadial(atCenter = false): void {
  * - 到达目标位置后播放小球膨胀爆炸动画
  * - 颜色:白/橙黄中心 -> 粉 -> 紫边缘(logo 色系)
  */
-class CometCursor {
+class AnimationCursor {
   private win: Electron.BrowserWindow | null = null;
   private ready = false;
   private readonly size = 500;
@@ -443,14 +443,14 @@ class CometCursor {
       this.win.setIgnoreMouseEvents(true);
 
       if (VITE_DEV_SERVER_URL) {
-        await this.win.loadURL(new URL('comet.html', VITE_DEV_SERVER_URL).toString());
+        await this.win.loadURL(new URL('animation.html', VITE_DEV_SERVER_URL).toString());
       } else {
-        await this.win.loadFile(path.join(RENDERER_DIST, 'comet.html'));
+        await this.win.loadFile(path.join(RENDERER_DIST, 'animation.html'));
       }
       this.ready = true;
-      logger.info('comet cursor window initialized');
+      logger.info('animation cursor window initialized');
     } catch (err) {
-      logger.error('comet init failed:', err);
+      logger.error('animation init failed:', err);
       this.ready = false;
     }
   }
@@ -476,7 +476,7 @@ class CometCursor {
 
     // 播放爆炸(窗口中心)
     this.win.webContents.executeJavaScript(
-      `window.__comet && window.__comet.explodeAt(${half}, ${half}, ${durationMs})`
+      `window.__animation && window.__animation.explodeAt(${half}, ${half}, ${durationMs})`
     ).catch((err) => logger.error('explodeAt failed:', err));
 
     // 等动画结束
@@ -488,7 +488,7 @@ class CometCursor {
   }
 }
 
-let cometCursor: CometCursor | null = null;
+let animationCursor: AnimationCursor | null = null;
 
 /**
  * 通过径向菜单启动某软件后调用:
@@ -532,8 +532,8 @@ async function relocateCursorToAppWindow(
   if (cursorDisplay.id !== targetDisplay.id) {
     warpCursor(targetX, targetY, { animate: true, fromX: cursor.x, fromY: cursor.y, durationMs: 50 }).catch(() => {});
   }
-  if (cometCursor) {
-    cometCursor.explodeAt(targetX, targetY, 500).catch(() => {});
+  if (animationCursor) {
+    animationCursor.explodeAt(targetX, targetY, 500).catch(() => {});
   }
 }
 
@@ -1197,10 +1197,10 @@ app.whenReady().then(() => {
   applyRadialHotkey();
   applyRadialMouse();
   startMonitor();
-  // 预创建彗星光标窗口(后台加载,不阻塞启动)
-  cometCursor = new CometCursor();
-  cometCursor.init().catch((err) => {
-    logger.error('cometCursor init failed (non-fatal):', err);
+  // 预创建动画光标窗口(后台加载,不阻塞启动)
+  animationCursor = new AnimationCursor();
+  animationCursor.init().catch((err) => {
+    logger.error('animationCursor init failed (non-fatal):', err);
   });
   // FSEvents 监听应用目录的安装/卸载,变化时重扫(命中缓存极快)并推送给渲染进程
   startAppWatcher(async () => {
