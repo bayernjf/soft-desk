@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RadialOpenPayload, RadialRenderItem } from '@/types';
 
 const INNER_R = 56;
@@ -33,11 +33,18 @@ function sectorPath(cx: number, cy: number, startDeg: number, endDeg: number, ou
   ].join(' ');
 }
 
+type AnimPhase = 'idle' | 'out' | 'switch' | 'in';
+
 export function RadialMenu() {
   const [state, setState] = useState<RadialState | null>(null);
   const [active, setActive] = useState<number | null>(null);
   // 入场动画:state 就绪后下一帧置 true,触发 scale/opacity 过渡
   const [mounted, setMounted] = useState(false);
+
+  // 分页
+  const [page, setPage] = useState(0);
+  const [animPhase, setAnimPhase] = useState<AnimPhase>('idle');
+  const wheelDirRef = useRef(1);
 
   // 监听主进程的 radial:open 推送
   useEffect(() => {
@@ -47,6 +54,8 @@ export function RadialMenu() {
       setState({ cursor: payload.cursor, sectors: payload.sectors, items: payload.items });
       setActive(null);
       setMounted(false);
+      setPage(0);
+      setAnimPhase('idle');
       requestAnimationFrame(() => requestAnimationFrame(() => setMounted(true)));
     });
     return () => unsub?.();
@@ -62,6 +71,8 @@ export function RadialMenu() {
         setState(null);
         setActive(null);
         setMounted(false);
+        setPage(0);
+        setAnimPhase('idle');
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -81,14 +92,52 @@ export function RadialMenu() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // 页面切换动画状态机
+  useEffect(() => {
+    if (animPhase === 'out') {
+      const t = setTimeout(() => {
+        setPage((p) => (p + wheelDirRef.current + 2) % 2);
+        setAnimPhase('switch');
+      }, 220);
+      return () => clearTimeout(t);
+    }
+    if (animPhase === 'switch') {
+      const t = setTimeout(() => {
+        setAnimPhase('in');
+      }, 40);
+      return () => clearTimeout(t);
+    }
+    if (animPhase === 'in') {
+      const t = setTimeout(() => {
+        setAnimPhase('idle');
+      }, 300);
+      return () => clearTimeout(t);
+    }
+  }, [animPhase]);
+
   const sectorAngle = state ? 360 / state.sectors : 0;
   const centerAngleOf = (slot: number) => slot * sectorAngle - 90;
 
+  const hasPage2 = useMemo(() => {
+    if (!state) return false;
+    return state.items.some((it) => it.slot >= state.sectors);
+  }, [state]);
+
+  const currentItems = useMemo(() => {
+    if (!state) return [];
+    return state.items
+      .filter((it) => {
+        const itemPage = Math.floor(it.slot / state.sectors);
+        return itemPage === page;
+      })
+      .map((it) => ({ ...it, slot: it.slot % state.sectors }));
+  }, [state, page]);
+
   const itemBySlot = useMemo(() => {
     const map = new Map<number, RadialRenderItem>();
-    state?.items.forEach((it) => map.set(it.slot, it));
+    currentItems.forEach((it) => map.set(it.slot, it));
     return map;
-  }, [state]);
+  }, [currentItems]);
 
   if (!state) return null;
 
@@ -138,21 +187,43 @@ export function RadialMenu() {
     launchSlot(slotAt(e.clientX, e.clientY));
   };
 
+  // 滚轮切换页面:向下滑(顺时针)切下一页,向上滑(逆时针)切上一页
+  const onWheel = (e: React.WheelEvent) => {
+    if (!hasPage2 || animPhase !== 'idle') return;
+    e.preventDefault();
+    const dir = e.deltaY > 0 ? 1 : -1;
+    wheelDirRef.current = dir;
+    setAnimPhase('out');
+  };
+
+  const isAnimating = animPhase !== 'idle';
+  const animRotate =
+    animPhase === 'out'
+      ? wheelDirRef.current * sectorAngle
+      : animPhase === 'switch'
+        ? -wheelDirRef.current * sectorAngle
+        : 0;
+  const animOpacity = animPhase === 'out' || animPhase === 'switch' ? 0.12 : 1;
+  const animScale = animPhase === 'out' || animPhase === 'switch' ? 0.9 : 1;
+
   return (
     <div
       className="fixed inset-0"
       onMouseMove={onMouseMove}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      onWheel={onWheel}
       style={{ background: 'transparent' }}
     >
       <svg className="absolute inset-0 w-full h-full overflow-visible">
         <g
           style={{
             transformOrigin: `${cursor.x}px ${cursor.y}px`,
-            transform: mounted ? 'scale(1)' : 'scale(0.82)',
-            opacity: mounted ? 1 : 0,
-            transition: 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1), opacity 140ms ease-out',
+            transform: mounted ? `rotate(${animRotate}deg) scale(${animScale})` : `rotate(${animRotate}deg) scale(0.82)`,
+            opacity: mounted ? animOpacity : 0,
+            transition: isAnimating
+              ? 'transform 280ms cubic-bezier(0.4, 0, 0.2, 1), opacity 220ms ease-in-out'
+              : 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1), opacity 140ms ease-out',
           }}
         >
           {Array.from({ length: sectors }).map((_, slot) => {

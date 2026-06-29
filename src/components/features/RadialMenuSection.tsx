@@ -98,6 +98,7 @@ export function RadialMenuSection() {
   const navigate = useNavigate();
 
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
+  const [previewPage, setPreviewPage] = useState(0);
   const [recording, setRecording] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const recordBtnRef = useRef<HTMLButtonElement>(null);
@@ -137,9 +138,15 @@ export function RadialMenuSection() {
   const workflowById = useMemo(() => new Map(workflows.map((w) => [w.id, w])), [workflows]);
   const itemBySlot = useMemo(() => {
     const m = new Map<number, RadialItem>();
-    radial.items.forEach((it) => m.set(it.slot, it));
+    radial.items.forEach((it) => {
+      const page = Math.floor(it.slot / radial.sectors);
+      const visualSlot = it.slot % radial.sectors;
+      if (page === previewPage) {
+        m.set(visualSlot, it);
+      }
+    });
     return m;
-  }, [radial.items]);
+  }, [radial.items, radial.sectors, previewPage]);
 
   const cx = PREVIEW_SIZE / 2;
   const cy = PREVIEW_SIZE / 2;
@@ -310,6 +317,27 @@ export function RadialMenuSection() {
           <div className="px-4 py-3 grid sm:grid-cols-[260px_1fr] gap-6 items-start">
             {/* 圆环预览：点扇区进入编辑 */}
             <div className="flex flex-col items-center">
+              {/* 页面切换 */}
+              <div className="flex items-center gap-1 p-1 bg-slate-800/40 rounded-lg mb-3">
+                <button
+                  onClick={() => { setPreviewPage(0); setEditingSlot(null); }}
+                  className={cn(
+                    'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                    previewPage === 0 ? 'bg-violet-500/20 text-violet-300' : 'text-slate-400 hover:text-slate-300'
+                  )}
+                >
+                  第一页
+                </button>
+                <button
+                  onClick={() => { setPreviewPage(1); setEditingSlot(null); }}
+                  className={cn(
+                    'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                    previewPage === 1 ? 'bg-violet-500/20 text-violet-300' : 'text-slate-400 hover:text-slate-300'
+                  )}
+                >
+                  第二页
+                </button>
+              </div>
               <svg width={PREVIEW_SIZE} height={PREVIEW_SIZE} className="overflow-visible">
                 {Array.from({ length: radial.sectors }).map((_, slot) => {
                   const center = slot * sectorAngle - 90;
@@ -358,11 +386,13 @@ export function RadialMenuSection() {
               ) : (
                 <SlotEditor
                   slot={editingSlot}
+                  page={previewPage}
+                  sectors={radial.sectors}
                   current={itemBySlot.get(editingSlot)}
                   availableSoftware={availableSoftware}
                   workflows={workflows}
-                  onPick={(item) => setRadialItem(editingSlot, item)}
-                  onClear={() => setRadialItem(editingSlot, null)}
+                  onPick={(item) => setRadialItem(editingSlot + previewPage * radial.sectors, item)}
+                  onClear={() => setRadialItem(editingSlot + previewPage * radial.sectors, null)}
                 />
               )}
             </div>
@@ -388,6 +418,8 @@ export function RadialMenuSection() {
 
 interface SlotEditorProps {
   slot: number;
+  page: number;
+  sectors: number;
   current: RadialItem | undefined;
   availableSoftware: ReturnType<typeof useSoftwareStore.getState>['software'];
   workflows: ReturnType<typeof useSoftwareStore.getState>['workflows'];
@@ -395,7 +427,7 @@ interface SlotEditorProps {
   onClear: () => void;
 }
 
-function SlotEditor({ slot, current, availableSoftware, workflows, onPick, onClear }: SlotEditorProps) {
+function SlotEditor({ slot, page, sectors, current, availableSoftware, workflows, onPick, onClear }: SlotEditorProps) {
   const [tab, setTab] = useState<'app' | 'workflow'>(current?.type ?? 'app');
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -413,10 +445,16 @@ function SlotEditor({ slot, current, availableSoftware, workflows, onPick, onCle
     return list.slice(0, 50);
   }, [query, availableSoftware]);
 
+  const pageLabel = page === 0 ? '第一页' : '第二页';
+  const actualSlot = slot + page * sectors;
+
   return (
     <div className="rounded-xl bg-slate-800/30 border border-slate-800/60 p-3">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-sm font-medium text-slate-200">扇区 {slot + 1} 绑定</div>
+        <div className="text-sm font-medium text-slate-200">
+          {pageLabel} 扇区 {slot + 1} 绑定
+          <span className="ml-2 text-[10px] text-slate-500 font-normal">实际槽位 #{actualSlot + 1}</span>
+        </div>
         {current && (
           <button
             onClick={onClear}
