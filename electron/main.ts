@@ -416,6 +416,81 @@ function openRadial(atCenter = false): void {
 }
 
 /**
+ * 跨屏移动光标时的爆炸效果:
+ * - 预创建一个固定大小的透明置顶窗口(500x500)
+ * - 到达目标位置后播放小球膨胀爆炸动画
+ * - 颜色:白/橙黄中心 -> 粉 -> 紫边缘(logo 色系)
+ */
+class CometCursor {
+  private win: Electron.BrowserWindow | null = null;
+  private ready = false;
+  private readonly size = 500;
+
+  /** 预创建窗口,应用启动时调用一次 */
+  async init(): Promise<void> {
+    if (this.win) return;
+    try {
+      this.win = new BrowserWindow({
+        x: -10000, y: -10000,
+        width: this.size, height: this.size,
+        frame: false, transparent: true, alwaysOnTop: true,
+        skipTaskbar: true, resizable: false, movable: false,
+        focusable: false, hasShadow: false, roundedCorners: false,
+        show: false, backgroundColor: '#00000000',
+        webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
+      });
+      this.win.setAlwaysOnTop(true, 'screen-saver');
+      this.win.setIgnoreMouseEvents(true);
+
+      if (VITE_DEV_SERVER_URL) {
+        await this.win.loadURL(new URL('comet.html', VITE_DEV_SERVER_URL).toString());
+      } else {
+        await this.win.loadFile(path.join(RENDERER_DIST, 'comet.html'));
+      }
+      this.ready = true;
+      logger.info('comet cursor window initialized');
+    } catch (err) {
+      logger.error('comet init failed:', err);
+      this.ready = false;
+    }
+  }
+
+  /**
+   * 在目标位置播放爆炸动画。
+   * 窗口中心对齐到 (screenX, screenY)。
+   */
+  async explodeAt(screenX: number, screenY: number, durationMs = 400): Promise<void> {
+    if (!this.win || !this.ready) return;
+
+    const half = this.size / 2;
+    this.win.setBounds({
+      x: Math.round(screenX - half),
+      y: Math.round(screenY - half),
+      width: this.size,
+      height: this.size,
+    });
+    this.win.showInactive();
+
+    // 给 compositor 一点时间确保窗口可见
+    await new Promise((r) => setTimeout(r, 50));
+
+    // 播放爆炸(窗口中心)
+    this.win.webContents.executeJavaScript(
+      `window.__comet && window.__comet.explodeAt(${half}, ${half}, ${durationMs})`
+    ).catch((err) => logger.error('explodeAt failed:', err));
+
+    // 等动画结束
+    await new Promise((r) => setTimeout(r, durationMs + 100));
+
+    if (this.win && !this.win.isDestroyed()) {
+      this.win.hide();
+    }
+  }
+}
+
+let cometCursor: CometCursor | null = null;
+
+/**
  * 通过径向菜单启动某软件后调用:
  * - 若该软件已有可见窗口且窗口所在显示器与唤出径向菜单时光标所在显示器不同,
  *   把光标移到目标窗口所在显示器的中央(方便用户立刻在该屏继续操作);
@@ -447,7 +522,19 @@ async function relocateCursorToAppWindow(
   if (targetDisplay.id === triggerDisplayId) return;
 
   const { x, y, width, height } = targetDisplay.workArea;
-  await warpCursor(x + width / 2, y + height / 2);
+  const targetX = x + width / 2;
+  const targetY = y + height / 2;
+  const cursor = screen.getCursorScreenPoint();
+  const cursorDisplay = screen.getDisplayNearestPoint(cursor);
+
+  // 光标移动和爆炸效果各自独立,同时启动,不互相等待
+  // 若鼠标当前已在目标屏幕,则不再强制移动到屏幕中心
+  if (cursorDisplay.id !== targetDisplay.id) {
+    warpCursor(targetX, targetY, { animate: true, fromX: cursor.x, fromY: cursor.y, durationMs: 50 }).catch(() => {});
+  }
+  if (cometCursor) {
+    cometCursor.explodeAt(targetX, targetY, 500).catch(() => {});
+  }
 }
 
 function buildTrayMenu(): Electron.Menu {
@@ -1110,6 +1197,11 @@ app.whenReady().then(() => {
   applyRadialHotkey();
   applyRadialMouse();
   startMonitor();
+  // 预创建彗星光标窗口(后台加载,不阻塞启动)
+  cometCursor = new CometCursor();
+  cometCursor.init().catch((err) => {
+    logger.error('cometCursor init failed (non-fatal):', err);
+  });
   // FSEvents 监听应用目录的安装/卸载,变化时重扫(命中缓存极快)并推送给渲染进程
   startAppWatcher(async () => {
     try {

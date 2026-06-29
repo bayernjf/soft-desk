@@ -61,17 +61,49 @@ function run(argv) {
 }
 `;
 
-// 把鼠标光标瞬移到指定的全局坐标(与 LOCATE_SCRIPT/Electron screen 同一坐标系)。
+// 把鼠标光标移动到指定的全局坐标(与 LOCATE_SCRIPT/Electron screen 同一坐标系)。
 // CGWarpMouseCursorPosition 不需要任何特殊权限。
-// 坐标通过环境变量 SOFTDESK_WARP_X/Y 传入,而非命令行参数——否则负数坐标(位于
+// 坐标通过环境变量传入,而非命令行参数——否则负数坐标(位于
 // 主屏左侧的显示器,X 为负)会被 osascript 当成命令行选项解析(报 illegal option),
 // 导致光标无法移动到左侧显示器。
+// 支持带缓动的动画:传入 SOFTDESK_WARP_FROM_X/FROM_Y 且 ANIMATE=1 时启用。
 const WARP_SCRIPT = `
 ObjC.import('CoreGraphics');
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 function run() {
-  var x = parseFloat($.NSProcessInfo.processInfo.environment.objectForKey('SOFTDESK_WARP_X').js);
-  var y = parseFloat($.NSProcessInfo.processInfo.environment.objectForKey('SOFTDESK_WARP_Y').js);
+  var env = $.NSProcessInfo.processInfo.environment;
+  var x = parseFloat(env.objectForKey('SOFTDESK_WARP_X').js);
+  var y = parseFloat(env.objectForKey('SOFTDESK_WARP_Y').js);
   if (isNaN(x) || isNaN(y)) return 'skip';
+
+  var animate = env.objectForKey('SOFTDESK_WARP_ANIMATE');
+  if (!animate || animate.js !== '1') {
+    $.CGWarpMouseCursorPosition($.CGPointMake(x, y));
+    return 'ok';
+  }
+
+  var fromX = parseFloat(env.objectForKey('SOFTDESK_WARP_FROM_X').js);
+  var fromY = parseFloat(env.objectForKey('SOFTDESK_WARP_FROM_Y').js);
+  if (isNaN(fromX) || isNaN(fromY)) {
+    $.CGWarpMouseCursorPosition($.CGPointMake(x, y));
+    return 'ok';
+  }
+
+  var durationMs = 350;
+  var durationEnv = env.objectForKey('SOFTDESK_WARP_DURATION_MS');
+  if (durationEnv && durationEnv.js) {
+    var parsedDur = parseFloat(durationEnv.js);
+    if (!isNaN(parsedDur) && parsedDur > 0) durationMs = parsedDur;
+  }
+  var intervalMs = 8;
+  var steps = Math.max(1, Math.round(durationMs / intervalMs));
+  for (var i = 1; i <= steps; i++) {
+    var t = easeOutCubic(i / steps);
+    var cx = fromX + (x - fromX) * t;
+    var cy = fromY + (y - fromY) * t;
+    $.CGWarpMouseCursorPosition($.CGPointMake(cx, cy));
+    $.NSThread.sleepForTimeInterval(intervalMs / 1000);
+  }
   $.CGWarpMouseCursorPosition($.CGPointMake(x, y));
   return 'ok';
 }
@@ -106,17 +138,34 @@ export async function getAppWindowBounds(appPath: string): Promise<AppWindowBoun
   }
 }
 
-/** 把鼠标瞬移到全局坐标 (x, y);非 macOS 或失败时静默忽略。 */
-export async function warpCursor(x: number, y: number): Promise<void> {
+export interface WarpCursorOptions {
+  fromX?: number;
+  fromY?: number;
+  animate?: boolean;
+  durationMs?: number;
+}
+
+/**
+ * 把鼠标移动到全局坐标 (x, y);非 macOS 或失败时静默忽略。
+ * 若传入 fromX/fromY 且 animate 为 true,则以 easeOutCubic 缓动动画移动光标。
+ */
+export async function warpCursor(x: number, y: number, opts: WarpCursorOptions = {}): Promise<void> {
   if (process.platform !== 'darwin') return;
   try {
-    await execFileAsync('osascript', ['-l', 'JavaScript', '-e', WARP_SCRIPT], {
-      env: {
-        ...process.env,
-        SOFTDESK_WARP_X: String(Math.round(x)),
-        SOFTDESK_WARP_Y: String(Math.round(y)),
-      },
-    });
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      SOFTDESK_WARP_X: String(Math.round(x)),
+      SOFTDESK_WARP_Y: String(Math.round(y)),
+    };
+    if (opts.animate && opts.fromX != null && opts.fromY != null) {
+      env.SOFTDESK_WARP_ANIMATE = '1';
+      env.SOFTDESK_WARP_FROM_X = String(Math.round(opts.fromX));
+      env.SOFTDESK_WARP_FROM_Y = String(Math.round(opts.fromY));
+      if (opts.durationMs != null && opts.durationMs > 0) {
+        env.SOFTDESK_WARP_DURATION_MS = String(opts.durationMs);
+      }
+    }
+    await execFileAsync('osascript', ['-l', 'JavaScript', '-e', WARP_SCRIPT], { env });
   } catch (err) {
     logger.error('warpCursor failed:', err);
   }
