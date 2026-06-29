@@ -40,7 +40,7 @@ interface CardWrapperProps {
   onDragEnter?: () => void;
   onDragEnd?: () => void;
   onDrop?: () => void;
-  children?: React.ReactNode;
+  extraActions?: React.ReactNode;
 }
 
 function CardWrapper({
@@ -55,7 +55,7 @@ function CardWrapper({
   onDragEnter,
   onDragEnd,
   onDrop,
-  children,
+  extraActions,
 }: CardWrapperProps) {
   return (
     <div
@@ -115,7 +115,7 @@ function CardWrapper({
           )}
         </button>
       )}
-      <SoftwareCard software={software} />
+      <SoftwareCard software={software} extraActions={extraActions} />
       {selectMode && (
         <button
           type="button"
@@ -128,7 +128,6 @@ function CardWrapper({
         />
       )}
       {sortMode && <div className="absolute inset-0 z-10" aria-hidden="true" />}
-      {!selectMode && !sortMode && children}
     </div>
   );
 }
@@ -423,9 +422,8 @@ function GroupSection({
                     setOverId(null);
                   }}
                   onDrop={() => handleDrop(sw.id)}
-                >
-                  {!selectMode && (
-                    <div className="absolute top-2 right-10 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                  extraActions={
+                    !selectMode ? (
                       <div className="relative">
                         <button
                           onMouseDown={(e) => e.stopPropagation()}
@@ -470,9 +468,9 @@ function GroupSection({
                           </div>
                         )}
                       </div>
-                    </div>
-                  )}
-                </CardWrapper>
+                    ) : undefined
+                  }
+                />
               ))}
             </div>
           ) : (
@@ -960,9 +958,8 @@ export function Favorites() {
                             setUngroupedOverId(null);
                           }}
                           onDrop={() => handleUngroupedDrop(sw.id)}
-                        >
-                          {!selectMode && favoriteGroups.length > 0 && (
-                            <div className="absolute top-2 right-10 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                          extraActions={
+                            !selectMode && favoriteGroups.length > 0 ? (
                               <div className="relative">
                                 <button
                                   onClick={(e) => {
@@ -992,9 +989,9 @@ export function Favorites() {
                                   </div>
                                 )}
                               </div>
-                            </div>
-                          )}
-                        </CardWrapper>
+                            ) : undefined
+                          }
+                        />
                       ))}
                     </div>
                   )}
