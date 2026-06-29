@@ -25,6 +25,7 @@ export default defineConfig({
       input: {
         main: path.join(__dirname, 'index.html'),
         radial: path.join(__dirname, 'radial.html'),
+        animation: path.join(__dirname, 'animation.html'),
       },
       output: {
         manualChunks(id) {
