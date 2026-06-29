@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, memo } from 'react';
-import { Play, Clock, HardDrive, Download, Trash2, RotateCcw, Star } from 'lucide-react';
+import { Play, Clock, HardDrive, Download, Trash2, RotateCcw, Star, Target } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CATEGORIES } from '@/data/categories';
 import type { Software } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
+import { useSettingsStore } from '@/stores/settings.store';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
 import { AppIcon } from './AppIcon';
 import { SoftwareCardTooltip } from './SoftwareCardTooltip';
@@ -18,6 +19,114 @@ interface SoftwareCardProps {
 
 export function SoftwareCard({ software, variant = 'default', context = 'library' }: SoftwareCardProps) {
   return <SoftwareCardImpl software={software} variant={variant} context={context} />;
+}
+
+function RadialSlotPicker({ software, className }: { software: Software; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const radial = useSettingsStore((s) => s.radial);
+  const setRadialItem = useSettingsStore((s) => s.setRadialItem);
+  const softwareList = useSoftwareStore((s) => s.software);
+  const workflows = useSoftwareStore((s) => s.workflows);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
+  const navigate = useNavigate();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!loggedIn) {
+      navigate('/account');
+      return;
+    }
+    setOpen((v) => !v);
+  };
+
+  const handlePick = (slot: number) => {
+    setRadialItem(slot, {
+      type: 'app',
+      targetId: software.id,
+      name: software.name,
+      icon: software.icon,
+      color: software.color,
+    });
+    setOpen(false);
+  };
+
+  const softwareById = new Map(softwareList.map((s) => [s.id, s]));
+  const workflowById = new Map(workflows.map((w) => [w.id, w]));
+
+  const labelFor = (targetId: string, type: 'app' | 'workflow') => {
+    if (type === 'app') return softwareById.get(targetId)?.name ?? '(已卸载)';
+    return workflowById.get(targetId)?.name ?? '(已删除)';
+  };
+
+  const isInRadial = radial.items.some((it) => it.type === 'app' && it.targetId === software.id);
+
+  return (
+    <div className={cn('relative', className)}>
+      <button
+        onClick={handleToggle}
+        className={cn(
+          'p-1.5 rounded-lg transition-all duration-200',
+          isInRadial ? 'text-violet-400 hover:text-violet-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
+        )}
+        title={isInRadial ? '已加入径向菜单' : '发送到径向菜单'}
+      >
+        <Target className="w-4 h-4" />
+      </button>
+      {open && (
+        <div
+          ref={panelRef}
+          className="absolute top-full right-0 mt-2 z-30 w-56 rounded-xl bg-slate-900 border border-slate-700/80 shadow-xl shadow-black/40 p-3"
+        >
+          <div className="text-xs font-medium text-slate-300 mb-2">选择扇区</div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {Array.from({ length: radial.sectors }).map((_, slot) => {
+              const item = radial.items.find((it) => it.slot === slot);
+              const isCurrent = item?.type === 'app' && item.targetId === software.id;
+              return (
+                <button
+                  key={slot}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handlePick(slot);
+                  }}
+                  className={cn(
+                    'relative flex flex-col items-center justify-center rounded-lg p-1.5 text-[10px] transition-colors border',
+                    isCurrent
+                      ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
+                      : item
+                        ? 'bg-slate-800/60 border-slate-700/50 text-slate-400 hover:bg-slate-700/60'
+                        : 'bg-slate-800/30 border-slate-700/40 text-slate-500 hover:bg-slate-800/60 hover:text-slate-300'
+                  )}
+                  title={item ? labelFor(item.targetId, item.type) : '空扇区'}
+                >
+                  <span className={cn('font-semibold', isCurrent && 'text-violet-300')}>{slot + 1}</span>
+                  <span className="truncate max-w-full mt-0.5 leading-tight">
+                    {item ? labelFor(item.targetId, item.type).slice(0, 4) : '+'}
+                  </span>
+                  {isCurrent && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-violet-400" />}
+                </button>
+              );
+            })}
+          </div>
+          {isInRadial && (
+            <div className="mt-2 text-[10px] text-slate-500 text-center">该应用已在径向菜单中</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'default', context = 'library' }: SoftwareCardProps) {
@@ -232,17 +341,20 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
   if (variant === 'compact') {
     return (
       <div ref={wrapperRef} className="relative group/card">
-        <button
-          onClick={handleFavoriteClick}
-          className={cn(
-            'absolute top-1.5 right-1.5 z-10 p-1 rounded-md transition-all duration-200 opacity-0 group-hover/card:opacity-100',
-            isFavorite ? 'opacity-100' : '',
-            isFavorite ? 'text-amber-400 hover:text-amber-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
-          )}
-          title={isFavorite ? '取消收藏' : loggedIn ? '收藏' : '请先登录后收藏'}
-        >
-          <Star className={cn('w-3 h-3', isFavorite && 'fill-amber-400')} />
-        </button>
+        <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-0.5 transition-all duration-200 opacity-0 group-hover/card:opacity-100">
+          <RadialSlotPicker software={software} />
+          <button
+            onClick={handleFavoriteClick}
+            className={cn(
+              'p-1 rounded-md transition-all duration-200',
+              isFavorite ? 'opacity-100' : '',
+              isFavorite ? 'text-amber-400 hover:text-amber-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
+            )}
+            title={isFavorite ? '取消收藏' : loggedIn ? '收藏' : '请先登录后收藏'}
+          >
+            <Star className={cn('w-3 h-3', isFavorite && 'fill-amber-400')} />
+          </button>
+        </div>
         <SoftwareCardTooltip software={software}>
           <button
             onClick={handleClick}
@@ -272,17 +384,20 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
   if (variant === 'large') {
     return (
       <div ref={wrapperRef} className="relative group/card">
-        <button
-          onClick={handleFavoriteClick}
-          className={cn(
-            'absolute top-2 right-2 z-10 p-1.5 rounded-lg transition-all duration-200 opacity-0 group-hover/card:opacity-100',
-            isFavorite ? 'opacity-100' : '',
-            isFavorite ? 'text-amber-400 hover:text-amber-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
-          )}
-          title={isFavorite ? '取消收藏' : loggedIn ? '收藏' : '请先登录后收藏'}
-        >
-          <Star className={cn('w-4 h-4', isFavorite && 'fill-amber-400')} />
-        </button>
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-0.5 transition-all duration-200 opacity-0 group-hover/card:opacity-100">
+          <RadialSlotPicker software={software} />
+          <button
+            onClick={handleFavoriteClick}
+            className={cn(
+              'p-1.5 rounded-lg transition-all duration-200',
+              isFavorite ? 'opacity-100' : '',
+              isFavorite ? 'text-amber-400 hover:text-amber-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
+            )}
+            title={isFavorite ? '取消收藏' : loggedIn ? '收藏' : '请先登录后收藏'}
+          >
+            <Star className={cn('w-4 h-4', isFavorite && 'fill-amber-400')} />
+          </button>
+        </div>
         <SoftwareCardTooltip software={software}>
           <button
             onClick={handleClick}
@@ -352,17 +467,20 @@ const SoftwareCardImpl = memo(function SoftwareCardImpl({ software, variant = 'd
 
   return (
     <div ref={wrapperRef} className="relative group/card">
-      <button
-        onClick={handleFavoriteClick}
-        className={cn(
-          'absolute top-2 right-2 z-10 p-1.5 rounded-lg transition-all duration-200 opacity-0 group-hover/card:opacity-100',
-          isFavorite ? 'opacity-100' : '',
-          isFavorite ? 'text-amber-400 hover:text-amber-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
-        )}
-        title={isFavorite ? '取消收藏' : loggedIn ? '收藏' : '请先登录后收藏'}
-      >
-        <Star className={cn('w-4 h-4', isFavorite && 'fill-amber-400')} />
-      </button>
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-0.5 transition-all duration-200 opacity-0 group-hover/card:opacity-100">
+        <RadialSlotPicker software={software} />
+        <button
+          onClick={handleFavoriteClick}
+          className={cn(
+            'p-1.5 rounded-lg transition-all duration-200',
+            isFavorite ? 'opacity-100' : '',
+            isFavorite ? 'text-amber-400 hover:text-amber-300' : 'text-slate-600 hover:text-slate-300 hover:bg-slate-800/60'
+          )}
+          title={isFavorite ? '取消收藏' : loggedIn ? '收藏' : '请先登录后收藏'}
+        >
+          <Star className={cn('w-4 h-4', isFavorite && 'fill-amber-400')} />
+        </button>
+      </div>
       <SoftwareCardTooltip software={software}>
         <button
           onClick={handleClick}
