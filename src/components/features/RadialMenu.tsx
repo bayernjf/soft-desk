@@ -10,6 +10,8 @@ interface RadialState {
   cursor: { x: number; y: number };
   sectors: number;
   items: RadialRenderItem[];
+  showRecent: boolean;
+  recentItems: RadialRenderItem[];
 }
 
 function polar(cx: number, cy: number, r: number, angleDeg: number) {
@@ -59,7 +61,13 @@ export function RadialMenu() {
     const bridge = window.softdesk;
     if (!bridge?.onOpenRadial) return;
     const unsub = bridge.onOpenRadial((payload: RadialOpenPayload) => {
-      setState({ cursor: payload.cursor, sectors: payload.sectors, items: payload.items });
+      setState({
+        cursor: payload.cursor,
+        sectors: payload.sectors,
+        items: payload.items,
+        showRecent: !!payload.showRecent,
+        recentItems: payload.recentItems ?? [],
+      });
       setActive(null);
       setMounted(false);
       setPage(0);
@@ -105,10 +113,14 @@ export function RadialMenu() {
   }, []);
 
   // 页面切换动画状态机
+  // 翻页时 page 索引在 pageOrder 上前进/后退,环绕循环
   useEffect(() => {
     if (animPhase === 'out') {
       const t = setTimeout(() => {
-        setPage((p) => (p + wheelDirRef.current + 2) % 2);
+        setPage((p) => {
+          const len = pageOrderRef.current.length || 1;
+          return (p + wheelDirRef.current + len) % len;
+        });
         setAnimPhase('switch');
       }, 220);
       return () => clearTimeout(t);
@@ -130,20 +142,45 @@ export function RadialMenu() {
   const sectorAngle = state ? 360 / state.sectors : 0;
   const centerAngleOf = (slot: number) => slot * sectorAngle - 90;
 
-  const hasPage2 = useMemo(() => {
-    if (!state) return false;
-    return state.items.some((it) => it.slot >= state.sectors);
+  // 可用页码列表(按显示/滚动顺序排列):
+  //   - 开启「最近使用」且有数据时,最近使用页排在最前,作为唤出菜单的默认页;
+  //     向下滚轮(deltaY>0,dir=+1)依次进入 第一页 → 第二页(若有) → 回到 最近使用,循环切换。
+  //   - 未开启或无最近使用数据时,顺序为 第一页 → 第二页(若有)。
+  //   - 第二页 items 全为空时直接跳过(不入列)。
+  type PageKey = 'p0' | 'p1' | 'recent';
+  const pageOrder = useMemo<PageKey[]>(() => {
+    if (!state) return ['p0'];
+    const hasP1 = state.items.some((it) => it.slot >= state.sectors);
+    const hasRecent = state.showRecent && state.recentItems.length > 0;
+    const order: PageKey[] = [];
+    if (hasRecent) order.push('recent');
+    order.push('p0');
+    if (hasP1) order.push('p1');
+    return order;
   }, [state]);
+
+  // 用 ref 让动画 setTimeout 回调拿到最新的 pageOrder 长度
+  const pageOrderRef = useRef<PageKey[]>(['p0']);
+  useEffect(() => {
+    pageOrderRef.current = pageOrder;
+    // 若当前页号超出范围(切换扇区数或关闭最近使用导致),回退到首页
+    if (page >= pageOrder.length) setPage(0);
+  }, [pageOrder, page]);
+
+  const canSwitchPage = pageOrder.length > 1;
+  const currentPageKey: PageKey = pageOrder[page] ?? 'p0';
 
   const currentItems = useMemo(() => {
     if (!state) return [];
+    if (currentPageKey === 'recent') {
+      // 最近使用页的 slot 已经是 0..sectors-1,无需取模
+      return state.recentItems;
+    }
+    const pageNum = currentPageKey === 'p0' ? 0 : 1;
     return state.items
-      .filter((it) => {
-        const itemPage = Math.floor(it.slot / state.sectors);
-        return itemPage === page;
-      })
+      .filter((it) => Math.floor(it.slot / state.sectors) === pageNum)
       .map((it) => ({ ...it, slot: it.slot % state.sectors }));
-  }, [state, page]);
+  }, [state, currentPageKey]);
 
   const itemBySlot = useMemo(() => {
     const map = new Map<number, RadialRenderItem>();
@@ -199,13 +236,42 @@ export function RadialMenu() {
     launchSlot(slotAt(e.clientX, e.clientY));
   };
 
-  // 滚轮切换页面:向下滑(顺时针)切下一页,向上滑(逆时针)切上一页
-  // 累积 deltaY 超过阈值才触发一次,触发后进入 cooldown 忽略后续事件,
-  // 解决触控板双指大滑动时连续触发多次翻页的问题。
+  // 判别当前 wheel 事件来自鼠标滚轮还是触控板:
+  //   - 鼠标滚轮:deltaY 通常为 100/120 等较大整数,deltaMode 偶尔为 LINE(1)
+  //   - 触控板:deltaY 多为小浮点(经常带小数),持续高频派发,deltaMode 总是 PIXEL(0)
+  // 业界(Figma/Excalidraw/Notion)通行的启发式:
+  //   1) deltaY 为非整数 → 触控板
+  //   2) wheelDeltaY(Chromium 私有)不是 120 的倍数 → 触控板
+  //   3) |deltaY| < 50 且 deltaMode=0 → 触控板
+  function isTouchpadWheel(e: WheelEvent): boolean {
+    if (e.deltaY !== Math.floor(e.deltaY)) return true;
+    const wd = (e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY;
+    if (typeof wd === 'number' && wd !== 0 && wd % 120 !== 0) return true;
+    if (e.deltaMode === 0 && Math.abs(e.deltaY) > 0 && Math.abs(e.deltaY) < 50) return true;
+    return false;
+  }
+
+  // 翻页:鼠标滚轮即时触发(每滚一格切一页,不进 cooldown);
+  //       触控板累积 deltaY 超过阈值才切一次,触发后 cooldown 期内忽略,
+  //       避免双指大滑动一次切多页。
   const onWheel = (e: React.WheelEvent) => {
-    if (!hasPage2 || wheelCooldownRef.current) return;
+    if (!canSwitchPage) return;
     e.preventDefault();
 
+    const touchpad = isTouchpadWheel(e.nativeEvent);
+
+    if (!touchpad) {
+      // 鼠标滚轮:每次有效事件立即触发一次翻页。
+      // 仅在上一次动画未完成时短暂忽略,确保动画状态机不被打断。
+      if (animPhase !== 'idle') return;
+      wheelDirRef.current = e.deltaY > 0 ? 1 : -1;
+      wheelAccumRef.current = 0;
+      setAnimPhase('out');
+      return;
+    }
+
+    // 触控板:累积 + 阈值 + cooldown
+    if (wheelCooldownRef.current) return;
     wheelAccumRef.current += e.deltaY;
 
     if (wheelIdleTimerRef.current) {
@@ -403,7 +469,13 @@ export function RadialMenu() {
                 fill="rgba(148,163,184,0.7)"
                 style={{ pointerEvents: 'none' }}
               >
-                {hasPage2 ? (page === 0 ? '第一页' : '第二页') : 'ESC'}
+                {canSwitchPage
+                  ? currentPageKey === 'recent'
+                    ? '最近使用'
+                    : currentPageKey === 'p0'
+                      ? '第一页'
+                      : '第二页'
+                  : 'ESC'}
               </text>
             );
           })()}
