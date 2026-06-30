@@ -70,6 +70,7 @@ const DEFAULT_RADIAL: RadialMenuConfig = {
   mouseWheelToggle: false,
   sectors: 6,
   items: [],
+  showRecent: false,
 };
 
 /** 把渲染层 radial 配置 resolve(补 name/icon/path)后同步进主进程。
@@ -292,6 +293,10 @@ export const useSettingsStore = create<SettingsStore>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
+          // 兼容旧版本持久化(没有 showRecent 字段)
+          if (typeof state.radial.showRecent !== 'boolean') {
+            state.radial = { ...state.radial, showRecent: false };
+          }
           applyTheme(state.theme);
           state.hydrateAiProviders();
         }
