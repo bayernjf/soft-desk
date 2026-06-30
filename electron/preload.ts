@@ -86,6 +86,7 @@ contextBridge.exposeInMainWorld('softdesk', {
       items: unknown[];
       showRecent?: boolean;
       recentItems?: unknown[];
+      style?: string;
     }) => void
   ) => {
     const handler = (
@@ -96,6 +97,7 @@ contextBridge.exposeInMainWorld('softdesk', {
         items: unknown[];
         showRecent?: boolean;
         recentItems?: unknown[];
+        style?: string;
       }
     ) => callback(payload);
     ipcRenderer.on('radial:open', handler);

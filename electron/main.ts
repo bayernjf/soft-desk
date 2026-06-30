@@ -165,8 +165,26 @@ interface RadialConfigState {
   items: RadialSyncItem[];
   /** 是否启用「最近使用」页 */
   showRecent: boolean;
+  /** 视觉风格(透传给径向窗口);未知值会被重置为 'default' */
+  style: 'default' | 'glass' | 'neumorph' | 'neon' | 'material' | 'minimal';
   /** 全量可用应用目录(仅 showRecent=true 时由渲染层下发),供 open 时挑 top-N */
   appCatalog: RadialSyncItem[];
+}
+
+const VALID_RADIAL_STYLES: RadialConfigState['style'][] = [
+  'default',
+  'glass',
+  'neumorph',
+  'neon',
+  'material',
+  'minimal',
+];
+
+function normalizeRadialStyle(raw: unknown): RadialConfigState['style'] {
+  return typeof raw === 'string' &&
+    (VALID_RADIAL_STYLES as string[]).includes(raw)
+    ? (raw as RadialConfigState['style'])
+    : 'default';
 }
 
 const DEFAULT_RADIAL_CONFIG: RadialConfigState = {
@@ -176,6 +194,7 @@ const DEFAULT_RADIAL_CONFIG: RadialConfigState = {
   sectors: 6,
   items: [],
   showRecent: false,
+  style: 'default',
   appCatalog: [],
 };
 
@@ -203,6 +222,7 @@ function loadRadialConfig(): void {
       sectors: typeof parsed.sectors === 'number' ? parsed.sectors : DEFAULT_RADIAL_CONFIG.sectors,
       items: Array.isArray(parsed.items) ? (parsed.items as RadialSyncItem[]) : [],
       showRecent: typeof parsed.showRecent === 'boolean' ? parsed.showRecent : DEFAULT_RADIAL_CONFIG.showRecent,
+      style: normalizeRadialStyle(parsed.style),
       appCatalog: Array.isArray(parsed.appCatalog) ? (parsed.appCatalog as RadialSyncItem[]) : [],
     };
   } catch {
@@ -520,6 +540,7 @@ function openRadial(atCenter = false): void {
       items: radialRenderItems(),
       showRecent: radialConfig.showRecent,
       recentItems: radialRecentItems(),
+      style: radialConfig.style,
     });
   };
 
@@ -913,6 +934,7 @@ ipcMain.handle('radial:syncConfig', (_event, raw: unknown) => {
     sectors: typeof input.sectors === 'number' ? input.sectors : radialConfig.sectors,
     items: Array.isArray(input.items) ? (input.items as RadialSyncItem[]) : [],
     showRecent: typeof input.showRecent === 'boolean' ? input.showRecent : radialConfig.showRecent,
+    style: input.style !== undefined ? normalizeRadialStyle(input.style) : radialConfig.style,
     // appCatalog 仅在 showRecent=true 时由渲染层下发;关闭则清空以节省落盘体积
     appCatalog:
       typeof input.showRecent === 'boolean' && !input.showRecent
