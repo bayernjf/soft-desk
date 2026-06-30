@@ -46,6 +46,14 @@ export function RadialMenu() {
   const [animPhase, setAnimPhase] = useState<AnimPhase>('idle');
   const wheelDirRef = useRef(1);
 
+  // 滚轮/触控板翻页防抖
+  const WHEEL_THRESHOLD = 60;
+  const WHEEL_COOLDOWN = 800;
+  const wheelAccumRef = useRef(0);
+  const wheelCooldownRef = useRef(false);
+  const wheelIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wheelCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // 监听主进程的 radial:open 推送
   useEffect(() => {
     const bridge = window.softdesk;
@@ -73,6 +81,10 @@ export function RadialMenu() {
         setMounted(false);
         setPage(0);
         setAnimPhase('idle');
+        wheelAccumRef.current = 0;
+        wheelCooldownRef.current = false;
+        if (wheelIdleTimerRef.current) clearTimeout(wheelIdleTimerRef.current);
+        if (wheelCooldownTimerRef.current) clearTimeout(wheelCooldownTimerRef.current);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -188,12 +200,38 @@ export function RadialMenu() {
   };
 
   // 滚轮切换页面:向下滑(顺时针)切下一页,向上滑(逆时针)切上一页
+  // 累积 deltaY 超过阈值才触发一次,触发后进入 cooldown 忽略后续事件,
+  // 解决触控板双指大滑动时连续触发多次翻页的问题。
   const onWheel = (e: React.WheelEvent) => {
-    if (!hasPage2 || animPhase !== 'idle') return;
+    if (!hasPage2 || wheelCooldownRef.current) return;
     e.preventDefault();
-    const dir = e.deltaY > 0 ? 1 : -1;
-    wheelDirRef.current = dir;
-    setAnimPhase('out');
+
+    wheelAccumRef.current += e.deltaY;
+
+    if (wheelIdleTimerRef.current) {
+      clearTimeout(wheelIdleTimerRef.current);
+      wheelIdleTimerRef.current = null;
+    }
+
+    if (Math.abs(wheelAccumRef.current) >= WHEEL_THRESHOLD) {
+      const dir = wheelAccumRef.current > 0 ? 1 : -1;
+      wheelDirRef.current = dir;
+      wheelAccumRef.current = 0;
+      wheelCooldownRef.current = true;
+
+      if (wheelCooldownTimerRef.current) clearTimeout(wheelCooldownTimerRef.current);
+      wheelCooldownTimerRef.current = setTimeout(() => {
+        wheelCooldownRef.current = false;
+        wheelAccumRef.current = 0;
+      }, WHEEL_COOLDOWN);
+
+      setAnimPhase('out');
+      return;
+    }
+
+    wheelIdleTimerRef.current = setTimeout(() => {
+      wheelAccumRef.current = 0;
+    }, 150);
   };
 
   const isAnimating = animPhase !== 'idle';
