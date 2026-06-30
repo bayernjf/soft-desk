@@ -84,11 +84,19 @@ contextBridge.exposeInMainWorld('softdesk', {
       cursor: { x: number; y: number };
       sectors: number;
       items: unknown[];
+      showRecent?: boolean;
+      recentItems?: unknown[];
     }) => void
   ) => {
     const handler = (
       _e: unknown,
-      payload: { cursor: { x: number; y: number }; sectors: number; items: unknown[] }
+      payload: {
+        cursor: { x: number; y: number };
+        sectors: number;
+        items: unknown[];
+        showRecent?: boolean;
+        recentItems?: unknown[];
+      }
     ) => callback(payload);
     ipcRenderer.on('radial:open', handler);
     return () => ipcRenderer.removeListener('radial:open', handler);
@@ -97,6 +105,7 @@ contextBridge.exposeInMainWorld('softdesk', {
     ipcRenderer.invoke('radial:launch', input),
   radialClose: () => ipcRenderer.invoke('radial:close'),
   radialGetItems: () => ipcRenderer.invoke('radial:getItems'),
+  radialGetRecent: () => ipcRenderer.invoke('radial:getRecent'),
   radialSyncConfig: (config: unknown) => ipcRenderer.invoke('radial:syncConfig', config),
   radialPreview: () => ipcRenderer.invoke('radial:preview'),
 });

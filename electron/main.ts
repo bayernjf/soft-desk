@@ -3,6 +3,7 @@ import path from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import * as childProcess from 'node:child_process';
 import { scanInstalledApps, applyAiCategories, startAppWatcher, stopAppWatcher, type ScannedApp, type ScannedCategory } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
 import { getStats, getUsageSummary, getCoUsage, getCoUsageBySegment, getHourlyUsage, getSegmentUsageByApp, recordLaunch, closeDb } from './database';
@@ -152,6 +153,8 @@ interface RadialSyncItem {
   workflowPaths?: string[];
   /** 跨设备本机不可用(未安装等):渲染层灰显,启动时拒绝 */
   unavailable?: boolean;
+  /** 仅 appCatalog 项使用:用于按最近使用倒序选取 top-N */
+  lastUsed?: string;
 }
 
 interface RadialConfigState {
@@ -160,6 +163,10 @@ interface RadialConfigState {
   mouseWheelToggle: boolean;
   sectors: number;
   items: RadialSyncItem[];
+  /** 是否启用「最近使用」页 */
+  showRecent: boolean;
+  /** 全量可用应用目录(仅 showRecent=true 时由渲染层下发),供 open 时挑 top-N */
+  appCatalog: RadialSyncItem[];
 }
 
 const DEFAULT_RADIAL_CONFIG: RadialConfigState = {
@@ -168,6 +175,8 @@ const DEFAULT_RADIAL_CONFIG: RadialConfigState = {
   mouseWheelToggle: false,
   sectors: 6,
   items: [],
+  showRecent: false,
+  appCatalog: [],
 };
 
 let radialConfig: RadialConfigState = { ...DEFAULT_RADIAL_CONFIG };
@@ -193,6 +202,8 @@ function loadRadialConfig(): void {
           : DEFAULT_RADIAL_CONFIG.mouseWheelToggle,
       sectors: typeof parsed.sectors === 'number' ? parsed.sectors : DEFAULT_RADIAL_CONFIG.sectors,
       items: Array.isArray(parsed.items) ? (parsed.items as RadialSyncItem[]) : [],
+      showRecent: typeof parsed.showRecent === 'boolean' ? parsed.showRecent : DEFAULT_RADIAL_CONFIG.showRecent,
+      appCatalog: Array.isArray(parsed.appCatalog) ? (parsed.appCatalog as RadialSyncItem[]) : [],
     };
   } catch {
     // 首次启动或文件损坏,沿用默认值
@@ -316,6 +327,85 @@ function applyRadialMouse(): void {
   }
 }
 
+// ============ 前台应用 LRU(最近使用页数据源) ============
+// 每 ACTIVE_WIN_POLL_MS 跑一次 macOS 内置 `lsappinfo front` + `lsappinfo info -only bundlepath`,
+// 拿到当前前台应用的 .app 路径。lsappinfo 是系统自带工具,无需任何权限、不弹辅助功能授权窗,
+// 进程开销极低(单次约 5ms)。若路径与队列头不同,unshift 进 LRU,同应用连续聚焦不重复入队。
+const ACTIVE_WIN_POLL_MS = 1500;
+const LRU_MAX = 16;
+let activeWinTimer: ReturnType<typeof setInterval> | null = null;
+let lastForegroundPath: string | null = null;
+/** LRU 队列:队首=刚切到/正在用的应用,队尾=最久未使用 */
+let recentLru: string[] = [];
+
+/** 调用 macOS lsappinfo 取得当前前台应用的 .app bundle 路径。失败返回 null。 */
+function getForegroundAppPath(): Promise<string | null> {
+  return new Promise((resolve) => {
+    // 一步到位:取出 front ASN 的 LSBundlePath 字段
+    const child = childProcess.spawn(
+      '/bin/sh',
+      ['-c', 'lsappinfo info -only bundlepath "$(lsappinfo front)"'],
+      { stdio: ['ignore', 'pipe', 'ignore'] }
+    );
+    let stdout = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf-8');
+    });
+    child.on('error', () => resolve(null));
+    child.on('close', () => {
+      // 输出形如:  "LSBundlePath"="/Applications/Foo.app"
+      const m = /"LSBundlePath"="([^"]+)"/.exec(stdout);
+      resolve(m ? m[1] : null);
+    });
+  });
+}
+
+/** 把一个前台 path 推进 LRU。不在 appCatalog 中的路径(SoftDesk 不识别)直接忽略。 */
+function pushRecent(rawPath: string | null | undefined): void {
+  if (!rawPath) return;
+  // 兼容 .app/Contents/MacOS/xxx 类可执行路径,截回到 .app bundle 路径
+  const m = /^(.+?\.app)(\/|$)/.exec(rawPath);
+  const appPath = m ? m[1] : rawPath;
+
+  // 必须在 appCatalog 中(SoftDesk 扫描到 + 可用)才计入
+  const known = radialConfig.appCatalog.some((it) => it.appPath === appPath);
+  if (!known) return;
+
+  if (recentLru[0] === appPath) return;
+  recentLru = [appPath, ...recentLru.filter((p) => p !== appPath)];
+  if (recentLru.length > LRU_MAX) recentLru.length = LRU_MAX;
+}
+
+async function pollActiveWindow(): Promise<void> {
+  try {
+    const fgPath = await getForegroundAppPath();
+    if (fgPath && fgPath !== lastForegroundPath) {
+      lastForegroundPath = fgPath;
+      pushRecent(fgPath);
+    }
+  } catch (err) {
+    logger.error('lsappinfo poll error:', err);
+  }
+}
+
+/** 按 showRecent 启停前台轮询。关闭时清空队列(无意义保留)。 */
+function applyRadialRecentWatcher(): void {
+  const want = radialConfig.enabled && radialConfig.showRecent;
+  if (want && !activeWinTimer) {
+    void pollActiveWindow();
+    activeWinTimer = setInterval(() => {
+      void pollActiveWindow();
+    }, ACTIVE_WIN_POLL_MS);
+    logger.info('radial recent watcher started');
+  } else if (!want && activeWinTimer) {
+    clearInterval(activeWinTimer);
+    activeWinTimer = null;
+    recentLru = [];
+    lastForegroundPath = null;
+    logger.info('radial recent watcher stopped');
+  }
+}
+
 function loadRadialWindow(w: BrowserWindow): void {
   if (VITE_DEV_SERVER_URL) {
     w.loadURL(new URL('radial.html', VITE_DEV_SERVER_URL).toString());
@@ -382,6 +472,32 @@ function radialRenderItems() {
   }));
 }
 
+/** 构造「最近使用」页:
+ *  数据源 = LRU 队列(前台应用切换记录),队首 = 当前/最新一次聚焦的应用。
+ *  - slot 0(12 点钟)= 队首 = 正在/刚切到的应用;
+ *  - slot 1..N-1 顺时针 = 之前依次使用过的应用;
+ *  - LRU 不足 sectors 个时返回少于 sectors 的列表(渲染层留白);
+ *  - 队列里的 appPath 必须能在 appCatalog 找到,否则跳过(应用已被 SoftDesk 删除/卸载)。 */
+function radialRecentItems() {
+  if (!radialConfig.showRecent || recentLru.length === 0) return [];
+  const items: ReturnType<typeof radialRenderItems> = [];
+  for (const appPath of recentLru) {
+    if (items.length >= radialConfig.sectors) break;
+    const entry = radialConfig.appCatalog.find((it) => it.appPath === appPath);
+    if (!entry) continue;
+    items.push({
+      slot: items.length,
+      type: 'app',
+      targetId: entry.targetId,
+      name: entry.name,
+      icon: entry.icon,
+      color: entry.color,
+      unavailable: entry.unavailable,
+    });
+  }
+  return items;
+}
+
 function openRadial(atCenter = false): void {
   const cursor = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursor);
@@ -402,6 +518,8 @@ function openRadial(atCenter = false): void {
       cursor: localCursor,
       sectors: radialConfig.sectors,
       items: radialRenderItems(),
+      showRecent: radialConfig.showRecent,
+      recentItems: radialRecentItems(),
     });
   };
 
@@ -777,6 +895,10 @@ ipcMain.handle('radial:getItems', () => ({
   items: radialRenderItems(),
 }));
 
+// 渲染层查询当前 LRU 最近使用队列(供设置面板的预览面板使用)
+// 返回值与运行时径向菜单的 recentItems 完全一致(同序、同结构)
+ipcMain.handle('radial:getRecent', () => radialRecentItems());
+
 // 渲染层在配置变更时把 resolve 后的完整配置(含 path/icon)同步进来:缓存 + 落盘 + 重注册热键
 ipcMain.handle('radial:syncConfig', (_event, raw: unknown) => {
   if (!raw || typeof raw !== 'object') return { success: false, error: '无效配置' };
@@ -790,10 +912,19 @@ ipcMain.handle('radial:syncConfig', (_event, raw: unknown) => {
         : radialConfig.mouseWheelToggle,
     sectors: typeof input.sectors === 'number' ? input.sectors : radialConfig.sectors,
     items: Array.isArray(input.items) ? (input.items as RadialSyncItem[]) : [],
+    showRecent: typeof input.showRecent === 'boolean' ? input.showRecent : radialConfig.showRecent,
+    // appCatalog 仅在 showRecent=true 时由渲染层下发;关闭则清空以节省落盘体积
+    appCatalog:
+      typeof input.showRecent === 'boolean' && !input.showRecent
+        ? []
+        : Array.isArray(input.appCatalog)
+          ? (input.appCatalog as RadialSyncItem[])
+          : radialConfig.appCatalog,
   };
   persistRadialConfig();
   const hotkeyRegistered = applyRadialHotkey();
   applyRadialMouse();
+  applyRadialRecentWatcher();
   return { success: true, hotkeyRegistered };
 });
 
@@ -807,9 +938,14 @@ ipcMain.handle('radial:launch', async (_event, raw: unknown) => {
   const triggerDisplayId = radialTriggerDisplayId;
   hideRadial();
 
-  const item = radialConfig.items.find(
-    (it) => it.type === input.type && it.targetId === input.targetId
-  );
+  const item =
+    radialConfig.items.find(
+      (it) => it.type === input.type && it.targetId === input.targetId
+    ) ??
+    // 兜底:最近使用页的扇区项不在 items 里,但会出现在 appCatalog
+    (input.type === 'app'
+      ? radialConfig.appCatalog.find((it) => it.targetId === input.targetId)
+      : undefined);
   if (!item) return { success: false, error: '未找到对应扇区配置' };
   if (item.unavailable) return { success: false, error: '该软件在本设备不可用' };
 
@@ -827,6 +963,8 @@ ipcMain.handle('radial:launch', async (_event, raw: unknown) => {
         logger.error('recordLaunch failed:', dbErr);
       }
     }
+    // 主动把该应用推到 LRU 队首,避免等下一次 active-win 轮询(1.5s)才反映出来
+    pushRecent(appPath);
     // 若该软件已有窗口且不在唤出径向菜单的那块显示器,把光标移到目标窗口所在显示器中央
     void relocateCursorToAppWindow(appPath, triggerDisplayId);
     return { success: true };
@@ -1182,6 +1320,21 @@ ipcMain.handle('software:remove', async (_event, appPath: string) => {
   }
 });
 
+// 单实例锁(Single Instance Lock):防止用户双击 Dock 图标 / 从两处不同路径
+// 启动 SoftDesk 时出现多进程并存(共用同一份 userData 会导致 LevelDB 锁冲突
+// 直至 SIGTRAP 崩溃)。第二个实例启动时:
+//   1. requestSingleInstanceLock() 返回 false → 立刻 app.quit() 退出
+//   2. 已运行的首实例收到 'second-instance' 事件 → 唤起主窗口
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // 用户再次启动 / 双击 Dock 图标时,把已有主窗口拉回前台
+    showWindow();
+  });
+}
+
 app.whenReady().then(() => {
   // 显式锁定为常规(ForegroundApplication)激活策略:这是 macOS 台前调度
   // (Stage Manager)纳管 app 窗口的前提。防止 radialWin 等浮层窗口的副作用
@@ -1196,6 +1349,7 @@ app.whenReady().then(() => {
   globalShortcut.register('CommandOrControl+Shift+Space', openLauncher);
   applyRadialHotkey();
   applyRadialMouse();
+  applyRadialRecentWatcher();
   startMonitor();
   // 预创建动画光标窗口(后台加载,不阻塞启动)
   animationCursor = new AnimationCursor();
