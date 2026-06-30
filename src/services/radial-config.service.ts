@@ -11,6 +11,7 @@ interface CloudRadialConfig {
   mouse_wheel_toggle: boolean;
   sectors: number;
   items: RadialItem[];
+  show_recent?: boolean;
   updated_at: string;
 }
 
@@ -22,6 +23,7 @@ function cloudToLocal(row: CloudRadialConfig): RadialMenuConfig {
     mouseWheelToggle: !!row.mouse_wheel_toggle,
     sectors,
     items: Array.isArray(row.items) ? row.items : [],
+    showRecent: !!row.show_recent,
     updatedAt: row.updated_at,
   };
 }
@@ -34,6 +36,7 @@ function localToCloud(userId: string, config: RadialMenuConfig): CloudRadialConf
     mouse_wheel_toggle: config.mouseWheelToggle,
     sectors: config.sectors,
     items: config.items,
+    show_recent: config.showRecent,
     updated_at: config.updatedAt ?? new Date().toISOString(),
   };
 }
