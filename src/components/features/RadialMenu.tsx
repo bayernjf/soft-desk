@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RadialOpenPayload, RadialRenderItem } from '@/types';
+import type { RadialOpenPayload, RadialRenderItem, RadialStyle } from '@/types';
+import { getRadialStyleTokens } from './radial-styles';
 
 const INNER_R = 56;
 const OUTER_R = 140;
@@ -12,6 +13,7 @@ interface RadialState {
   items: RadialRenderItem[];
   showRecent: boolean;
   recentItems: RadialRenderItem[];
+  style: RadialStyle;
 }
 
 function polar(cx: number, cy: number, r: number, angleDeg: number) {
@@ -19,13 +21,24 @@ function polar(cx: number, cy: number, r: number, angleDeg: number) {
   return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
 }
 
-/** 构造一个环形扇区(donut sector)的 SVG path。角度以度为单位,0=正右,顺时针为正(屏幕坐标 y 向下)。 */
-function sectorPath(cx: number, cy: number, startDeg: number, endDeg: number, outerR = OUTER_R) {
-  const oStart = polar(cx, cy, outerR, startDeg);
-  const oEnd = polar(cx, cy, outerR, endDeg);
-  const iEnd = polar(cx, cy, INNER_R, endDeg);
-  const iStart = polar(cx, cy, INNER_R, startDeg);
-  const largeArc = endDeg - startDeg > 180 ? 1 : 0;
+/** 构造一个环形扇区(donut sector)的 SVG path。角度以度为单位,0=正右,顺时针为正(屏幕坐标 y 向下)。
+ *  gapDeg 用于 material 等花瓣风格,两侧各内缩 gapDeg/2 度,在扇区间形成空隙。 */
+function sectorPath(
+  cx: number,
+  cy: number,
+  startDeg: number,
+  endDeg: number,
+  outerR = OUTER_R,
+  gapDeg = 0
+) {
+  const half = gapDeg / 2;
+  const s = startDeg + half;
+  const e = endDeg - half;
+  const oStart = polar(cx, cy, outerR, s);
+  const oEnd = polar(cx, cy, outerR, e);
+  const iEnd = polar(cx, cy, INNER_R, e);
+  const iStart = polar(cx, cy, INNER_R, s);
+  const largeArc = e - s > 180 ? 1 : 0;
   return [
     `M ${oStart.x} ${oStart.y}`,
     `A ${outerR} ${outerR} 0 ${largeArc} 1 ${oEnd.x} ${oEnd.y}`,
@@ -67,6 +80,7 @@ export function RadialMenu() {
         items: payload.items,
         showRecent: !!payload.showRecent,
         recentItems: payload.recentItems ?? [],
+        style: (payload.style as RadialStyle | undefined) ?? 'default',
       });
       setActive(null);
       setMounted(false);
@@ -310,6 +324,10 @@ export function RadialMenu() {
   const animOpacity = animPhase === 'out' || animPhase === 'switch' ? 0.12 : 1;
   const animScale = animPhase === 'out' || animPhase === 'switch' ? 0.9 : 1;
 
+  // 风格 token:radial 窗口默认在深色主题下使用,这里固定 isLight=false。
+  // 设置页预览(浅色)由 RadialMenuSection 自行传 isLight=true。
+  const styleTokens = getRadialStyleTokens(state.style, false);
+
   return (
     <div
       className="fixed inset-0"
@@ -320,6 +338,7 @@ export function RadialMenu() {
       style={{ background: 'transparent' }}
     >
       <svg className="absolute inset-0 w-full h-full overflow-visible">
+        {styleTokens.defs && <defs>{styleTokens.defs(cursor.x, cursor.y)}</defs>}
         <g
           style={{
             transformOrigin: `${cursor.x}px ${cursor.y}px`,
@@ -343,10 +362,18 @@ export function RadialMenu() {
             return (
               <g key={slot}>
                 <path
-                  d={sectorPath(cursor.x, cursor.y, start, end, isActive ? ACTIVE_OUTER_R : OUTER_R)}
-                  fill={isActive ? 'rgba(139,92,246,0.42)' : 'rgba(21,21,28,0.82)'}
-                  stroke={isActive ? 'rgba(167,139,250,0.9)' : 'rgba(148,163,184,0.25)'}
-                  strokeWidth={isActive ? 2 : 1.5}
+                  d={sectorPath(
+                    cursor.x,
+                    cursor.y,
+                    start,
+                    end,
+                    isActive ? ACTIVE_OUTER_R : OUTER_R,
+                    styleTokens.sectorGap
+                  )}
+                  fill={styleTokens.sectorFill(isActive, item?.color)}
+                  stroke={styleTokens.sectorStroke(isActive)}
+                  strokeWidth={styleTokens.sectorStrokeWidth(isActive)}
+                  filter={styleTokens.sectorFilter?.(isActive)}
                   style={{ transition: 'fill 90ms ease-out' }}
                 />
                 {item ? (
@@ -382,7 +409,7 @@ export function RadialMenu() {
                       dominantBaseline="central"
                       fontSize={isActive ? 12 : 11}
                       fontWeight={isActive ? 600 : 400}
-                      fill={isActive ? '#fff' : '#cbd5e1'}
+                      fill={styleTokens.textFill(isActive)}
                       style={{ pointerEvents: 'none' }}
                     >
                       {item.name.length > 7 ? item.name.slice(0, 6) + '…' : item.name}
@@ -395,7 +422,7 @@ export function RadialMenu() {
                     textAnchor="middle"
                     dominantBaseline="central"
                     fontSize={20}
-                    fill="rgba(148,163,184,0.4)"
+                    fill={styleTokens.emptyMarkFill}
                     style={{ pointerEvents: 'none' }}
                   >
                     +
@@ -409,8 +436,8 @@ export function RadialMenu() {
             cx={cursor.x}
             cy={cursor.y}
             r={INNER_R - 2}
-            fill="rgba(21,21,28,0.55)"
-            stroke="rgba(148,163,184,0.2)"
+            fill={styleTokens.centerFill}
+            stroke={styleTokens.centerStroke}
             strokeWidth={1}
           />
           {(() => {
