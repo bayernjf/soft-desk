@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, X, AppWindow, Layers, Keyboard, Mouse, LogIn, Clock } from 'lucide-react';
+import { Play, X, AppWindow, Layers, Keyboard, Mouse, LogIn, Clock, ChevronDown, Check } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { syncRadialToMain } from '@/services/radial.service';
 import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
-import type { RadialItem, RadialRenderItem } from '@/types';
+import type { RadialItem, RadialRenderItem, RadialStyle } from '@/types';
+import { getRadialStyleTokens, RADIAL_STYLE_OPTIONS } from './radial-styles';
 
 const PREVIEW_SIZE = 240;
 const PREVIEW_INNER = 44;
@@ -109,30 +110,24 @@ export function RadialMenuSection() {
 
   // 预览圆环是 SVG,颜色写死无法被 html.light 的工具类覆盖,故按当前主题切换两套配色
   const theme = useSettingsStore((s) => s.theme);
-  const ring = useMemo(() => {
+  const isLightPreview = useMemo(() => {
     void theme; // 依赖 theme,主题切换时重算
-    const isLight =
-      typeof document !== 'undefined' && document.documentElement.classList.contains('light');
-    return isLight
-      ? {
-          sector: 'rgba(155,140,120,0.20)',
-          sectorEditing: 'rgba(124,58,237,0.18)',
-          stroke: 'rgba(124,100,75,0.35)',
-          label: '#3b3127',
-          labelEmpty: '#9b8c78',
-          center: 'rgba(255,253,248,0.92)',
-          centerStroke: 'rgba(124,100,75,0.30)',
-        }
-      : {
-          sector: 'rgba(51,65,85,0.35)',
-          sectorEditing: 'rgba(139,92,246,0.30)',
-          stroke: 'rgba(148,163,184,0.3)',
-          label: '#cbd5e1',
-          labelEmpty: 'rgba(148,163,184,0.5)',
-          center: 'rgba(21,21,28,0.6)',
-          centerStroke: 'rgba(148,163,184,0.2)',
-        };
+    return typeof document !== 'undefined' && document.documentElement.classList.contains('light');
   }, [theme]);
+  // 风格 tokens(预览圆环 + 选中态背景共用),浅/深色由当前主题决定
+  const previewStyle: RadialStyle = radial.style ?? 'default';
+  const previewTokens = useMemo(
+    () => getRadialStyleTokens(previewStyle, isLightPreview),
+    [previewStyle, isLightPreview]
+  );
+
+  // 「风格」下拉栏:形态与 AiModelModal 内的 listbox 一致(button + role=listbox),
+  // 主题适配走 html.light 全局重写,这里只写深色类。
+  const [styleMenuOpen, setStyleMenuOpen] = useState(false);
+  const currentStyleOption = useMemo(
+    () => RADIAL_STYLE_OPTIONS.find((o) => o.value === previewStyle) ?? RADIAL_STYLE_OPTIONS[0],
+    [previewStyle]
+  );
 
   const availableSoftware = useMemo(
     () => software.filter((s) => !s.uninstalled && !s.deleted).sort((a, b) => a.name.localeCompare(b.name)),
@@ -383,6 +378,70 @@ export function RadialMenuSection() {
 
       {radial.enabled && (
         <>
+          {/* 「风格」下拉栏:与「扇区数量」上下排列,放在扇区数量上方;选中后预览圆环立即联动 */}
+          <div className="px-4 py-3">
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">风格</div>
+            <div
+              className="relative w-fit min-w-[200px]"
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setStyleMenuOpen(false);
+              }}
+            >
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={styleMenuOpen}
+                onClick={() => setStyleMenuOpen((o) => !o)}
+                className={cn(
+                  'flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800',
+                  'text-sm text-slate-100 hover:border-slate-700 focus:outline-none focus:border-violet-500/50',
+                  'focus:ring-2 focus:ring-violet-500/20 transition-all min-w-[200px]'
+                )}
+              >
+                <span className="flex flex-col items-start min-w-0 text-left">
+                  <span className="truncate">{currentStyleOption.label}</span>
+                  <span className="text-[10px] text-slate-500 truncate">{currentStyleOption.hint}</span>
+                </span>
+                <ChevronDown className={cn('h-3.5 w-3.5 text-slate-500 transition-transform shrink-0', styleMenuOpen && 'rotate-180')} />
+              </button>
+              {styleMenuOpen && (
+                <div
+                  role="listbox"
+                  className="absolute left-0 top-full z-30 mt-2 w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-1 shadow-2xl shadow-slate-950/50"
+                >
+                  {RADIAL_STYLE_OPTIONS.map((opt) => {
+                    const selected = opt.value === previewStyle;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setRadialConfig({ style: opt.value });
+                          setStyleMenuOpen(false);
+                        }}
+                        className={cn(
+                          'flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors',
+                          selected
+                            ? 'bg-violet-500/20 text-violet-200'
+                            : 'text-slate-300 hover:bg-slate-800/70 hover:text-slate-100'
+                        )}
+                      >
+                        <span className="flex flex-col min-w-0">
+                          <span className="truncate">{opt.label}</span>
+                          <span className="text-[10px] text-slate-500 truncate font-normal">{opt.hint}</span>
+                        </span>
+                        {selected && <Check className="h-3.5 w-3.5 mt-0.5 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="px-4 py-3">
             <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">扇区数量</div>
             <div className="grid grid-cols-3 gap-2 p-1 bg-slate-800/40 rounded-xl w-fit">
@@ -439,6 +498,7 @@ export function RadialMenuSection() {
                 </button>
               </div>
               <svg width={PREVIEW_SIZE} height={PREVIEW_SIZE} className="overflow-visible">
+                {previewTokens.defs && <defs>{previewTokens.defs(cx, cy)}</defs>}
                 {Array.from({ length: radial.sectors }).map((_, slot) => {
                   const center = slot * sectorAngle - 90;
                   const start = center - sectorAngle / 2;
@@ -456,9 +516,10 @@ export function RadialMenuSection() {
                     >
                       <path
                         d={sectorPath(cx, cy, start, end)}
-                        fill={isEditing ? ring.sectorEditing : ring.sector}
-                        stroke={ring.stroke}
-                        strokeWidth={1}
+                        fill={previewTokens.sectorFill(isEditing, item?.color)}
+                        stroke={previewTokens.sectorStroke(isEditing)}
+                        strokeWidth={previewTokens.sectorStrokeWidth(isEditing)}
+                        filter={previewTokens.sectorFilter?.(isEditing)}
                       />
                       <text
                         x={labelPos.x}
@@ -466,14 +527,20 @@ export function RadialMenuSection() {
                         textAnchor="middle"
                         dominantBaseline="central"
                         fontSize={10}
-                        fill={item ? ring.label : ring.labelEmpty}
+                        fill={item ? previewTokens.textFill(isEditing) : previewTokens.emptyMarkFill}
                       >
                         {item ? labelFor(item).slice(0, 5) : previewPage === 'recent' ? '' : '+'}
                       </text>
                     </g>
                   );
                 })}
-                <circle cx={cx} cy={cy} r={PREVIEW_INNER - 2} fill={ring.center} stroke={ring.centerStroke} />
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={PREVIEW_INNER - 2}
+                  fill={previewTokens.centerFill}
+                  stroke={previewTokens.centerStroke}
+                />
                 {previewPage === 'recent' && (
                   <text
                     x={cx}
@@ -482,7 +549,7 @@ export function RadialMenuSection() {
                     dominantBaseline="central"
                     fontSize={11}
                     fontWeight={600}
-                    fill={ring.label}
+                    fill={previewTokens.textFill(false)}
                     style={{ pointerEvents: 'none' }}
                   >
                     最近使用
