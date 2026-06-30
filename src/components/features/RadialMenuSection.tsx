@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, X, AppWindow, Layers, Keyboard, Mouse, LogIn } from 'lucide-react';
+import { Play, X, AppWindow, Layers, Keyboard, Mouse, LogIn, Clock } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { syncRadialToMain } from '@/services/radial.service';
 import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
-import type { RadialItem } from '@/types';
+import type { RadialItem, RadialRenderItem } from '@/types';
 
 const PREVIEW_SIZE = 240;
 const PREVIEW_INNER = 44;
@@ -98,7 +98,11 @@ export function RadialMenuSection() {
   const navigate = useNavigate();
 
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
-  const [previewPage, setPreviewPage] = useState(0);
+  // 勾选「最近使用」时,设置面板默认也停在最近使用页(与运行时行为一致);
+  // 未勾选则保持原行为,默认第一页。
+  const [previewPage, setPreviewPage] = useState<0 | 1 | 'recent'>(() =>
+    useSettingsStore.getState().radial.showRecent ? 'recent' : 0
+  );
   const [recording, setRecording] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const recordBtnRef = useRef<HTMLButtonElement>(null);
@@ -136,8 +140,61 @@ export function RadialMenuSection() {
   );
   const softwareById = useMemo(() => new Map(software.map((s) => [s.id, s])), [software]);
   const workflowById = useMemo(() => new Map(workflows.map((w) => [w.id, w])), [workflows]);
+
+  // 关闭最近使用后若当前停留在该页,自动回退到第一页;
+  // 反之刚勾选最近使用时,自动跳到最近使用页(与运行时的"默认页"保持一致体验)。
+  const prevShowRecentRef = useRef<boolean>(radial.showRecent);
+  useEffect(() => {
+    const prev = prevShowRecentRef.current;
+    if (prev !== radial.showRecent) {
+      if (radial.showRecent) {
+        setPreviewPage('recent');
+        setEditingSlot(null);
+      } else if (previewPage === 'recent') {
+        setPreviewPage(0);
+      }
+      prevShowRecentRef.current = radial.showRecent;
+    }
+  }, [previewPage, radial.showRecent]);
+
+  // 最近使用页的应用列表:从主进程拉 LRU 队列(与运行时径向菜单完全一致)。
+  // 切到该 tab 时每秒轮询一次,使预览实时跟随你切换前台应用的动作。
+  const [recentRenderItems, setRecentRenderItems] = useState<RadialRenderItem[]>([]);
+  useEffect(() => {
+    if (!radial.showRecent || previewPage !== 'recent') return;
+    let cancelled = false;
+    const fetchRecent = async () => {
+      try {
+        const list = (await window.softdesk?.radialGetRecent?.()) ?? [];
+        if (!cancelled) setRecentRenderItems(list);
+      } catch {
+        // 静默:取不到时保留上一次结果
+      }
+    };
+    void fetchRecent();
+    const t = setInterval(fetchRecent, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [radial.showRecent, previewPage, radial.sectors]);
+
   const itemBySlot = useMemo(() => {
     const m = new Map<number, RadialItem>();
+    if (previewPage === 'recent') {
+      // 把主进程下发的 RadialRenderItem 当作 RadialItem 形态填充(只用于展示名称/图标)
+      recentRenderItems.forEach((it, idx) => {
+        m.set(idx, {
+          slot: idx,
+          type: it.type,
+          targetId: it.targetId,
+          name: it.name,
+          icon: it.icon,
+          color: it.color,
+        });
+      });
+      return m;
+    }
     radial.items.forEach((it) => {
       const page = Math.floor(it.slot / radial.sectors);
       const visualSlot = it.slot % radial.sectors;
@@ -146,7 +203,7 @@ export function RadialMenuSection() {
       }
     });
     return m;
-  }, [radial.items, radial.sectors, previewPage]);
+  }, [radial.items, radial.sectors, previewPage, recentRenderItems]);
 
   const cx = PREVIEW_SIZE / 2;
   const cy = PREVIEW_SIZE / 2;
@@ -292,6 +349,38 @@ export function RadialMenuSection() {
         </button>
       </div>
 
+      {/* 添加「最近使用」页:开启后径向菜单在第一/第二页之外追加一个动态页,
+          展示按 lastUsed 倒序的 sectors 个最近启动的应用,翻页循环 第一页→第二页→最近使用。 */}
+      <div className="flex items-start justify-between gap-4 px-4 py-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-slate-300 flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5" /> 添加「最近使用」页
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+            开启后，径向菜单会在第一页/第二页之后追加一个动态页，自动展示最近启动的 {radial.sectors} 个应用
+          </div>
+        </div>
+        <button
+          onClick={() => setRadialConfig({ showRecent: !radial.showRecent })}
+          role="switch"
+          aria-checked={radial.showRecent}
+          aria-label="添加最近使用"
+          disabled={!loggedIn}
+          className={cn(
+            'relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5',
+            radial.showRecent ? 'bg-violet-500' : 'bg-slate-700',
+            !loggedIn && 'opacity-40 cursor-not-allowed'
+          )}
+        >
+          <span
+            className={cn(
+              'absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all',
+              radial.showRecent ? 'left-6' : 'left-1'
+            )}
+          />
+        </button>
+      </div>
+
       {radial.enabled && (
         <>
           <div className="px-4 py-3">
@@ -317,8 +406,19 @@ export function RadialMenuSection() {
           <div className="px-4 py-3 grid sm:grid-cols-[260px_1fr] gap-6 items-start">
             {/* 圆环预览：点扇区进入编辑 */}
             <div className="flex flex-col items-center">
-              {/* 页面切换 */}
+              {/* 页面切换:勾选「最近使用」时把它放到最前,与运行时唤出菜单的默认页保持一致 */}
               <div className="flex items-center gap-1 p-1 bg-slate-800/40 rounded-lg mb-3">
+                {radial.showRecent && (
+                  <button
+                    onClick={() => { setPreviewPage('recent'); setEditingSlot(null); }}
+                    className={cn(
+                      'inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      previewPage === 'recent' ? 'bg-violet-500/20 text-violet-300' : 'text-slate-400 hover:text-slate-300'
+                    )}
+                  >
+                    <Clock className="w-3 h-3" /> 最近使用
+                  </button>
+                )}
                 <button
                   onClick={() => { setPreviewPage(0); setEditingSlot(null); }}
                   className={cn(
@@ -344,10 +444,16 @@ export function RadialMenuSection() {
                   const start = center - sectorAngle / 2;
                   const end = center + sectorAngle / 2;
                   const item = itemBySlot.get(slot);
-                  const isEditing = editingSlot === slot;
+                  const isEditing = editingSlot === slot && previewPage !== 'recent';
                   const labelPos = polar(cx, cy, (PREVIEW_INNER + PREVIEW_OUTER) / 2, center);
+                  // 最近使用页是只读预览,扇区不可点
+                  const clickable = previewPage !== 'recent';
                   return (
-                    <g key={slot} onClick={() => setEditingSlot(slot)} style={{ cursor: 'pointer' }}>
+                    <g
+                      key={slot}
+                      onClick={clickable ? () => setEditingSlot(slot) : undefined}
+                      style={{ cursor: clickable ? 'pointer' : 'default' }}
+                    >
                       <path
                         d={sectorPath(cx, cy, start, end)}
                         fill={isEditing ? ring.sectorEditing : ring.sector}
@@ -362,12 +468,26 @@ export function RadialMenuSection() {
                         fontSize={10}
                         fill={item ? ring.label : ring.labelEmpty}
                       >
-                        {item ? labelFor(item).slice(0, 5) : '+'}
+                        {item ? labelFor(item).slice(0, 5) : previewPage === 'recent' ? '' : '+'}
                       </text>
                     </g>
                   );
                 })}
                 <circle cx={cx} cy={cy} r={PREVIEW_INNER - 2} fill={ring.center} stroke={ring.centerStroke} />
+                {previewPage === 'recent' && (
+                  <text
+                    x={cx}
+                    y={cy}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={11}
+                    fontWeight={600}
+                    fill={ring.label}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    最近使用
+                  </text>
+                )}
               </svg>
               <button
                 onClick={handlePreview}
@@ -379,7 +499,13 @@ export function RadialMenuSection() {
 
             {/* 扇区编辑面板 */}
             <div className="min-w-0">
-              {editingSlot === null ? (
+              {previewPage === 'recent' ? (
+                <div className="text-sm text-slate-500 p-4 rounded-xl bg-slate-800/30 leading-relaxed">
+                  <div className="text-slate-300 font-medium mb-1">最近使用（只读预览）</div>
+                  这一页由系统自动按软件最近使用时间倒序填充，不需要也不可以手动绑定扇区。
+                  关闭上方「添加『最近使用』页」开关即可隐藏该页。
+                </div>
+              ) : editingSlot === null ? (
                 <div className="text-sm text-slate-500 p-4 rounded-xl bg-slate-800/30">
                   点击左侧任一扇区，为它绑定一个应用或工作流
                 </div>
