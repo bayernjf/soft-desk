@@ -1,4 +1,4 @@
-import type { Software, RadialOpenPayload, RadialMenuConfig } from './index';
+import type { Software, RadialOpenPayload, RadialMenuConfig, RadialRenderItem } from './index';
 
 export interface BatchLaunchItem {
   path: string;
@@ -243,6 +243,8 @@ export interface SoftdeskBridge {
   radialClose: () => Promise<void>;
   /** 渲染层主动拉取当前径向菜单配置(冷启动兜底) */
   radialGetItems: () => Promise<RadialMenuConfig>;
+  /** 渲染层查询当前最近使用 LRU 队列(已 resolve 成扇区项,顺序与运行时径向菜单一致) */
+  radialGetRecent: () => Promise<RadialRenderItem[]>;
   /** 渲染层在径向菜单配置变更时把配置同步进主进程并落盘(热键/启用状态/扇区绑定) */
   radialSyncConfig: (
     config: RadialMenuConfig

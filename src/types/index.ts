@@ -92,6 +92,11 @@ export interface RadialOpenPayload {
   cursor: { x: number; y: number };
   sectors: number;
   items: RadialRenderItem[];
+  /** 是否展示「最近使用」页(用户开关) */
+  showRecent?: boolean;
+  /** 最近使用页的扇区项(已按 lastUsed 倒序、不超过 sectors 数);
+   *  slot 取值 0..sectors-1(局部下标,不与 items 复用槽位编码) */
+  recentItems?: RadialRenderItem[];
 }
 
 export interface RadialMenuConfig {
@@ -103,6 +108,8 @@ export interface RadialMenuConfig {
   /** 扇区数量(决定每个扇区角度 = 360/sectors) */
   sectors: 4 | 6 | 8;
   items: RadialItem[];
+  /** 是否在径向菜单中追加「最近使用」页(数据源 Software.lastUsed) */
+  showRecent: boolean;
   /** 最后修改时间(ISO);云同步冲突按时间戳后写胜出 */
   updatedAt?: string;
 }
@@ -117,6 +124,8 @@ export interface RadialSyncItem extends RadialRenderItem {
   appPath?: string;
   /** type==='workflow' 时各子应用的路径 */
   workflowPaths?: string[];
+  /** 仅 appCatalog 项使用:用于主进程按最近使用倒序选取 top-N */
+  lastUsed?: string;
 }
 
 export interface RadialSyncConfig {
@@ -125,4 +134,9 @@ export interface RadialSyncConfig {
   mouseWheelToggle: boolean;
   sectors: number;
   items: RadialSyncItem[];
+  /** 是否在径向菜单中追加「最近使用」页(主进程据此决定 open 时是否构造 recentItems) */
+  showRecent?: boolean;
+  /** 全量已 resolve 的软件目录(类型=app,带 appPath/icon/name),
+   *  仅在 showRecent 为 true 时由渲染层下发,主进程据此挑选 top-N 最近使用 */
+  appCatalog?: RadialSyncItem[];
 }
