@@ -88,6 +88,7 @@ export function resolveRadialConfig(
     sectors: config.sectors,
     items,
     showRecent: config.showRecent,
+    style: config.style ?? 'default',
     // 仅在勾选「最近使用」时下发完整可用应用目录,供主进程在 open 时按 lastUsed 取 top-N
     appCatalog: config.showRecent
       ? software
