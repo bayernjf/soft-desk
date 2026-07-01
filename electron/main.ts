@@ -76,14 +76,23 @@ function parseShareToken(url: string | undefined | null): string | null {
 }
 
 function dispatchShareToken(token: string): void {
+  // 关键: 任何路径都必须先判断 app.isReady()。
+  // 冷启动路径 (macOS 双击深链) 会在 app ready 之前触发 open-url,
+  // 此时直接调用 createWindow() 会抛出 "Cannot create BrowserWindow before app is ready"。
+  // 正确姿势: 先把 token 缓存,等 app.whenReady() 内的初始化流程创建窗口后,
+  // 再由 whenReady 尾部主动 flush 到渲染层。
+  if (!app.isReady()) {
+    pendingShareToken = token;
+    return;
+  }
   if (win && !win.isDestroyed()) {
     showWindow();
     win.webContents.send('deep-link:share', token);
   } else {
-    // 主窗口尚未创建,缓存 token,createWindow 完成后由渲染层拉取
+    // 主窗口尚未创建 (被托盘关闭状态下,通过深链再次唤起):
+    // 缓存 token,新建窗口后再由渲染层拉取
     pendingShareToken = token;
-    if (!win) createWindow();
-    else showWindow();
+    createWindow();
   }
 }
 

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog, CircleDot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings.store';
@@ -7,6 +8,20 @@ import { AiModelsSection } from '@/components/features/AiModelsSection';
 import { RadialMenuSection } from '@/components/features/RadialMenuSection';
 
 type TabId = 'appearance' | 'notifications' | 'radial' | 'data' | 'privacy' | 'ai' | 'help';
+
+const TAB_IDS: readonly TabId[] = [
+  'appearance',
+  'notifications',
+  'radial',
+  'data',
+  'privacy',
+  'ai',
+  'help',
+];
+
+function isTabId(v: string | null): v is TabId {
+  return v !== null && (TAB_IDS as readonly string[]).includes(v);
+}
 
 const tabs = [
   { id: 'appearance' as TabId, icon: Monitor, label: '外观' },
@@ -53,7 +68,33 @@ function Toggle({ checked, onChange, label, description }: ToggleProps) {
 }
 
 export function Settings() {
-  const [activeTab, setActiveTab] = useState<TabId>('appearance');
+  // 支持通过 URL query 深链定位 tab (例如 /settings?tab=radial),
+  // 便于从分享导入成功页 / 通知栏等外部入口直接跳到具体设置分区。
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab: TabId = isTabId(searchParams.get('tab')) ? (searchParams.get('tab') as TabId) : 'appearance';
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+
+  // URL query 变化 (浏览器前进/后退 / 外部再次深链) 时同步 tab
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (isTabId(t) && t !== activeTab) {
+      setActiveTab(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // 侧栏点击切 tab 时,把 URL query 同步更新 (replace 不加历史条目,避免回退地狱)
+  const changeTab = (id: TabId) => {
+    setActiveTab(id);
+    const next = new URLSearchParams(searchParams);
+    if (id === 'appearance') {
+      next.delete('tab');
+    } else {
+      next.set('tab', id);
+    }
+    setSearchParams(next, { replace: true });
+  };
+
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
   const prefs = useSettingsStore((s) => s.prefs);
@@ -84,7 +125,7 @@ export function Settings() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => changeTab(tab.id)}
                 className={cn(
                   'w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-sm font-medium text-left transition-all',
                   activeTab === tab.id

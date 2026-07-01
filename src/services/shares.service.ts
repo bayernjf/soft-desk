@@ -321,26 +321,80 @@ export async function recordImport(
   }
 }
 
+export interface ReportShareResult {
+  success: boolean;
+  /** 已经举报过一次(unique 冲突或前置检查命中),UI 应该置灰按钮 */
+  duplicated?: boolean;
+  error?: string;
+}
+
+/**
+ * 提交举报。举报前必须登录(reporterId 必填, RLS/DB 双重强制)。
+ *
+ * 数据库有 unique(share_id, reporter_id) 约束,同一个用户对同一分享
+ * 只能存在一条举报记录。第二次调用会返回 duplicated=true,UI 侧
+ * 应把举报按钮标灰并提示"你已举报过"。
+ */
 export async function reportShare(
   shareId: number,
   reason: string,
-  reporterId?: string
-): Promise<boolean> {
-  if (!isSupabaseConfigured() || !supabase) return false;
+  reporterId: string
+): Promise<ReportShareResult> {
+  if (!isSupabaseConfigured() || !supabase) {
+    return { success: false, error: '云端未配置' };
+  }
+  if (!reporterId) {
+    return { success: false, error: '请先登录后再举报' };
+  }
   const trimmed = reason.trim();
-  if (!trimmed) return false;
-  if (trimmed.length > 200) return false;
+  if (!trimmed) return { success: false, error: '请填写举报理由' };
+  if (trimmed.length > 200) return { success: false, error: '举报理由不能超过 200 字' };
   try {
     const { error } = await supabase.from('share_reports').insert({
       share_id: shareId,
-      reporter_id: reporterId ?? null,
+      reporter_id: reporterId,
       reason: trimmed,
     });
     if (error) {
+      // 23505 = Postgres unique_violation
+      // 触到就说明该用户之前已经举报过, 数据库层已阻止重复计数
+      if ((error as { code?: string }).code === '23505') {
+        return { success: false, duplicated: true };
+      }
       logger.error('report share error:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : '举报失败',
+    };
+  }
+}
+
+/**
+ * 查询当前用户是否已举报过该分享。
+ * 未登录 / 未确定时统一返回 false, 让 UI 端保持可点击(真正的拦截兜底在数据库 unique 约束)。
+ */
+export async function hasUserReported(
+  shareId: number,
+  reporterId: string | undefined
+): Promise<boolean> {
+  if (!reporterId) return false;
+  if (!isSupabaseConfigured() || !supabase) return false;
+  try {
+    const { data, error } = await supabase
+      .from('share_reports')
+      .select('id')
+      .eq('share_id', shareId)
+      .eq('reporter_id', reporterId)
+      .maybeSingle();
+    if (error) {
+      logger.warn('check reported error:', error.message);
       return false;
     }
-    return true;
+    return !!data;
   } catch {
     return false;
   }

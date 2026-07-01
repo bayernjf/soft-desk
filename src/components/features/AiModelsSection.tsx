@@ -40,12 +40,23 @@ export function AiModelsSection() {
         </button>
       </div>
 
-      <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3.5 py-3">
-        <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-        <p className="text-[11px] text-amber-200/80 leading-relaxed">
-          隐私提示：启用 AI 功能后，智能分类、工作流推荐、语义搜索等会把你的
-          <span className="font-medium text-amber-200">已安装软件清单、使用时长与使用习惯</span>
-          发送到你配置的 AI 服务商进行处理。这些数据不含密码等凭证，且仅发往你选择的服务商；不配置或停用 AI 模型时不会发送任何数据。
+      {/* 隐私提示 banner: 深浅主题都用 amber 系,但通过双 token 保证:
+          - 浅色下: amber-100 底 + amber-300 边 + amber-800/amber-900 文字, 对比度足够
+          - 深色下: amber-500/10 半透明底 + amber-500/20 边 + amber-200 文字 */}
+      <div
+        className={cn(
+          'mb-4 flex items-start gap-2.5 rounded-xl border px-3.5 py-3',
+          'bg-amber-100 border-amber-300',
+          'dark:bg-amber-500/10 dark:border-amber-500/20'
+        )}
+      >
+        <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+        <p className="text-[11px] leading-relaxed text-amber-900 dark:text-amber-200/80">
+          隐私提示：启用 AI 功能后,智能分类、工作流推荐、语义搜索等会把你的
+          <span className="font-semibold text-amber-950 dark:text-amber-200">
+            已安装软件清单、使用时长与使用习惯
+          </span>
+          发送到你配置的 AI 服务商进行处理。这些数据不含密码等凭证,且仅发往你选择的服务商；不配置或停用 AI 模型时不会发送任何数据。
         </p>
       </div>
 

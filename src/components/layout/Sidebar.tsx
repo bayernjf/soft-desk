@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useSearchParams } from 'react-router-dom';
 import { useState } from 'react';
 import {
   LayoutDashboard,
@@ -17,6 +17,7 @@ import {
   Moon,
   Monitor,
   Share2,
+  CircleDot,
 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
@@ -33,11 +34,27 @@ const THEME_OPTIONS: { id: ThemeMode; icon: typeof Sun; label: string }[] = [
   { id: 'system', icon: Monitor, label: '跟随系统' },
 ];
 
-const navItems = [
+interface NavItem {
+  path: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+  /** 自定义激活匹配。默认按 pathname 严格相等匹配;
+   * 对于 `/settings?tab=radial` 这种带 query 的深链项,需要单独判断 pathname+query。*/
+  match?: (pathname: string, tab: string | null) => boolean;
+}
+
+const navItems: NavItem[] = [
   { path: '/', icon: LayoutDashboard, label: '工作台' },
   { path: '/library', icon: Library, label: '软件库' },
   { path: '/favorites', icon: Star, label: '收藏夹' },
   { path: '/workflows', icon: Workflow, label: '工作流' },
+  {
+    path: '/settings?tab=radial',
+    icon: CircleDot,
+    label: '径向菜单',
+    // 用户当前正处于"设置 > 径向菜单"tab 时才高亮
+    match: (pathname, tab) => pathname === '/settings' && tab === 'radial',
+  },
   { path: '/my-shares', icon: Share2, label: '我的分享' },
   { path: '/statistics', icon: BarChart3, label: '统计分析' },
   { path: '/uninstall', icon: Trash2, label: '软件清理' },
@@ -52,6 +69,8 @@ export function Sidebar() {
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const currentTab = searchParams.get('tab');
   const inLibrary = location.pathname === '/library';
   const [showAllCategories, setShowAllCategories] = useState(false);
 
@@ -88,7 +107,12 @@ export function Sidebar() {
         <div className="space-y-0.5">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path;
+            // 优先使用 match 自定义匹配 (径向菜单深链需要看 tab query),
+            // 否则按 pathname 严格相等。同时对无 match 的 /settings 项要排除
+            // 被径向菜单占用的情况,避免两个菜单同时高亮。
+            const isActive = item.match
+              ? item.match(location.pathname, currentTab)
+              : location.pathname === item.path;
             return (
               <NavLink
                 key={item.path}
@@ -243,14 +267,18 @@ export function Sidebar() {
         </NavLink>
         <NavLink
           to="/settings"
-          className={({ isActive }) =>
-            cn(
+          end
+          className={({ isActive }) => {
+            // 当前在"设置 > 径向菜单"时,让上方的"径向菜单"菜单项高亮,
+            // 而这里的"设置"入口保持未激活样式,避免两处同时高亮。
+            const active = isActive && currentTab !== 'radial';
+            return cn(
               'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
-              isActive
+              active
                 ? 'bg-slate-800/60 text-white'
                 : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'
-            )
-          }
+            );
+          }}
         >
           <Settings className="w-4 h-4" />
           <span>设置</span>
