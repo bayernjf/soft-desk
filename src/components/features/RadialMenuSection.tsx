@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, X, AppWindow, Layers, Keyboard, Mouse, LogIn } from 'lucide-react';
+import { Play, X, AppWindow, Layers, Keyboard, Mouse, LogIn, Clock, ChevronDown, Check, Share2 } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { syncRadialToMain } from '@/services/radial.service';
+import { serializeRadial } from '@/services/share-serializer';
+import { ShareDialog } from './ShareDialog';
 import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
-import type { RadialItem } from '@/types';
+import type { RadialItem, RadialRenderItem, RadialStyle } from '@/types';
+import { getRadialStyleTokens, RADIAL_STYLE_OPTIONS } from './radial-styles';
 
 const PREVIEW_SIZE = 240;
 const PREVIEW_INNER = 44;
@@ -98,36 +101,36 @@ export function RadialMenuSection() {
   const navigate = useNavigate();
 
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  // 勾选「最近使用」时,设置面板默认也停在最近使用页(与运行时行为一致);
+  // 未勾选则保持原行为,默认第一页。
+  const [previewPage, setPreviewPage] = useState<0 | 1 | 'recent'>(() =>
+    useSettingsStore.getState().radial.showRecent ? 'recent' : 0
+  );
   const [recording, setRecording] = useState(false);
   const [hotkeyError, setHotkeyError] = useState<string | null>(null);
   const recordBtnRef = useRef<HTMLButtonElement>(null);
 
   // 预览圆环是 SVG,颜色写死无法被 html.light 的工具类覆盖,故按当前主题切换两套配色
   const theme = useSettingsStore((s) => s.theme);
-  const ring = useMemo(() => {
+  const isLightPreview = useMemo(() => {
     void theme; // 依赖 theme,主题切换时重算
-    const isLight =
-      typeof document !== 'undefined' && document.documentElement.classList.contains('light');
-    return isLight
-      ? {
-          sector: 'rgba(155,140,120,0.20)',
-          sectorEditing: 'rgba(124,58,237,0.18)',
-          stroke: 'rgba(124,100,75,0.35)',
-          label: '#3b3127',
-          labelEmpty: '#9b8c78',
-          center: 'rgba(255,253,248,0.92)',
-          centerStroke: 'rgba(124,100,75,0.30)',
-        }
-      : {
-          sector: 'rgba(51,65,85,0.35)',
-          sectorEditing: 'rgba(139,92,246,0.30)',
-          stroke: 'rgba(148,163,184,0.3)',
-          label: '#cbd5e1',
-          labelEmpty: 'rgba(148,163,184,0.5)',
-          center: 'rgba(21,21,28,0.6)',
-          centerStroke: 'rgba(148,163,184,0.2)',
-        };
+    return typeof document !== 'undefined' && document.documentElement.classList.contains('light');
   }, [theme]);
+  // 风格 tokens(预览圆环 + 选中态背景共用),浅/深色由当前主题决定
+  const previewStyle: RadialStyle = radial.style ?? 'default';
+  const previewTokens = useMemo(
+    () => getRadialStyleTokens(previewStyle, isLightPreview),
+    [previewStyle, isLightPreview]
+  );
+
+  // 「风格」下拉栏:形态与 AiModelModal 内的 listbox 一致(button + role=listbox),
+  // 主题适配走 html.light 全局重写,这里只写深色类。
+  const [styleMenuOpen, setStyleMenuOpen] = useState(false);
+  const currentStyleOption = useMemo(
+    () => RADIAL_STYLE_OPTIONS.find((o) => o.value === previewStyle) ?? RADIAL_STYLE_OPTIONS[0],
+    [previewStyle]
+  );
 
   const availableSoftware = useMemo(
     () => software.filter((s) => !s.uninstalled && !s.deleted).sort((a, b) => a.name.localeCompare(b.name)),
@@ -135,11 +138,70 @@ export function RadialMenuSection() {
   );
   const softwareById = useMemo(() => new Map(software.map((s) => [s.id, s])), [software]);
   const workflowById = useMemo(() => new Map(workflows.map((w) => [w.id, w])), [workflows]);
+
+  // 关闭最近使用后若当前停留在该页,自动回退到第一页;
+  // 反之刚勾选最近使用时,自动跳到最近使用页(与运行时的"默认页"保持一致体验)。
+  const prevShowRecentRef = useRef<boolean>(radial.showRecent);
+  useEffect(() => {
+    const prev = prevShowRecentRef.current;
+    if (prev !== radial.showRecent) {
+      if (radial.showRecent) {
+        setPreviewPage('recent');
+        setEditingSlot(null);
+      } else if (previewPage === 'recent') {
+        setPreviewPage(0);
+      }
+      prevShowRecentRef.current = radial.showRecent;
+    }
+  }, [previewPage, radial.showRecent]);
+
+  // 最近使用页的应用列表:从主进程拉 LRU 队列(与运行时径向菜单完全一致)。
+  // 切到该 tab 时每秒轮询一次,使预览实时跟随你切换前台应用的动作。
+  const [recentRenderItems, setRecentRenderItems] = useState<RadialRenderItem[]>([]);
+  useEffect(() => {
+    if (!radial.showRecent || previewPage !== 'recent') return;
+    let cancelled = false;
+    const fetchRecent = async () => {
+      try {
+        const list = (await window.softdesk?.radialGetRecent?.()) ?? [];
+        if (!cancelled) setRecentRenderItems(list);
+      } catch {
+        // 静默:取不到时保留上一次结果
+      }
+    };
+    void fetchRecent();
+    const t = setInterval(fetchRecent, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [radial.showRecent, previewPage, radial.sectors]);
+
   const itemBySlot = useMemo(() => {
     const m = new Map<number, RadialItem>();
-    radial.items.forEach((it) => m.set(it.slot, it));
+    if (previewPage === 'recent') {
+      // 把主进程下发的 RadialRenderItem 当作 RadialItem 形态填充(只用于展示名称/图标)
+      recentRenderItems.forEach((it, idx) => {
+        m.set(idx, {
+          slot: idx,
+          type: it.type,
+          targetId: it.targetId,
+          name: it.name,
+          icon: it.icon,
+          color: it.color,
+        });
+      });
+      return m;
+    }
+    radial.items.forEach((it) => {
+      const page = Math.floor(it.slot / radial.sectors);
+      const visualSlot = it.slot % radial.sectors;
+      if (page === previewPage) {
+        m.set(visualSlot, it);
+      }
+    });
     return m;
-  }, [radial.items]);
+  }, [radial.items, radial.sectors, previewPage, recentRenderItems]);
 
   const cx = PREVIEW_SIZE / 2;
   const cy = PREVIEW_SIZE / 2;
@@ -189,7 +251,19 @@ export function RadialMenuSection() {
 
   return (
     <div>
-      <h2 className="text-base font-semibold text-slate-100 mb-1">径向菜单</h2>
+      <div className="flex items-start justify-between gap-3 mb-1">
+        <h2 className="text-base font-semibold text-slate-100">径向菜单</h2>
+        {loggedIn && radial.items.length > 0 && (
+          <button
+            onClick={() => setShareOpen(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-violet-300 hover:bg-violet-500/15 border border-violet-500/30 transition-colors"
+            title="分享当前径向菜单配置"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            分享配置
+          </button>
+        )}
+      </div>
       <p className="text-sm text-slate-500 mb-4">
         按下全局快捷键，在光标处弹出圆形快捷菜单，快速启动应用或工作流
       </p>
@@ -285,8 +359,104 @@ export function RadialMenuSection() {
         </button>
       </div>
 
+      {/* 添加「最近使用」页:开启后径向菜单在第一/第二页之外追加一个动态页,
+          展示按 lastUsed 倒序的 sectors 个最近启动的应用,翻页循环 第一页→第二页→最近使用。 */}
+      <div className="flex items-start justify-between gap-4 px-4 py-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-slate-300 flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5" /> 添加「最近使用」页
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+            开启后，径向菜单会在第一页/第二页之后追加一个动态页，自动展示最近启动的 {radial.sectors} 个应用
+          </div>
+        </div>
+        <button
+          onClick={() => setRadialConfig({ showRecent: !radial.showRecent })}
+          role="switch"
+          aria-checked={radial.showRecent}
+          aria-label="添加最近使用"
+          disabled={!loggedIn}
+          className={cn(
+            'relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5',
+            radial.showRecent ? 'bg-violet-500' : 'bg-slate-700',
+            !loggedIn && 'opacity-40 cursor-not-allowed'
+          )}
+        >
+          <span
+            className={cn(
+              'absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all',
+              radial.showRecent ? 'left-6' : 'left-1'
+            )}
+          />
+        </button>
+      </div>
+
       {radial.enabled && (
         <>
+          {/* 「风格」下拉栏:与「扇区数量」上下排列,放在扇区数量上方;选中后预览圆环立即联动 */}
+          <div className="px-4 py-3">
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">风格</div>
+            <div
+              className="relative w-fit min-w-[200px]"
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setStyleMenuOpen(false);
+              }}
+            >
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={styleMenuOpen}
+                onClick={() => setStyleMenuOpen((o) => !o)}
+                className={cn(
+                  'flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800',
+                  'text-sm text-slate-100 hover:border-slate-700 focus:outline-none focus:border-violet-500/50',
+                  'focus:ring-2 focus:ring-violet-500/20 transition-all min-w-[200px]'
+                )}
+              >
+                <span className="flex flex-col items-start min-w-0 text-left">
+                  <span className="truncate">{currentStyleOption.label}</span>
+                  <span className="text-[10px] text-slate-500 truncate">{currentStyleOption.hint}</span>
+                </span>
+                <ChevronDown className={cn('h-3.5 w-3.5 text-slate-500 transition-transform shrink-0', styleMenuOpen && 'rotate-180')} />
+              </button>
+              {styleMenuOpen && (
+                <div
+                  role="listbox"
+                  className="absolute left-0 top-full z-30 mt-2 w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-1 shadow-2xl shadow-slate-950/50"
+                >
+                  {RADIAL_STYLE_OPTIONS.map((opt) => {
+                    const selected = opt.value === previewStyle;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setRadialConfig({ style: opt.value });
+                          setStyleMenuOpen(false);
+                        }}
+                        className={cn(
+                          'flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors',
+                          selected
+                            ? 'bg-violet-500/20 text-violet-200'
+                            : 'text-slate-300 hover:bg-slate-800/70 hover:text-slate-100'
+                        )}
+                      >
+                        <span className="flex flex-col min-w-0">
+                          <span className="truncate">{opt.label}</span>
+                          <span className="text-[10px] text-slate-500 truncate font-normal">{opt.hint}</span>
+                        </span>
+                        {selected && <Check className="h-3.5 w-3.5 mt-0.5 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="px-4 py-3">
             <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">扇区数量</div>
             <div className="grid grid-cols-3 gap-2 p-1 bg-slate-800/40 rounded-xl w-fit">
@@ -310,21 +480,61 @@ export function RadialMenuSection() {
           <div className="px-4 py-3 grid sm:grid-cols-[260px_1fr] gap-6 items-start">
             {/* 圆环预览：点扇区进入编辑 */}
             <div className="flex flex-col items-center">
+              {/* 页面切换:勾选「最近使用」时把它放到最前,与运行时唤出菜单的默认页保持一致 */}
+              <div className="flex items-center gap-1 p-1 bg-slate-800/40 rounded-lg mb-3">
+                {radial.showRecent && (
+                  <button
+                    onClick={() => { setPreviewPage('recent'); setEditingSlot(null); }}
+                    className={cn(
+                      'inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                      previewPage === 'recent' ? 'bg-violet-500/20 text-violet-300' : 'text-slate-400 hover:text-slate-300'
+                    )}
+                  >
+                    <Clock className="w-3 h-3" /> 最近使用
+                  </button>
+                )}
+                <button
+                  onClick={() => { setPreviewPage(0); setEditingSlot(null); }}
+                  className={cn(
+                    'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                    previewPage === 0 ? 'bg-violet-500/20 text-violet-300' : 'text-slate-400 hover:text-slate-300'
+                  )}
+                >
+                  第一页
+                </button>
+                <button
+                  onClick={() => { setPreviewPage(1); setEditingSlot(null); }}
+                  className={cn(
+                    'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                    previewPage === 1 ? 'bg-violet-500/20 text-violet-300' : 'text-slate-400 hover:text-slate-300'
+                  )}
+                >
+                  第二页
+                </button>
+              </div>
               <svg width={PREVIEW_SIZE} height={PREVIEW_SIZE} className="overflow-visible">
+                {previewTokens.defs && <defs>{previewTokens.defs(cx, cy)}</defs>}
                 {Array.from({ length: radial.sectors }).map((_, slot) => {
                   const center = slot * sectorAngle - 90;
                   const start = center - sectorAngle / 2;
                   const end = center + sectorAngle / 2;
                   const item = itemBySlot.get(slot);
-                  const isEditing = editingSlot === slot;
+                  const isEditing = editingSlot === slot && previewPage !== 'recent';
                   const labelPos = polar(cx, cy, (PREVIEW_INNER + PREVIEW_OUTER) / 2, center);
+                  // 最近使用页是只读预览,扇区不可点
+                  const clickable = previewPage !== 'recent';
                   return (
-                    <g key={slot} onClick={() => setEditingSlot(slot)} style={{ cursor: 'pointer' }}>
+                    <g
+                      key={slot}
+                      onClick={clickable ? () => setEditingSlot(slot) : undefined}
+                      style={{ cursor: clickable ? 'pointer' : 'default' }}
+                    >
                       <path
                         d={sectorPath(cx, cy, start, end)}
-                        fill={isEditing ? ring.sectorEditing : ring.sector}
-                        stroke={ring.stroke}
-                        strokeWidth={1}
+                        fill={previewTokens.sectorFill(isEditing, item?.color)}
+                        stroke={previewTokens.sectorStroke(isEditing)}
+                        strokeWidth={previewTokens.sectorStrokeWidth(isEditing)}
+                        filter={previewTokens.sectorFilter?.(isEditing)}
                       />
                       <text
                         x={labelPos.x}
@@ -332,14 +542,34 @@ export function RadialMenuSection() {
                         textAnchor="middle"
                         dominantBaseline="central"
                         fontSize={10}
-                        fill={item ? ring.label : ring.labelEmpty}
+                        fill={item ? previewTokens.textFill(isEditing) : previewTokens.emptyMarkFill}
                       >
-                        {item ? labelFor(item).slice(0, 5) : '+'}
+                        {item ? labelFor(item).slice(0, 5) : previewPage === 'recent' ? '' : '+'}
                       </text>
                     </g>
                   );
                 })}
-                <circle cx={cx} cy={cy} r={PREVIEW_INNER - 2} fill={ring.center} stroke={ring.centerStroke} />
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={PREVIEW_INNER - 2}
+                  fill={previewTokens.centerFill}
+                  stroke={previewTokens.centerStroke}
+                />
+                {previewPage === 'recent' && (
+                  <text
+                    x={cx}
+                    y={cy}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={11}
+                    fontWeight={600}
+                    fill={previewTokens.textFill(false)}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    最近使用
+                  </text>
+                )}
               </svg>
               <button
                 onClick={handlePreview}
@@ -351,18 +581,26 @@ export function RadialMenuSection() {
 
             {/* 扇区编辑面板 */}
             <div className="min-w-0">
-              {editingSlot === null ? (
+              {previewPage === 'recent' ? (
+                <div className="text-sm text-slate-500 p-4 rounded-xl bg-slate-800/30 leading-relaxed">
+                  <div className="text-slate-300 font-medium mb-1">最近使用（只读预览）</div>
+                  这一页由系统自动按软件最近使用时间倒序填充，不需要也不可以手动绑定扇区。
+                  关闭上方「添加『最近使用』页」开关即可隐藏该页。
+                </div>
+              ) : editingSlot === null ? (
                 <div className="text-sm text-slate-500 p-4 rounded-xl bg-slate-800/30">
                   点击左侧任一扇区，为它绑定一个应用或工作流
                 </div>
               ) : (
                 <SlotEditor
                   slot={editingSlot}
+                  page={previewPage}
+                  sectors={radial.sectors}
                   current={itemBySlot.get(editingSlot)}
                   availableSoftware={availableSoftware}
                   workflows={workflows}
-                  onPick={(item) => setRadialItem(editingSlot, item)}
-                  onClear={() => setRadialItem(editingSlot, null)}
+                  onPick={(item) => setRadialItem(editingSlot + previewPage * radial.sectors, item)}
+                  onClear={() => setRadialItem(editingSlot + previewPage * radial.sectors, null)}
                 />
               )}
             </div>
@@ -382,12 +620,23 @@ export function RadialMenuSection() {
           </button>
         </div>
       )}
+
+      {shareOpen && (
+        <ShareDialog
+          kind="radial"
+          defaultTitle="我的径向菜单"
+          buildPayload={() => serializeRadial(radial, software)}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
 interface SlotEditorProps {
   slot: number;
+  page: number;
+  sectors: number;
   current: RadialItem | undefined;
   availableSoftware: ReturnType<typeof useSoftwareStore.getState>['software'];
   workflows: ReturnType<typeof useSoftwareStore.getState>['workflows'];
@@ -395,7 +644,7 @@ interface SlotEditorProps {
   onClear: () => void;
 }
 
-function SlotEditor({ slot, current, availableSoftware, workflows, onPick, onClear }: SlotEditorProps) {
+function SlotEditor({ slot, page, sectors, current, availableSoftware, workflows, onPick, onClear }: SlotEditorProps) {
   const [tab, setTab] = useState<'app' | 'workflow'>(current?.type ?? 'app');
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -413,10 +662,16 @@ function SlotEditor({ slot, current, availableSoftware, workflows, onPick, onCle
     return list.slice(0, 50);
   }, [query, availableSoftware]);
 
+  const pageLabel = page === 0 ? '第一页' : '第二页';
+  const actualSlot = slot + page * sectors;
+
   return (
     <div className="rounded-xl bg-slate-800/30 border border-slate-800/60 p-3">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-sm font-medium text-slate-200">扇区 {slot + 1} 绑定</div>
+        <div className="text-sm font-medium text-slate-200">
+          {pageLabel} 扇区 {slot + 1} 绑定
+          <span className="ml-2 text-[10px] text-slate-500 font-normal">实际槽位 #{actualSlot + 1}</span>
+        </div>
         {current && (
           <button
             onClick={onClear}

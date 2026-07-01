@@ -240,6 +240,7 @@ async function readInfoPlist(appPath: string): Promise<Record<string, string>> {
     'CFBundleShortVersionString',
     'CFBundleIdentifier',
     'LSApplicationCategoryType',
+    'CFBundleDisplayName',
     'CFBundleName',
     'CFBundleIconFile',
   ];
@@ -268,6 +269,95 @@ async function readInfoPlist(appPath: string): Promise<Record<string, string>> {
   return result;
 }
 
+/**
+ * 读取本地化的应用显示名(macOS 标准做法:CFBundleDisplayName/CFBundleName
+ * 可被 Resources/<lang>.lproj/InfoPlist.strings 覆盖)。
+ * 优先级:系统语言 lproj → zh_CN.lproj → en.lproj → 其它任意 lproj。
+ * 没有任何本地化文件时返回空对象,调用方应回退到 Info.plist 的字段。
+ */
+async function readLocalizedNames(appPath: string): Promise<{
+  displayName?: string;
+  bundleName?: string;
+}> {
+  const resourcesDir = path.join(appPath, 'Contents', 'Resources');
+  let entries: string[] = [];
+  try {
+    entries = await fs.readdir(resourcesDir);
+  } catch {
+    return {};
+  }
+
+  const lprojDirs = entries.filter((e) => e.endsWith('.lproj'));
+  if (lprojDirs.length === 0) return {};
+
+  // 优先级:系统当前语言 → zh_CN → en → 其它
+  const sysLang = (app.getLocale?.() || process.env.LANG || '').replace('-', '_');
+  const sysLangPrefix = sysLang.split(/[_.]/)[0];
+  const priority = [
+    `${sysLang}.lproj`,
+    `${sysLangPrefix}.lproj`,
+    'zh_CN.lproj',
+    'zh.lproj',
+    'en.lproj',
+    'English.lproj',
+  ];
+  const ordered: string[] = [];
+  for (const p of priority) {
+    if (lprojDirs.includes(p) && !ordered.includes(p)) ordered.push(p);
+  }
+  for (const d of lprojDirs) {
+    if (!ordered.includes(d)) ordered.push(d);
+  }
+
+  for (const dir of ordered) {
+    const stringsPath = path.join(resourcesDir, dir, 'InfoPlist.strings');
+    try {
+      const { stdout } = await execFileAsync('plutil', ['-convert', 'json', '-o', '-', stringsPath]);
+      const parsed = JSON.parse(stdout) as Record<string, unknown>;
+      const display = typeof parsed['CFBundleDisplayName'] === 'string'
+        ? (parsed['CFBundleDisplayName'] as string).trim()
+        : undefined;
+      const bundle = typeof parsed['CFBundleName'] === 'string'
+        ? (parsed['CFBundleName'] as string).trim()
+        : undefined;
+      if (display || bundle) return { displayName: display, bundleName: bundle };
+    } catch {
+      // 该 lproj 没有 InfoPlist.strings 或解析失败,尝试下一个
+    }
+  }
+  return {};
+}
+
+/**
+ * 收集 .app 包内所有"会影响显示名"的文件的最新 mtime。
+ * 用于缓存命中检测:任何一个文件改动(包括 Info.plist 或本地化 InfoPlist.strings)
+ * 都会让 mtime 上升,触发重新扫描。
+ */
+async function collectNameSourcesMtime(appPath: string): Promise<number> {
+  const candidates: string[] = [path.join(appPath, 'Contents', 'Info.plist')];
+  const resourcesDir = path.join(appPath, 'Contents', 'Resources');
+  try {
+    const entries = await fs.readdir(resourcesDir);
+    for (const e of entries) {
+      if (e.endsWith('.lproj')) {
+        candidates.push(path.join(resourcesDir, e, 'InfoPlist.strings'));
+      }
+    }
+  } catch {
+    // Resources 不存在(几乎不可能),忽略
+  }
+  let maxMtime = 0;
+  for (const file of candidates) {
+    try {
+      const st = await fs.stat(file);
+      if (st.mtimeMs > maxMtime) maxMtime = st.mtimeMs;
+    } catch {
+      // 文件不存在,跳过
+    }
+  }
+  return maxMtime;
+}
+
 async function getDirSizeMB(appPath: string): Promise<number> {
   try {
     const { stdout } = await execFileAsync('du', ['-sk', appPath]);
@@ -293,11 +383,21 @@ async function scanOneApp(appPath: string, smartGrouping: boolean): Promise<Scan
     const baseName = path.basename(appPath, '.app');
     const stat = await fs.stat(appPath);
 
+    // 收集所有"会影响显示名"的文件的最新 mtime:
+    // 包括 Contents/Info.plist 以及 Contents/Resources/<lang>.lproj/InfoPlist.strings,
+    // 任何一个改动都需要触发重扫,否则改名(本地化或非本地化)都无法生效。
+    const nameMtimeMs = await collectNameSourcesMtime(appPath);
+
     const cached = metaCache.get(appPath);
     const mtimeMs = stat.mtimeMs;
-    // 缓存命中需同时满足:包未变(mtime 相同) 且 分类策略未变(smartGrouping 相同);
-    // 开关切换后强制走重算分支,使分类立即反映新策略
-    if (cached && cached.mtimeMs === mtimeMs && cached.smartGrouping === smartGrouping) {
+    // 缓存命中需同时满足:包未变(mtime 相同) 且 名字源文件未变(nameMtimeMs 相同)
+    // 且 分类策略未变(smartGrouping 相同);任一变化都强制重算
+    if (
+      cached &&
+      cached.mtimeMs === mtimeMs &&
+      cached.nameMtimeMs === nameMtimeMs &&
+      cached.smartGrouping === smartGrouping
+    ) {
       // app 包未变,直接复用上次解析结果,跳过 plist/du/sips 等昂贵调用;
       // 图标 data URL 从缓存的 PNG 文件路径按需读出(缓存本身不存 base64)
       let iconCacheFile = cached.app.iconCacheFile ?? null;
@@ -311,6 +411,7 @@ async function scanOneApp(appPath: string, smartGrouping: boolean): Promise<Scan
           iconCacheFile = refreshed;
           metaCache.set(appPath, {
             mtimeMs,
+            nameMtimeMs,
             smartGrouping,
             app: { ...cached.app, iconCacheFile: refreshed ?? undefined },
           });
@@ -338,10 +439,24 @@ async function scanOneApp(appPath: string, smartGrouping: boolean): Promise<Scan
     const iconCacheFile = await extractIcon(appPath, id, mtimeMs, plist['CFBundleIconFile']);
     const icon = (await iconFileToDataUrl(iconCacheFile)) ?? 'AppWindow';
 
+    // 显示名优先级:
+    // 1. 本地化字符串(Resources/<lang>.lproj/InfoPlist.strings 的 CFBundleDisplayName/CFBundleName)
+    //    —— macOS 标准做法,Finder/Spotlight 显示的就是这个
+    // 2. Info.plist 的 CFBundleDisplayName(开发者声明的显示名)
+    // 3. Info.plist 的 CFBundleName(开发者声明的短名)
+    // 4. 文件名(去掉 .app 后缀)兜底
+    const localized = await readLocalizedNames(appPath);
+    const displayName =
+      localized.displayName ||
+      localized.bundleName ||
+      plist['CFBundleDisplayName'] ||
+      plist['CFBundleName'] ||
+      baseName;
+
     const scanned: ScannedApp = {
       id,
-      name: baseName,
-      description: plist['CFBundleName'] || baseName,
+      name: displayName,
+      description: localized.bundleName || plist['CFBundleName'] || baseName,
       icon,
       iconCacheFile: iconCacheFile ?? undefined,
       category,
@@ -360,7 +475,7 @@ async function scanOneApp(appPath: string, smartGrouping: boolean): Promise<Scan
     };
 
     // 缓存里只存图标文件路径,不存 base64,避免 scan-cache.json 膨胀
-    metaCache.set(appPath, { mtimeMs, smartGrouping, app: { ...scanned, icon: '' } });
+    metaCache.set(appPath, { mtimeMs, nameMtimeMs, smartGrouping, app: { ...scanned, icon: '' } });
     metaCacheDirty = true;
     return scanned;
   } catch {
@@ -370,6 +485,9 @@ async function scanOneApp(appPath: string, smartGrouping: boolean): Promise<Scan
 
 interface MetaCacheEntry {
   mtimeMs: number;
+  /** 所有"名字来源文件"(Info.plist + 各 lproj/InfoPlist.strings)的最新 mtime,
+   *  用于检测显示名变更(无论是本地化还是非本地化) */
+  nameMtimeMs: number;
   /** 生成该缓存时使用的智能分类开关状态,开关切换后需失效重算 */
   smartGrouping: boolean;
   app: ScannedApp;
@@ -390,10 +508,23 @@ async function loadMetaCache(): Promise<void> {
     const raw = await fs.readFile(metaCachePath(), 'utf-8');
     const parsed = JSON.parse(raw) as Record<string, MetaCacheEntry>;
     for (const [key, entry] of Object.entries(parsed)) {
-      if (entry && typeof entry.mtimeMs === 'number' && entry.app) {
-        metaCache.set(key, entry);
+        if (entry && typeof entry.mtimeMs === 'number' && entry.app) {
+          // 兼容旧缓存:旧版字段名可能是 plistMtimeMs 或完全缺失,
+          // 一律按"无效"处理(补 0),会触发一次重新扫描并写回新格式;
+          // 符合"安装新版/改名后立即生效"的预期
+          const legacyMtime = (entry as unknown as { plistMtimeMs?: number }).plistMtimeMs;
+          const normalized: MetaCacheEntry = {
+            ...entry,
+            nameMtimeMs:
+              typeof entry.nameMtimeMs === 'number'
+                ? entry.nameMtimeMs
+                : typeof legacyMtime === 'number'
+                  ? 0 // 旧字段名,故意置 0 强制重扫,以读取本地化显示名
+                  : 0,
+          };
+          metaCache.set(key, normalized);
+        }
       }
-    }
   } catch {
     // no cache yet or corrupted, start fresh
   }

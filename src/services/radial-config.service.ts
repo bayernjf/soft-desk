@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { createLogger } from '@/lib/logger';
-import type { RadialItem, RadialMenuConfig } from '@/types';
+import type { RadialItem, RadialMenuConfig, RadialStyle } from '@/types';
 
 const logger = createLogger('radial-config');
 
@@ -11,7 +11,17 @@ interface CloudRadialConfig {
   mouse_wheel_toggle: boolean;
   sectors: number;
   items: RadialItem[];
+  show_recent?: boolean;
+  style?: string;
   updated_at: string;
+}
+
+const VALID_STYLES: RadialStyle[] = ['default', 'glass', 'neumorph', 'neon', 'material', 'minimal'];
+
+function normalizeStyle(raw: unknown): RadialStyle {
+  return typeof raw === 'string' && (VALID_STYLES as string[]).includes(raw)
+    ? (raw as RadialStyle)
+    : 'default';
 }
 
 function cloudToLocal(row: CloudRadialConfig): RadialMenuConfig {
@@ -22,6 +32,8 @@ function cloudToLocal(row: CloudRadialConfig): RadialMenuConfig {
     mouseWheelToggle: !!row.mouse_wheel_toggle,
     sectors,
     items: Array.isArray(row.items) ? row.items : [],
+    showRecent: !!row.show_recent,
+    style: normalizeStyle(row.style),
     updatedAt: row.updated_at,
   };
 }
@@ -34,6 +46,8 @@ function localToCloud(userId: string, config: RadialMenuConfig): CloudRadialConf
     mouse_wheel_toggle: config.mouseWheelToggle,
     sectors: config.sectors,
     items: config.items,
+    show_recent: config.showRecent,
+    style: config.style ?? 'default',
     updated_at: config.updatedAt ?? new Date().toISOString(),
   };
 }

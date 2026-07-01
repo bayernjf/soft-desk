@@ -87,6 +87,23 @@ export function resolveRadialConfig(
     mouseWheelToggle: config.mouseWheelToggle,
     sectors: config.sectors,
     items,
+    showRecent: config.showRecent,
+    style: config.style ?? 'default',
+    // 仅在勾选「最近使用」时下发完整可用应用目录,供主进程在 open 时按 lastUsed 取 top-N
+    appCatalog: config.showRecent
+      ? software
+          .filter((s) => !s.uninstalled && !s.deleted && s.path)
+          .map<RadialSyncItem>((s) => ({
+            slot: -1,
+            type: 'app',
+            targetId: s.id,
+            name: s.name,
+            icon: s.icon,
+            color: s.color,
+            appPath: s.path,
+            lastUsed: s.lastUsed,
+          }))
+      : undefined,
   };
 }
 

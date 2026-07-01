@@ -16,11 +16,14 @@ import {
   SquareCheck,
   ListChecks,
   ArrowUpDown,
+  Share2,
 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
 import { AppIcon } from '@/components/features/AppIcon';
+import { ShareDialog } from '@/components/features/ShareDialog';
+import { serializeFavoriteGroup } from '@/services/share-serializer';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { fetchCloudFavoriteGroups, fetchCloudFavoriteDetails } from '@/services/favorites.service';
 import type { CloudFavorite } from '@/services/favorites.service';
@@ -40,7 +43,7 @@ interface CardWrapperProps {
   onDragEnter?: () => void;
   onDragEnd?: () => void;
   onDrop?: () => void;
-  children?: React.ReactNode;
+  extraActions?: React.ReactNode;
 }
 
 function CardWrapper({
@@ -55,7 +58,7 @@ function CardWrapper({
   onDragEnter,
   onDragEnd,
   onDrop,
-  children,
+  extraActions,
 }: CardWrapperProps) {
   return (
     <div
@@ -115,7 +118,7 @@ function CardWrapper({
           )}
         </button>
       )}
-      <SoftwareCard software={software} />
+      <SoftwareCard software={software} extraActions={extraActions} />
       {selectMode && (
         <button
           type="button"
@@ -128,7 +131,6 @@ function CardWrapper({
         />
       )}
       {sortMode && <div className="absolute inset-0 z-10" aria-hidden="true" />}
-      {!selectMode && !sortMode && children}
     </div>
   );
 }
@@ -178,9 +180,12 @@ function GroupSection({
   const [moveMenuOpen, setMoveMenuOpen] = useState<string | false>(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
+  const software = useSoftwareStore((s) => s.software);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
   const renameFavoriteGroup = useSoftwareStore((s) => s.renameFavoriteGroup);
   const deleteFavoriteGroup = useSoftwareStore((s) => s.deleteFavoriteGroup);
   const moveFavoriteToGroup = useSoftwareStore((s) => s.moveFavoriteToGroup);
@@ -346,6 +351,18 @@ function GroupSection({
                   <Pencil className="w-3.5 h-3.5" />
                   重命名
                 </button>
+                {loggedIn && (
+                  <button
+                    onClick={() => {
+                      setShareOpen(true);
+                      setMenuOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-violet-300 hover:bg-slate-800/60 transition-colors"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    分享分组
+                  </button>
+                )}
                 <button
                   onClick={handleDelete}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 transition-colors"
@@ -423,9 +440,8 @@ function GroupSection({
                     setOverId(null);
                   }}
                   onDrop={() => handleDrop(sw.id)}
-                >
-                  {!selectMode && (
-                    <div className="absolute top-2 right-10 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                  extraActions={
+                    !selectMode ? (
                       <div className="relative">
                         <button
                           onMouseDown={(e) => e.stopPropagation()}
@@ -470,15 +486,24 @@ function GroupSection({
                           </div>
                         )}
                       </div>
-                    </div>
-                  )}
-                </CardWrapper>
+                    ) : undefined
+                  }
+                />
               ))}
             </div>
           ) : (
             <p className="text-xs text-slate-600 py-2">分组为空</p>
           )}
         </>
+      )}
+
+      {shareOpen && (
+        <ShareDialog
+          kind="favorite_group"
+          defaultTitle={group.name}
+          buildPayload={() => serializeFavoriteGroup(group, software)}
+          onClose={() => setShareOpen(false)}
+        />
       )}
     </section>
   );
@@ -960,9 +985,8 @@ export function Favorites() {
                             setUngroupedOverId(null);
                           }}
                           onDrop={() => handleUngroupedDrop(sw.id)}
-                        >
-                          {!selectMode && favoriteGroups.length > 0 && (
-                            <div className="absolute top-2 right-10 z-10 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                          extraActions={
+                            !selectMode && favoriteGroups.length > 0 ? (
                               <div className="relative">
                                 <button
                                   onClick={(e) => {
@@ -992,9 +1016,9 @@ export function Favorites() {
                                   </div>
                                 )}
                               </div>
-                            </div>
-                          )}
-                        </CardWrapper>
+                            ) : undefined
+                          }
+                        />
                       ))}
                     </div>
                   )}

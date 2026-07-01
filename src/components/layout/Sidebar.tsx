@@ -16,6 +16,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  Share2,
 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
@@ -37,6 +38,7 @@ const navItems = [
   { path: '/library', icon: Library, label: '软件库' },
   { path: '/favorites', icon: Star, label: '收藏夹' },
   { path: '/workflows', icon: Workflow, label: '工作流' },
+  { path: '/my-shares', icon: Share2, label: '我的分享' },
   { path: '/statistics', icon: BarChart3, label: '统计分析' },
   { path: '/uninstall', icon: Trash2, label: '软件清理' },
 ];
