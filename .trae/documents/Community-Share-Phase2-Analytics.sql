@@ -60,13 +60,14 @@ create policy "anyone insert share events"
   with check (true);
 
 -- 策略 2: 用户可读自己作为 actor 的事件
+-- 用 Supabase Auth 原生 auth.uid() (与 shares/share_imports 保持一致)
 drop policy if exists "actor read own share events" on share_events;
 create policy "actor read own share events"
   on share_events
   for select
   using (
     actor_id is not null
-    and actor_id = current_setting('app.current_user_id', true)
+    and auth.uid()::text = actor_id
   );
 
 -- 策略 3: 分享 owner 可读自己分享下所有事件 (看板要用)
@@ -78,7 +79,7 @@ create policy "owner read share events"
     exists (
       select 1 from shares
       where shares.id = share_events.share_id
-        and shares.owner_id = current_setting('app.current_user_id', true)
+        and auth.uid()::text = shares.owner_id
     )
   );
 

@@ -133,8 +133,13 @@ html.light ::-webkit-scrollbar-thumb:hover {
 }
 
 @layer utilities {
-  /* —— 背景:应用底色 —— */
+  /* —— 背景:应用底色 ——
+     覆盖两种深色底色写法:
+     - bg-[#0a0a0f]     : Layout 用的应用底色
+     - bg-[#0d0d14]     : SharePreview 等无 Layout 独立页面的底色
+     - bg-[#0d0d14]/95  : 带透明度的悬浮层底色 */
   html.light .bg-\[\#0a0a0f\],
+  html.light .bg-\[\#0d0d14\],
   html.light .bg-\[\#0d0d14\]\/95 {
     background-color: var(--l-bg);
   }

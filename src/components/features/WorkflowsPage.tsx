@@ -76,6 +76,10 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
+        // 只响应卡片自身获取焦点时的 Enter/Space,
+        // 忽略输入框/按钮/浮层弹窗等子元素冒泡上来的键盘事件,
+        // 否则会在 ShareDialog 里打空格时误触发"编辑工作流"。
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onEdit(workflow);

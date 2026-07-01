@@ -153,12 +153,25 @@ export function ShareDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
+      {/* 遮罩层: 使用与 WorkflowEditorModal 一致的 bg-slate-950/70,
+          浅色主题下由 index.css 全局重映射为奶咖色半透明遮罩,
+          深色主题保留深灰半透明。禁止再手写 dark: 前缀,否则会双层堆叠。*/}
+      <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" aria-hidden="true" />
+
       <div
-        className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label={shareToken ? '分享已创建' : `分享${KIND_LABEL[kind]}`}
+        className="relative w-full max-w-lg flex flex-col rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl shadow-slate-950/50 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          // Dialog 内部键盘事件必须阻止冒泡,否则会命中外层工作流卡片的
+          // role=button+Enter/Space 触发器,导致输入空格误开"编辑工作流"。
+          e.stopPropagation();
+        }}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
           <div className="flex items-center gap-2">
@@ -176,7 +189,7 @@ export function ShareDialog({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800/60 transition-colors"
+            className="text-slate-500 hover:text-slate-300 transition-colors"
             aria-label="关闭"
           >
             <X className="w-4 h-4" />
@@ -196,7 +209,11 @@ export function ShareDialog({
                     setTitle(e.target.value.slice(0, 50));
                     setError('');
                   }}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/60 text-sm text-white placeholder:text-slate-600 outline-none focus:border-violet-500/50 transition-colors"
+                  className={cn(
+                    'w-full px-3.5 py-2.5 rounded-xl bg-slate-900/60 border text-sm text-slate-100 placeholder:text-slate-600',
+                    'focus:outline-none focus:ring-2 transition-all',
+                    'border-slate-800 focus:border-violet-500/50 focus:ring-violet-500/20'
+                  )}
                   placeholder="给这份分享起个标题"
                   autoFocus
                 />
@@ -213,7 +230,11 @@ export function ShareDialog({
                     setError('');
                   }}
                   rows={3}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/60 text-sm text-white placeholder:text-slate-600 outline-none focus:border-violet-500/50 transition-colors resize-none"
+                  className={cn(
+                    'w-full px-3.5 py-2.5 rounded-xl bg-slate-900/60 border border-slate-800 resize-none',
+                    'text-sm text-slate-100 placeholder:text-slate-600',
+                    'focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all'
+                  )}
                   placeholder="介绍一下这份分享的用途或亮点"
                 />
               </div>
@@ -227,10 +248,10 @@ export function ShareDialog({
                       type="button"
                       onClick={() => setExpiry(opt.value)}
                       className={cn(
-                        'p-2.5 rounded-lg border text-left transition-all',
+                        'p-2.5 rounded-xl border text-left transition-all',
                         expiry === opt.value
                           ? 'bg-violet-500/15 border-violet-500/40 text-violet-200'
-                          : 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:bg-slate-800/70 hover:text-slate-200'
+                          : 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
                       )}
                     >
                       <div className="text-sm font-medium">{opt.label}</div>
@@ -241,7 +262,13 @@ export function ShareDialog({
               </div>
 
               {error && (
-                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-rose-500/10 text-rose-300 text-xs">
+                <div
+                  className={cn(
+                    'flex items-start gap-2 px-3 py-2 rounded-xl text-xs',
+                    'bg-rose-100 border border-rose-300 text-rose-800',
+                    'dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-300'
+                  )}
+                >
                   <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
@@ -249,19 +276,30 @@ export function ShareDialog({
             </>
           ) : (
             <>
-              <div className="rounded-xl bg-slate-800/40 border border-slate-700/40 p-4">
+              {/* 结果卡片: 参照"标题/描述"输入框的配方,浅色主题下由 index.css 全局重映射为
+                  奶白底 + 淡棕边框,深色下保持 slate-900/60 半透明黑。
+                  外层不加 bg,只用一层 border 划分,避免与内部的 code 输入框撞色分层混乱。*/}
+              <div className="rounded-xl p-4 border border-slate-800">
                 <div className="text-[11px] text-slate-500 mb-1.5">分享链接</div>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-xs text-violet-300 font-mono break-all">
+                  {/* code 块 = 只读输入框: 完全对齐 WorkflowEditorModal 输入框 class,
+                      文字色用 violet-500/violet-300 双 token 保证浅/深主题都清晰。*/}
+                  <code
+                    className={cn(
+                      'flex-1 px-3.5 py-2.5 rounded-xl border font-mono text-xs break-all select-all',
+                      'bg-slate-900/60 border-slate-800',
+                      'text-violet-500 dark:text-violet-300'
+                    )}
+                  >
                     {shareUrl}
                   </code>
                   <button
                     onClick={handleCopy}
                     className={cn(
-                      'shrink-0 p-2 rounded-lg transition-colors',
+                      'shrink-0 p-2 rounded-xl transition-colors border',
                       copied
-                        ? 'bg-emerald-500/20 text-emerald-300'
-                        : 'bg-violet-500/20 text-violet-300 hover:bg-violet-500/30'
+                        ? 'bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-500/20 dark:border-emerald-500/40 dark:text-emerald-300'
+                        : 'bg-violet-100 border-violet-300 text-violet-700 hover:bg-violet-200 dark:bg-violet-500/20 dark:border-violet-500/40 dark:text-violet-300 dark:hover:bg-violet-500/30'
                     )}
                     title={copied ? '已复制' : '复制链接'}
                   >
@@ -271,10 +309,10 @@ export function ShareDialog({
                     <button
                       onClick={() => setQrOpen((v) => !v)}
                       className={cn(
-                        'shrink-0 p-2 rounded-lg transition-colors',
+                        'shrink-0 p-2 rounded-xl transition-colors border',
                         qrOpen
-                          ? 'bg-slate-700 text-white'
-                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                          ? 'bg-slate-800 border-slate-700 text-white'
+                          : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
                       )}
                       title={qrOpen ? '收起二维码' : '显示二维码'}
                       aria-label="切换二维码显示"
@@ -286,18 +324,19 @@ export function ShareDialog({
 
                 {qrOpen && qrDataUrl && (
                   <div className="mt-4 flex items-center gap-4">
+                    {/* 二维码必须始终白底(黑码需要), 用任意值语法确保不被主题 CSS 干扰 */}
                     <img
                       src={qrDataUrl}
                       alt="分享二维码"
-                      className="w-32 h-32 rounded-lg bg-white p-1.5 shrink-0"
+                      className="w-32 h-32 rounded-lg bg-[#ffffff] p-1.5 shrink-0 ring-1 ring-slate-800"
                     />
                     <div className="flex-1 text-[11px] text-slate-500 space-y-1.5">
-                      <p className="text-slate-300 font-medium">跨设备转发更方便</p>
+                      <p className="text-slate-200 font-medium">跨设备转发更方便</p>
                       <p>用手机相机扫码即可拿到分享链接,发给朋友或存到备忘录。</p>
                       <a
                         href={qrDataUrl}
                         download={`softdesk-share-${shareToken ?? 'qr'}.png`}
-                        className="inline-flex items-center gap-1 mt-1 text-violet-300 hover:text-violet-200"
+                        className="inline-flex items-center gap-1 mt-1 text-violet-500 hover:text-violet-600 dark:text-violet-300 dark:hover:text-violet-200"
                       >
                         <Copy className="w-3 h-3" /> 保存二维码图片
                       </a>
@@ -311,7 +350,8 @@ export function ShareDialog({
                 </div>
               </div>
 
-              <div className="rounded-lg bg-slate-800/30 border border-slate-800/60 px-3 py-2 text-[11px] text-slate-500">
+              {/* 底部 tip: 用 border 划分,不加背景色,和上面的结果卡片保持相同层级视觉 */}
+              <div className="rounded-xl px-3 py-2 text-[11px] border border-slate-800 text-slate-500">
                 💡 你可以在「我的分享」中查看导入数据、随时撤销该分享。
               </div>
             </>

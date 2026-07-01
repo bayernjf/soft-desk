@@ -21,6 +21,7 @@ import { useSettingsStore } from '@/stores/settings.store';
 import {
   getShareByToken,
   hasUserImported,
+  hasUserReported,
   incrementViewCount,
   recordImport,
   reportShare,
@@ -29,7 +30,8 @@ import {
 import type { ShareKind, SharePayload, SoftwareMeta } from '@/services/share-serializer';
 import { dedupeName, matchSoftware } from '@/services/share-serializer';
 import { trackShareEvent } from '@/services/analytics.service';
-import type { Workflow, FavoriteGroup, RadialMenuConfig, RadialItem } from '@/types';
+import type { Software, Workflow, FavoriteGroup, RadialMenuConfig, RadialItem } from '@/types';
+import { AppIcon } from '@/components/features/AppIcon';
 import { cn } from '@/lib/utils';
 
 const KIND_META: Record<
@@ -79,6 +81,8 @@ export function SharePreview() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState('');
   const [reportSent, setReportSent] = useState(false);
+  // 已举报: 页面初始化时从后端查一次, 提交后置 true。true 时举报按钮置灰不可点。
+  const [alreadyReported, setAlreadyReported] = useState(false);
   const [radialStrategy, setRadialStrategy] = useState<'replace' | 'merge'>('merge');
   const [alreadyImported, setAlreadyImported] = useState(false);
   const [confirmReimport, setConfirmReimport] = useState(false);
@@ -107,10 +111,16 @@ export function SharePreview() {
           actorId: profile?.userId ?? null,
           kind: data.kind,
         });
-        // 已登录用户检查是否曾经导入过
+        // 已登录用户: 并行检查是否曾经导入过 & 是否已举报过
         if (profile?.userId) {
-          const imported = await hasUserImported(data.id, profile.userId);
-          if (!cancelled && imported) setAlreadyImported(true);
+          const [imported, reported] = await Promise.all([
+            hasUserImported(data.id, profile.userId),
+            hasUserReported(data.id, profile.userId),
+          ]);
+          if (!cancelled) {
+            if (imported) setAlreadyImported(true);
+            if (reported) setAlreadyReported(true);
+          }
         }
       })
       .catch(() => {
@@ -235,7 +245,9 @@ export function SharePreview() {
           currentItems: radialCurrentItems,
         });
         importedLabel = `径向菜单已${result.action}`;
-        importedPath = '/settings';
+        // 深链到"设置 > 径向菜单" tab,而不是设置首页的"外观"tab,
+        // 让用户点"立即查看 →"能直接看到刚导入的径向菜单配置
+        importedPath = '/settings?tab=radial';
       }
 
       await recordImport(share.id, profile.userId);
@@ -276,25 +288,37 @@ export function SharePreview() {
 
   const handleReport = async () => {
     if (!share) return;
+    // 前置门槛: 未登录直接引导登录, 不进入弹窗
+    if (!profile?.userId) {
+      setError('请先登录后再举报');
+      navigate('/account');
+      return;
+    }
     const trimmed = reportReason.trim();
     if (!trimmed) {
       setError('请填写举报理由');
       return;
     }
-    const ok = await reportShare(share.id, trimmed, profile?.userId);
-    if (ok) {
+    const result = await reportShare(share.id, trimmed, profile.userId);
+    if (result.success) {
       setReportSent(true);
       setReportOpen(false);
+      setAlreadyReported(true);
       trackShareEvent({
         eventType: 'share_report',
         shareId: share.id,
         shareToken: share.shareToken,
-        actorId: profile?.userId ?? null,
+        actorId: profile.userId,
         kind: share.kind,
         meta: { reason_length: trimmed.length },
       });
+    } else if (result.duplicated) {
+      // 数据库 unique 拦截: 用户曾经举报过, 静默把 UI 置为"已举报"态
+      setReportOpen(false);
+      setAlreadyReported(true);
+      setError('');
     } else {
-      setError('举报提交失败');
+      setError(result.error ?? '举报提交失败');
     }
   };
 
@@ -319,7 +343,11 @@ export function SharePreview() {
         <p className="text-sm text-slate-500 mb-6 max-w-xs">{error || '分享不存在或已失效'}</p>
         <button
           onClick={() => navigate('/')}
-          className="px-4 py-2 rounded-xl text-sm font-medium bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 border border-violet-500/20 transition-colors"
+          className={cn(
+            'px-4 py-2 rounded-xl text-sm font-medium border transition-colors',
+            'bg-violet-100 text-violet-700 border-violet-200 hover:bg-violet-200',
+            'dark:bg-violet-500/15 dark:text-violet-300 dark:border-violet-500/20 dark:hover:bg-violet-500/25'
+          )}
         >
           返回工作台
         </button>
@@ -395,7 +423,7 @@ export function SharePreview() {
           </div>
 
           <div className="px-8 py-6 space-y-5">
-            <SoftwareBadgeList matches={matches} />
+            <SoftwareBadgeList matches={matches} software={software} />
 
             {share.kind === 'radial' && (
               <div>
@@ -432,7 +460,13 @@ export function SharePreview() {
                 {radialStrategy === 'merge' &&
                   share.payload.kind === 'radial' &&
                   radialFreeSlots < share.payload.radial.items.length && (
-                    <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px]">
+                    <div
+                      className={cn(
+                        'mt-2 flex items-start gap-2 px-3 py-2 rounded-xl text-[11px] border',
+                        'bg-amber-100 border-amber-300 text-amber-800',
+                        'dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300'
+                      )}
+                    >
                       <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>
                         空槽位不足({radialFreeSlots}/{share.payload.radial.items.length}
@@ -444,7 +478,13 @@ export function SharePreview() {
             )}
 
             {alreadyImported && !importDone && (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-300 text-xs">
+              <div
+                className={cn(
+                  'flex items-start gap-2 px-3 py-2 rounded-xl text-xs border',
+                  'bg-sky-100 border-sky-300 text-sky-800',
+                  'dark:bg-sky-500/10 dark:border-sky-500/20 dark:text-sky-300'
+                )}
+              >
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>
                   你之前已经导入过这个分享。
@@ -454,7 +494,13 @@ export function SharePreview() {
             )}
 
             {missingCount > 0 && (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+              <div
+                className={cn(
+                  'flex items-start gap-2 px-3 py-2 rounded-xl text-xs border',
+                  'bg-amber-100 border-amber-300 text-amber-800',
+                  'dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300'
+                )}
+              >
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>
                   有 {missingCount} 款软件在本机未安装,导入后会保留占位,需自行安装后才能启动。
@@ -463,22 +509,34 @@ export function SharePreview() {
             )}
 
             {error && (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-rose-500/10 text-rose-300 text-xs">
+              <div
+                className={cn(
+                  'flex items-start gap-2 px-3 py-2 rounded-xl text-xs border',
+                  'bg-rose-100 border-rose-300 text-rose-800',
+                  'dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-300'
+                )}
+              >
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
             )}
 
             {importDone ? (
-              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
+              <div
+                className={cn(
+                  'p-4 rounded-xl border flex items-center justify-between',
+                  'bg-emerald-100 border-emerald-300',
+                  'dark:bg-emerald-500/10 dark:border-emerald-500/30'
+                )}
+              >
                 <div className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-300" />
-                  <span className="text-sm text-emerald-200">{importDone.label}</span>
+                  <Check className="w-4 h-4 text-emerald-700 dark:text-emerald-300" />
+                  <span className="text-sm text-emerald-800 dark:text-emerald-200">{importDone.label}</span>
                 </div>
                 {importDone.targetPath && (
                   <button
                     onClick={() => navigate(importDone.targetPath!)}
-                    className="text-xs text-emerald-300 hover:text-emerald-200 font-medium"
+                    className="text-xs font-medium text-emerald-700 hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-200"
                   >
                     立即查看 →
                   </button>
@@ -489,7 +547,7 @@ export function SharePreview() {
                 <button
                   onClick={handleImport}
                   disabled={importing}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white text-slate-900 hover:bg-slate-100 disabled:opacity-70 transition-all"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-violet-500 text-white hover:bg-violet-600 disabled:opacity-70 transition-all"
                 >
                   {importing ? (
                     <>
@@ -508,20 +566,35 @@ export function SharePreview() {
                     </>
                   )}
                 </button>
-                <button
-                  onClick={() => setReportOpen(true)}
-                  className="px-3 py-2.5 rounded-xl text-sm text-slate-500 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
-                  title="举报"
-                >
-                  <Flag className="w-4 h-4" />
-                </button>
+                {/* 举报按钮的可见性:
+                   - 未登录: 完全隐藏(需要 auth.uid, 匿名不能举报)
+                   - 已举报: 显示但置灰, 且鼠标 hover 提示"你已举报过"
+                   - 正常态: 常规红色 hover 高亮 */}
+                {loggedIn && (
+                  <button
+                    onClick={() => {
+                      if (alreadyReported) return;
+                      setReportOpen(true);
+                    }}
+                    disabled={alreadyReported}
+                    className={cn(
+                      'px-3 py-2.5 rounded-xl text-sm transition-colors',
+                      alreadyReported
+                        ? 'text-slate-600 opacity-50 cursor-not-allowed'
+                        : 'text-slate-500 hover:text-rose-600 hover:bg-rose-100 dark:hover:text-rose-300 dark:hover:bg-rose-500/10'
+                    )}
+                    title={alreadyReported ? '你已举报过这个分享' : '举报'}
+                  >
+                    <Flag className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             )}
 
-            {reportSent && (
-              <div className="text-[11px] text-emerald-400 flex items-center gap-1">
+            {(reportSent || alreadyReported) && (
+              <div className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
                 <Check className="w-3 h-3" />
-                举报已提交,我们会尽快审核
+                {reportSent ? '举报已提交,我们会尽快审核' : '你已举报过这个分享,我们会尽快审核'}
               </div>
             )}
           </div>
@@ -535,12 +608,15 @@ export function SharePreview() {
 
       {reportOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={() => setReportOpen(false)}
         >
+          {/* 遮罩层与 ShareDialog 保持一致:bg-slate-950/70 由 index.css 做主题重映射 */}
+          <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" aria-hidden="true" />
           <div
-            className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden"
+            className="relative w-full max-w-md rounded-2xl overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl shadow-slate-950/50"
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
           >
             <div className="px-5 py-4 border-b border-slate-800">
               <h3 className="text-sm font-semibold text-white">举报该分享</h3>
@@ -552,7 +628,11 @@ export function SharePreview() {
                 onChange={(e) => setReportReason(e.target.value.slice(0, 200))}
                 rows={4}
                 placeholder="请填写举报理由(内容违规、涉黄涉暴、隐私侵权等)"
-                className="w-full px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/60 text-sm text-white placeholder:text-slate-600 outline-none focus:border-violet-500/50 transition-colors resize-none"
+                className={cn(
+                  'w-full px-3.5 py-2.5 rounded-xl bg-slate-900/60 border border-slate-800 resize-none',
+                  'text-sm text-slate-100 placeholder:text-slate-600',
+                  'focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all'
+                )}
               />
               <div className="mt-1 text-[10px] text-slate-500 text-right">
                 {reportReason.length}/200
@@ -581,9 +661,10 @@ export function SharePreview() {
 
 interface SoftwareBadgeListProps {
   matches: ReturnType<typeof matchSoftware>;
+  software: Software[];
 }
 
-function SoftwareBadgeList({ matches }: SoftwareBadgeListProps) {
+function SoftwareBadgeList({ matches, software }: SoftwareBadgeListProps) {
   if (matches.length === 0) {
     return (
       <div className="text-xs text-slate-500 flex items-center gap-2">
@@ -592,42 +673,65 @@ function SoftwareBadgeList({ matches }: SoftwareBadgeListProps) {
       </div>
     );
   }
+  // 建立本机 id -> Software 索引,命中时用完整 Software 对象喂给 AppIcon,
+  // 这样能拿到 macOS 抠出来的高分辨率原生图标,而不是首字母占位。
+  const softwareById = new Map(software.map((s) => [s.id, s]));
   return (
     <div>
       <div className="text-xs font-medium text-slate-400 mb-2">
         包含 {matches.length} 款软件
       </div>
       <div className="flex flex-wrap gap-2">
-        {matches.map(({ meta, installedId }) => (
-          <div
-            key={meta.softwareId}
-            className={cn(
-              'flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs',
-              installedId
-                ? 'bg-slate-800/40 border-slate-700/60 text-slate-200'
-                : 'bg-slate-900/40 border-slate-800/80 text-slate-500'
-            )}
-            title={installedId ? '已安装' : '未安装'}
-          >
+        {matches.map(({ meta, installedId }) => {
+          // 优先级:
+          //   1) 本机命中 -> 用本机 Software (最完整、含系统抠出的高清 icon)
+          //   2) 未命中但分享 payload 自带 icon (data:image / file://) -> 拿 payload 里的
+          //   3) 都没有 -> AppIcon 自动降级到首字母占位
+          const local = installedId ? softwareById.get(installedId) : null;
+          const surrogate: Software =
+            local ??
+            ({
+              id: meta.softwareId,
+              name: meta.name,
+              description: '',
+              icon: meta.icon ?? '',
+              category: meta.category ?? 'utilities',
+              size: 0,
+              lastUsed: '',
+              usageMinutes: 0,
+              launchCount: 0,
+              path: '',
+              color: meta.color ?? '#64748b',
+              tags: [],
+            } as Software);
+          return (
             <div
-              className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-semibold shrink-0"
-              style={{
-                backgroundColor: `${meta.color ?? '#64748b'}25`,
-                color: meta.color ?? '#94a3b8',
-              }}
+              key={meta.softwareId}
+              className={cn(
+                'flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-lg border text-xs',
+                installedId
+                  ? 'bg-slate-800/40 border-slate-700/60 text-slate-200'
+                  : 'bg-slate-900/40 border-slate-800/80 text-slate-500'
+              )}
+              title={installedId ? '已安装' : '未安装'}
             >
-              {meta.name.slice(0, 1)}
-            </div>
-            <span className={cn('truncate max-w-[10rem]', !installedId && 'line-through')}>
-              {meta.name}
-            </span>
-            {!installedId && (
-              <span className="text-[9px] px-1 py-0.5 rounded bg-slate-800/60 text-slate-500">
-                未安装
+              <AppIcon
+                software={surrogate}
+                size={20}
+                rounded="rounded-md"
+                className={cn(!installedId && 'opacity-60 grayscale')}
+              />
+              <span className={cn('truncate max-w-[10rem]', !installedId && 'line-through')}>
+                {meta.name}
               </span>
-            )}
-          </div>
-        ))}
+              {!installedId && (
+                <span className="text-[9px] px-1 py-0.5 rounded bg-slate-800/60 text-slate-500">
+                  未安装
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
