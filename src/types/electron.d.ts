@@ -230,6 +230,10 @@ export interface SoftdeskBridge {
   toggleMaximize: () => Promise<{ maximized: boolean }>;
   /** 监听由托盘菜单或全局快捷键触发的"打开快速启动器"事件,返回取消监听函数 */
   onOpenLauncher: (callback: () => void) => () => void;
+  /** 监听 softdesk://share/:token 深链唤起事件,回调参数为分享 token */
+  onDeepLink: (callback: (token: string) => void) => () => void;
+  /** 拉取应用冷启动时若已有待处理的深链 token(避免渲染层未挂载时的事件丢失) */
+  getPendingDeepLink: () => Promise<{ token: string | null }>;
   /** 监听主进程文件系统监听器(FSEvents)推送的"已安装软件发生变化"事件,返回取消监听函数 */
   onSoftwareChanged: (callback: (apps: Software[]) => void) => () => void;
   /** 监听由全局快捷键触发的"打开径向菜单"事件(带光标局部坐标与扇区配置),返回取消监听函数 */

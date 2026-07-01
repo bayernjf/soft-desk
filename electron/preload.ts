@@ -74,6 +74,12 @@ contextBridge.exposeInMainWorld('softdesk', {
     ipcRenderer.on('launcher:open', handler);
     return () => ipcRenderer.removeListener('launcher:open', handler);
   },
+  onDeepLink: (callback: (token: string) => void) => {
+    const handler = (_e: unknown, token: string) => callback(token);
+    ipcRenderer.on('deep-link:share', handler);
+    return () => ipcRenderer.removeListener('deep-link:share', handler);
+  },
+  getPendingDeepLink: () => ipcRenderer.invoke('deep-link:getPending'),
   onSoftwareChanged: (callback: (apps: unknown[]) => void) => {
     const handler = (_e: unknown, apps: unknown[]) => callback(apps);
     ipcRenderer.on('software:changed', handler);

@@ -64,6 +64,29 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let radialWin: BrowserWindow | null = null;
 
+// ============ softdesk:// 深链(分享导入) ============
+// 客户端通过 `softdesk://share/:token` 唤起,主进程解析后把 token 推给渲染层。
+// 渲染层未挂载(冷启动)时把 token 缓存到 pendingShareToken,渲染层挂载后主动拉取一次。
+let pendingShareToken: string | null = null;
+
+function parseShareToken(url: string | undefined | null): string | null {
+  if (!url || typeof url !== 'string') return null;
+  const m = /^softdesk:\/\/share\/([A-Za-z0-9_-]{1,64})/i.exec(url.trim());
+  return m ? m[1] : null;
+}
+
+function dispatchShareToken(token: string): void {
+  if (win && !win.isDestroyed()) {
+    showWindow();
+    win.webContents.send('deep-link:share', token);
+  } else {
+    // 主窗口尚未创建,缓存 token,createWindow 完成后由渲染层拉取
+    pendingShareToken = token;
+    if (!win) createWindow();
+    else showWindow();
+  }
+}
+
 // 窗口行为偏好,由渲染进程(设置页)通过 settings:sync 同步,并落盘持久化,
 // 以便下次冷启动前(创建窗口时)即可读取 startMinimized。
 interface WindowPrefs {
@@ -1323,6 +1346,13 @@ ipcMain.handle('auth:updateProfile', (_event, raw: unknown) => {
   return authUpdateProfile(input);
 });
 
+// 渲染层挂载后主动拉取:如果冷启动带了 softdesk:// 深链,这里把 token 取回并清空
+ipcMain.handle('deep-link:getPending', () => {
+  const token = pendingShareToken;
+  pendingShareToken = null;
+  return { token };
+});
+
 ipcMain.handle('software:remove', async (_event, appPath: string) => {
   if (!isAllowedAppPath(appPath)) {
     return { success: false, error: '无效或未授权的软件路径' };
@@ -1351,11 +1381,25 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
     // 用户再次启动 / 双击 Dock 图标时,把已有主窗口拉回前台
-    showWindow();
+    // Windows / Linux 上深链会作为命令行参数传入,遍历找到 softdesk:// 协议参数
+    const linkArg = argv.find((a) => typeof a === 'string' && a.startsWith('softdesk://'));
+    const token = parseShareToken(linkArg);
+    if (token) {
+      dispatchShareToken(token);
+    } else {
+      showWindow();
+    }
   });
 }
+
+// macOS 下双击 softdesk:// 链接会走 open-url 事件(而非命令行参数)
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  const token = parseShareToken(url);
+  if (token) dispatchShareToken(token);
+});
 
 app.whenReady().then(() => {
   // 显式锁定为常规(ForegroundApplication)激活策略:这是 macOS 台前调度
@@ -1363,6 +1407,25 @@ app.whenReady().then(() => {
   // 把 app 漂移成 accessory(UIElementApplication)类型而脱离台前调度堆叠。
   if (process.platform === 'darwin') {
     app.setActivationPolicy('regular');
+  }
+  // 注册 softdesk:// 协议为本应用默认打开处理器
+  // 开发模式下 Electron 二进制无法直接绑定协议,需要额外传入 exec path + argv
+  try {
+    if (VITE_DEV_SERVER_URL && process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('softdesk', process.execPath, [path.resolve(process.argv[1])]);
+    } else {
+      app.setAsDefaultProtocolClient('softdesk');
+    }
+  } catch (err) {
+    logger.error('setAsDefaultProtocolClient failed:', err);
+  }
+  // Windows/Linux 冷启动时,深链会直接作为进程 argv 传入,这里解析一次
+  const initialLinkArg = process.argv.find(
+    (a) => typeof a === 'string' && a.startsWith('softdesk://')
+  );
+  const initialToken = parseShareToken(initialLinkArg);
+  if (initialToken) {
+    pendingShareToken = initialToken;
   }
   loadWindowPrefs();
   loadRadialConfig();
