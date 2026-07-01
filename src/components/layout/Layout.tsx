@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { QuickLauncher } from '@/components/features/QuickLauncher';
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 
 export function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { isScanning, scanError, scanSoftware, applyScannedApps, setElectronReady } =
     useSoftwareStore();
   const [launcherOpen, setLauncherOpen] = useState(false);
@@ -94,6 +95,25 @@ export function Layout() {
       window.removeEventListener('keydown', onKeyDown);
     };
   }, []);
+
+  // 接通 softdesk:// 深链:
+  // 1) 冷启动时若主进程缓存了待处理 token,主动拉取并跳转到 /share/:token
+  // 2) 运行中收到主进程推送的深链事件,跳转到 /share/:token
+  useEffect(() => {
+    const bridge = window.softdesk;
+    if (!bridge) return;
+    // 冷启动兜底:先取一次待处理 token
+    bridge.getPendingDeepLink?.().then((res) => {
+      if (res?.token) navigate(`/share/${res.token}`);
+    }).catch(() => {});
+    // 运行中订阅:主进程后续通过 open-url / second-instance 触发
+    const unsubscribe = bridge.onDeepLink?.((token) => {
+      if (token) navigate(`/share/${token}`);
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, [navigate]);
 
   return (
     <div className="h-screen flex flex-col bg-[#161618] text-slate-100 font-sans antialiased overflow-hidden">

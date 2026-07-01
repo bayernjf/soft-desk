@@ -41,6 +41,7 @@ const baseConfig = (items: RadialMenuConfig['items']): RadialMenuConfig => ({
   mouseWheelToggle: false,
   sectors: 6,
   items,
+  showRecent: false,
 });
 
 describe('resolveRadialConfig - 跨设备置灰', () => {

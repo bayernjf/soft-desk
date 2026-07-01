@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, Clock, Play, Loader2, Check, AlertCircle, Pencil, Trash2, Plus, Sparkles, LogIn } from 'lucide-react';
+import { Star, Clock, Play, Loader2, Check, AlertCircle, Pencil, Trash2, Plus, Sparkles, LogIn, Share2 } from 'lucide-react';
 import type { Workflow } from '@/types';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { formatTimeAgo } from '@/services/software.service';
 import { hasActiveAiProvider } from '@/services/ai.service';
+import { serializeWorkflow } from '@/services/share-serializer';
 import { cn } from '@/lib/utils';
 import { WorkflowEditorModal } from './WorkflowEditorModal';
 import { AiWorkflowModal } from './AiWorkflowModal';
+import { ShareDialog } from './ShareDialog';
 import { AppIcon } from './AppIcon';
 
 interface WorkflowCardProps {
@@ -27,8 +29,10 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
   const launchWorkflow = useSoftwareStore((s) => s.launchWorkflow);
   const toggleWorkflowFavorite = useSoftwareStore((s) => s.toggleWorkflowFavorite);
   const deleteWorkflow = useSoftwareStore((s) => s.deleteWorkflow);
+  const loggedIn = useAuthStore((s) => s.loggedIn);
   const [phase, setPhase] = useState<LaunchPhase>({ status: 'idle' });
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -117,6 +121,19 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
                 >
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
+                {loggedIn && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShareOpen(true);
+                    }}
+                    title="分享"
+                    aria-label="分享工作流"
+                    className="p-1 rounded-md text-slate-500 hover:text-violet-300 hover:bg-slate-800/60 transition-colors"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -236,6 +253,18 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
           </div>
         </div>
       </div>
+
+      {shareOpen && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ShareDialog
+            kind="workflow"
+            defaultTitle={workflow.name}
+            defaultDescription={workflow.description}
+            buildPayload={() => serializeWorkflow(workflow, software)}
+            onClose={() => setShareOpen(false)}
+          />
+        </div>
+      )}
     </div>
   );
 });

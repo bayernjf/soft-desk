@@ -8,6 +8,7 @@ const base = (over: Partial<RadialMenuConfig>): RadialMenuConfig => ({
   mouseWheelToggle: false,
   sectors: 6,
   items: [],
+  showRecent: false,
   ...over,
 });
 
