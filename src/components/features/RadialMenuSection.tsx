@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, X, AppWindow, Layers, Keyboard, Mouse, LogIn, Clock, ChevronDown, Check } from 'lucide-react';
+import { Play, X, AppWindow, Layers, Keyboard, Mouse, LogIn, Clock, ChevronDown, Check, Share2 } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { syncRadialToMain } from '@/services/radial.service';
+import { serializeRadial } from '@/services/share-serializer';
+import { ShareDialog } from './ShareDialog';
 import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
 import type { RadialItem, RadialRenderItem, RadialStyle } from '@/types';
@@ -99,6 +101,7 @@ export function RadialMenuSection() {
   const navigate = useNavigate();
 
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   // 勾选「最近使用」时,设置面板默认也停在最近使用页(与运行时行为一致);
   // 未勾选则保持原行为,默认第一页。
   const [previewPage, setPreviewPage] = useState<0 | 1 | 'recent'>(() =>
@@ -248,7 +251,19 @@ export function RadialMenuSection() {
 
   return (
     <div>
-      <h2 className="text-base font-semibold text-slate-100 mb-1">径向菜单</h2>
+      <div className="flex items-start justify-between gap-3 mb-1">
+        <h2 className="text-base font-semibold text-slate-100">径向菜单</h2>
+        {loggedIn && radial.items.length > 0 && (
+          <button
+            onClick={() => setShareOpen(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-violet-300 hover:bg-violet-500/15 border border-violet-500/30 transition-colors"
+            title="分享当前径向菜单配置"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            分享配置
+          </button>
+        )}
+      </div>
       <p className="text-sm text-slate-500 mb-4">
         按下全局快捷键，在光标处弹出圆形快捷菜单，快速启动应用或工作流
       </p>
@@ -604,6 +619,15 @@ export function RadialMenuSection() {
             去登录
           </button>
         </div>
+      )}
+
+      {shareOpen && (
+        <ShareDialog
+          kind="radial"
+          defaultTitle="我的径向菜单"
+          buildPayload={() => serializeRadial(radial, software)}
+          onClose={() => setShareOpen(false)}
+        />
       )}
     </div>
   );
