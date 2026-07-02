@@ -578,6 +578,11 @@ async function mapWithConcurrency<T, R>(
 }
 
 export async function scanInstalledApps(smartGrouping = true): Promise<ScannedApp[]> {
+  if (process.platform !== 'darwin') {
+    // 非 macOS 平台暂未实现原生扫描，Phase 1 会通过平台策略层补齐 Windows 实现。
+    // 当前阶段返回空数组，保证主进程与前端能正常启动。
+    return [];
+  }
   await loadMetaCache();
   const found = await listAppPaths();
 
@@ -614,6 +619,7 @@ export async function scanInstalledApps(smartGrouping = true): Promise<ScannedAp
 export async function applyAiCategories(
   mapping: Record<string, ScannedCategory>
 ): Promise<void> {
+  if (process.platform !== 'darwin') return;
   if (!mapping || Object.keys(mapping).length === 0) return;
   await loadMetaCache();
   let changed = false;
@@ -662,6 +668,10 @@ let watchDebounce: NodeJS.Timeout | null = null;
  * 变化经 400ms 去抖后触发回调,由调用方重新扫描(命中缓存,极快)。
  */
 export function startAppWatcher(onChange: () => void): void {
+  if (process.platform !== 'darwin') {
+    // 非 macOS 平台暂无对应文件系统监听策略，Phase 1 由平台策略层实现。
+    return;
+  }
   stopAppWatcher();
   // /System/Applications 为只读系统目录,基本不变,无需监听
   const watchDirs = [
