@@ -71,7 +71,24 @@ jobs:
           # 后续接入证书时把 CSC_LINK / CSC_KEY_PASSWORD 等 secret
           # 补上即可自动切换到签名模式。
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # Vite 构建期必须读到这两个变量，否则前端 supabase 客户端为 null，
+          # 用户装完打开会看到 “Supabase 未配置” 的错误提示。
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run ${{ matrix.script }}
+
+      - name: Ad-hoc codesign SoftDesk.app (macOS only)
+        # 与 build-mac.yml 中一致的兜底签名。Windows runner 上这一步整体被
+        # if 短路，不会执行。
+        if: matrix.os == 'macos-latest'
+        run: |
+          set -e
+          shopt -s nullglob
+          for app in release/mac*/SoftDesk.app; do
+            echo "Ad-hoc signing $app"
+            codesign --force --deep --sign - "$app"
+            codesign --verify --deep --strict --verbose=2 "$app" || true
+          done
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

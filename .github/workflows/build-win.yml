@@ -61,6 +61,10 @@ jobs:
         # - --publish never  只出本地产物，不上传 GH Release
         # GitHub Actions 的 windows-latest runner 网络直连 GitHub，
         # 镜像其实用不到，但保留可让脚本单一入口、双端一致。
+        env:
+          # Vite 构建期必须读到这两个变量，否则前端 supabase 客户端为 null
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run dist:win
 
       - name: List build output
