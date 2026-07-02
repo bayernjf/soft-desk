@@ -6,6 +6,32 @@ SoftDesk 桌面应用版,基于 Electron 打包(`electron/` + `electron-builder`
 
 ---
 
+## 安装与已知提示
+
+### macOS: 首次打开提示 “SoftDesk 已损坏,无法打开”
+
+**这不是文件损坏**,是 macOS Gatekeeper 对**未经 Apple Developer ID 签名 + 公证**的 dmg 的默认拦截。当前 GitHub Actions 打包出的 dmg 只做了 ad-hoc 签名,系统会给从浏览器下载的 dmg 打 `com.apple.quarantine` 标记并直接判为 “已损坏”。
+
+**解决方式(任选其一)**:
+
+1. **推荐**:装完 SoftDesk 后,在 **终端** 里跑一条命令去除隔离标记:
+
+   ```bash
+   xattr -cr /Applications/SoftDesk.app
+   ```
+
+   之后双击即可正常打开,只需操作一次。
+
+2. **不安装到 Applications**:如果你把 SoftDesk 拖到了其它位置,把上面路径改成实际路径即可。
+
+3. **未来无感体验**:等我们接入 Apple Developer ID($99/年) + 公证后,此步骤将不再需要。届时自动更新也会全程无感。
+
+### Windows: SmartScreen 阻止运行
+
+Windows 会对未签名的 exe 弹一次 “Windows 已保护你的电脑” 蓝框。点击左上角 **“更多信息” → “仍要运行”** 即可。首次装完后不再提示。
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
