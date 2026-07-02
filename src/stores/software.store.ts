@@ -176,7 +176,9 @@ export const useSoftwareStore = create<SoftwareStore>()(
     }
 
     const matched = wf.softwareIds.map((sid) => get().software.find((s) => s.id === sid));
-    const paths = matched.filter((s): s is Software => !!s?.path).map((s) => s.path);
+    const paths = matched
+      .filter((s): s is Software => !!s?.path && !s.uninstalled && !s.deleted)
+      .map((s) => s.path);
     const missing = wf.softwareIds.length - paths.length;
 
     const updateStats = () => {

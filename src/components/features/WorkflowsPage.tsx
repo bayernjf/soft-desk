@@ -42,9 +42,14 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
   }, []);
 
   const workflowSoftware = workflow.softwareIds
-    .map((id) => software.find((s) => s.id === id))
-    .filter(Boolean)
+    .map((id) => ({ id, sw: software.find((s) => s.id === id) }))
     .slice(0, 4);
+
+  const unavailableCount = workflow.softwareIds.reduce((acc, id) => {
+    const sw = software.find((s) => s.id === id);
+    if (!sw || sw.uninstalled || sw.deleted) return acc + 1;
+    return acc;
+  }, 0);
 
   const handleLaunch = async () => {
     if (phase.status === 'launching') return;
@@ -225,29 +230,49 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
 
         <div className="flex items-center justify-between">
           <div className="flex items-center -space-x-2">
-            {workflowSoftware.map((sw) =>
-              sw ? (
+            {workflowSoftware.map(({ id, sw }) => {
+              const missing = !sw;
+              const unavailable = missing || sw.uninstalled || sw.deleted;
+              const title = missing
+                ? '该软件未安装'
+                : sw.deleted
+                  ? `${sw.name}（已从本地电脑删除，未安装）`
+                  : sw.uninstalled
+                    ? `${sw.name}（已弃用，未安装）`
+                    : sw.name;
+              return (
                 <div
-                  key={sw.id}
+                  key={id}
                   className={cn(
                     'rounded-xl border-2 border-slate-900',
-                    (sw.uninstalled || sw.deleted) && 'grayscale opacity-50'
+                    unavailable && 'grayscale opacity-50'
                   )}
-                  title={
-                    sw.deleted
-                      ? `${sw.name}（已从本地电脑删除）`
-                      : sw.uninstalled
-                        ? `${sw.name}（已弃用）`
-                        : sw.name
-                  }
+                  title={title}
                 >
-                  <AppIcon software={sw} size={36} rounded="rounded-[10px]" />
+                  {sw ? (
+                    <AppIcon software={sw} size={36} rounded="rounded-[10px]" />
+                  ) : (
+                    <div
+                      className="w-9 h-9 rounded-[10px] flex items-center justify-center bg-slate-800/60 text-slate-500"
+                      aria-label="未安装的软件"
+                    >
+                      <span className="text-[10px]">?</span>
+                    </div>
+                  )}
                 </div>
-              ) : null
-            )}
+              );
+            })}
             {workflowSoftware.length > 0 && (
               <div className="pl-3 ml-3 text-xs text-slate-500 border-l border-slate-700/80">
                 {workflow.softwareIds.length} 个应用
+                {unavailableCount > 0 && (
+                  <span
+                    className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[10px]"
+                    title={`${unavailableCount} 个软件未安装或已弃用`}
+                  >
+                    {unavailableCount} 未安装
+                  </span>
+                )}
               </div>
             )}
           </div>

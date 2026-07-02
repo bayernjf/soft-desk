@@ -36,16 +36,21 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const filteredSoftware = software.filter((s) =>
-    s.name.toLowerCase().includes(query.trim().toLowerCase())
+  const filteredSoftware = software.filter(
+    (s) =>
+      !s.uninstalled &&
+      !s.deleted &&
+      s.name.toLowerCase().includes(query.trim().toLowerCase())
   );
 
-  // 已选软件(按选择顺序),用于上方展示区
+  // 已选软件(按选择顺序),用于上方展示区;
+  // 对于已卸载/已删除/找不到的软件,仍保留其 id,并置灰显示「未安装」
   const selectedSoftware = useMemo(
     () =>
-      selectedIds
-        .map((id) => software.find((s) => s.id === id))
-        .filter((s): s is NonNullable<typeof s> => !!s),
+      selectedIds.map((id) => ({
+        id,
+        sw: software.find((s) => s.id === id),
+      })),
     [selectedIds, software]
   );
 
@@ -206,24 +211,67 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
-                  {selectedSoftware.map((s) => (
-                    <div
-                      key={s.id}
-                      className="relative flex items-center gap-2 pl-2 pr-7 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/60"
-                    >
-                      <AppIcon software={s} size={28} rounded="rounded-md" />
-                      <span className="flex-1 text-xs font-medium text-slate-200 truncate">
-                        {s.name}
-                      </span>
-                      <button
-                        onClick={() => removeSoftware(s.id)}
-                        aria-label={`移除 ${s.name}`}
-                        className="absolute top-1 right-1 p-0.5 rounded-md text-slate-500 hover:text-rose-400 hover:bg-slate-700/60 transition-colors"
+                  {selectedSoftware.map(({ id, sw }) => {
+                    const missing = !sw;
+                    const unavailable = missing || sw.uninstalled || sw.deleted;
+                    const displayName = sw?.name ?? '未安装的软件';
+                    const statusLabel = missing
+                      ? '未安装'
+                      : sw.deleted
+                        ? '已从本地电脑删除'
+                        : sw.uninstalled
+                          ? '已弃用'
+                          : '';
+                    return (
+                      <div
+                        key={id}
+                        className={cn(
+                          'relative flex items-center gap-2 pl-2 pr-7 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/60',
+                          unavailable && 'opacity-60'
+                        )}
+                        title={
+                          unavailable
+                            ? `${displayName}（${statusLabel}）`
+                            : displayName
+                        }
                       >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
+                        {sw ? (
+                          <div className={cn(unavailable && 'grayscale')}>
+                            <AppIcon software={sw} size={28} rounded="rounded-md" />
+                          </div>
+                        ) : (
+                          <div
+                            className="w-7 h-7 rounded-md flex items-center justify-center bg-slate-700/60 text-slate-400 shrink-0"
+                            aria-label="未安装的软件"
+                          >
+                            <span className="text-[10px]">?</span>
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <span
+                            className={cn(
+                              'block text-xs font-medium truncate',
+                              unavailable ? 'text-slate-400' : 'text-slate-200'
+                            )}
+                          >
+                            {displayName}
+                          </span>
+                          {unavailable && (
+                            <span className="block text-[10px] text-amber-400 truncate">
+                              {statusLabel}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => removeSoftware(id)}
+                          aria-label={`移除 ${displayName}`}
+                          className="absolute top-1 right-1 p-0.5 rounded-md text-slate-500 hover:text-rose-400 hover:bg-slate-700/60 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
