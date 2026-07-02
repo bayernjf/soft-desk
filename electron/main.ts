@@ -26,6 +26,7 @@ import {
 import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession, getTokens as authGetTokens, updateProfile as authUpdateProfile } from './auth';
 import { getAppWindowBounds, warpCursor } from './window-locator';
 import { createLogger } from './lib/logger';
+import { startAutoUpdater, stopAutoUpdater } from './updater';
 
 const logger = createLogger('main');
 
@@ -1459,6 +1460,14 @@ app.whenReady().then(() => {
       logger.error('watcher rescan failed:', err);
     }
   });
+
+  // 只有打包后的正式版才启用 electron-updater;dev 模式内部会短路。
+  // 传入主窗口以便把 checking / progress / downloaded 事件推给渲染层。
+  if (win) {
+    startAutoUpdater(win).catch((err) => {
+      logger.error('startAutoUpdater failed (non-fatal):', err);
+    });
+  }
 });
 
 app.on('before-quit', () => {
@@ -1478,6 +1487,7 @@ app.on('before-quit', () => {
   }
   stopMonitor();
   stopAppWatcher();
+  stopAutoUpdater();
   closeDb();
 });
 

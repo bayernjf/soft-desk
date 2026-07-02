@@ -116,4 +116,12 @@ contextBridge.exposeInMainWorld('softdesk', {
   radialGetRecent: () => ipcRenderer.invoke('radial:getRecent'),
   radialSyncConfig: (config: unknown) => ipcRenderer.invoke('radial:syncConfig', config),
   radialPreview: () => ipcRenderer.invoke('radial:preview'),
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  quitAndInstall: () => ipcRenderer.invoke('updater:quitAndInstall'),
+  getUpdaterStatus: () => ipcRenderer.invoke('updater:getStatus'),
+  onUpdaterEvent: (callback: (event: unknown) => void) => {
+    const handler = (_e: unknown, event: unknown) => callback(event);
+    ipcRenderer.on('updater:event', handler);
+    return () => ipcRenderer.removeListener('updater:event', handler);
+  },
 });
