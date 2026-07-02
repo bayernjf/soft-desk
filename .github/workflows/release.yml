@@ -1,0 +1,116 @@
+name: Release
+
+# 推送 v* tag 时并行在 macOS 与 Windows runner 上构建正式包，
+# 双端都成功后自动创建 GitHub Release 并挂载产物：
+#   Mac : *.dmg  *.zip  latest-mac.yml
+#   Win : *.exe  *.exe.blockmap  latest.yml
+# electron-updater 会读取 latest*.yml 完成自动更新分发。
+#
+# 使用方式（在 Mac 本地）：
+#   npm version minor                # 生成 v1.1.0 tag + 改 package.json 版本
+#   git push --follow-tags            # 推送 tag 触发本 workflow
+#
+# 如果 Mac 或 Windows 任一端构建失败，publish job 不会运行，
+# 也就不会有"半个版本"泄漏给用户。
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  # softprops/action-gh-release 需要写权限来创建 Release
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    strategy:
+      # 一端失败仍继续跑另一端，方便同时诊断问题
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            script: dist:mac
+            artifact_glob: |
+              release/*.dmg
+              release/*.zip
+              release/latest-mac.yml
+              release/*.blockmap
+          - os: windows-latest
+            script: dist:win
+            artifact_glob: |
+              release/*.exe
+              release/*.exe.blockmap
+              release/latest.yml
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify (typecheck + tests)
+        # 发版前再跑一次双端验证，防止误发有回归的 tag
+        run: |
+          npm run check
+          npm test
+
+      - name: Package installer
+        env:
+          # 让 electron-builder 不做代码签名（Phase 0 暂不签），
+          # 后续接入证书时把 CSC_LINK / CSC_KEY_PASSWORD 等 secret
+          # 补上即可自动切换到签名模式。
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run ${{ matrix.script }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish GitHub Release
+    # 关键：只有 Mac + Win 两端都构建成功，才会创建 Release，
+    # 避免 Mac 已发但 Win 挂了导致用户拿到不同步的版本。
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          # 把两个平台的 artifact 都下载到 release/ 下（自动分子目录）
+
+      - name: Flatten artifact tree
+        run: |
+          set -e
+          mkdir -p release-flat
+          # 把子目录里的所有产物拉到同一层，便于统一挂 Release
+          find release -type f -exec cp -v {} release-flat/ \;
+          ls -la release-flat
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # tag_name 从触发 tag 自动读取
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release-flat/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
