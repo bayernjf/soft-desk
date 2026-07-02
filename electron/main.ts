@@ -793,6 +793,13 @@ ipcMain.handle('software:scan', async (_event, smartGrouping?: boolean) => {
 // 防止渲染进程被注入后传入任意路径启动/删除文件
 const knownAppPaths = new Set<string>();
 
+function normalizeAppPathKey(p: string): string {
+  // Windows 文件系统对大小写不敏感（NTFS 也默认不区分），路径大小写在不同
+  // 数据源（注册表 / .lnk / DisplayIcon）之间常常混杂，这里统一小写做 key。
+  // macOS 保留原路径大小写以匹配 case-sensitive 卷。
+  return process.platform === 'win32' ? p.toLowerCase() : p;
+}
+
 // 记录最近一次渲染层传入的"智能分类"开关,供 FSEvents 监听到变化后的重扫沿用
 let lastSmartGrouping = true;
 
@@ -800,7 +807,7 @@ let lastSmartGrouping = true;
 const aiClassifiedIds = new Set<string>();
 
 function isAllowedAppPath(appPath: unknown): appPath is string {
-  return typeof appPath === 'string' && knownAppPaths.has(appPath);
+  return typeof appPath === 'string' && knownAppPaths.has(normalizeAppPathKey(appPath));
 }
 
 /**
@@ -852,7 +859,7 @@ async function classifyUncategorized(apps: ScannedApp[]): Promise<ScannedApp[]> 
 async function scanWithUsage(): Promise<ScannedApp[]> {
   const apps = await scanInstalledApps(lastSmartGrouping);
   knownAppPaths.clear();
-  for (const a of apps) knownAppPaths.add(a.path);
+  for (const a of apps) knownAppPaths.add(normalizeAppPathKey(a.path));
   const classified = await classifyUncategorized(apps);
   let summary: ReturnType<typeof getUsageSummary> = [];
   try {
