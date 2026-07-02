@@ -1,0 +1,84 @@
+name: Build macOS Installer
+
+# 手动或 push 到指定分支时，在 macos-latest runner 上出 dmg + zip 安装包，
+# 并把产物作为 artifact 上传。适合快速验证 Mac 端构建产物，或在没有
+# Xcode / 证书环境的机器上也能拿到可分发的 dmg。
+#
+# 使用方式：
+#   GitHub → Actions → Build macOS Installer → Run workflow
+#   完成后在 Summary 页点击 "softdesk-mac-installer" artifact 下载。
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "feature/**"
+      - main
+    paths:
+      # 只有这些位置的改动才自动构建，避免文档改动也跑一次 macOS 打包。
+      - "package.json"
+      - "package-lock.json"
+      - "electron/**"
+      - "src/**"
+      - "build/**"
+      - "vite.config.ts"
+      - "tsconfig*.json"
+      - ".github/workflows/build-mac.yml"
+
+concurrency:
+  group: build-mac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build-mac
+    runs-on: macos-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Package macOS installer (dmg + zip)
+        env:
+          # Phase 0 暂不签 macOS，关掉自动证书发现避免 electron-builder
+          # 去扫 keychain。以后要签名时把 CSC_LINK / APPLE_ID 等 secret
+          # 补上即可自动启用。
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        # dist:mac 已经在 package.json 里配好了：
+        # - cross-env 注入 npmmirror 镜像与 ./.cache/ 本地缓存
+        # - --publish never 只出本地产物，不上传 GH Release
+        run: npm run dist:mac
+
+      - name: List build output
+        run: |
+          echo "=== release directory ==="
+          ls -lah release || true
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: softdesk-mac-installer
+          # 只挑最终发布需要的文件，避免把 mac/ 子目录也塞进去。
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 14
