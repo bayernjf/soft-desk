@@ -24,7 +24,7 @@ import {
   type UserProfileInput,
 } from './ai';
 import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession, getTokens as authGetTokens, updateProfile as authUpdateProfile } from './auth';
-import { getAppWindowBounds, warpCursor } from './window-locator';
+import { getAppWindowBounds, warpCursor, focusExistingAppWindow } from './window-locator';
 import { createLogger } from './lib/logger';
 import { startAutoUpdater, stopAutoUpdater } from './updater';
 
@@ -811,6 +811,33 @@ function isAllowedAppPath(appPath: unknown): appPath is string {
 }
 
 /**
+ * 启动或聚焦一个已授权的应用路径。
+ *
+ * 平台差异:
+ * - macOS: `shell.openPath` 底层走 LaunchServices,若目标 .app 已运行,LS 会自动
+ *   把已有实例切到前台(等价于 Dock 点击),因此不需要额外聚焦逻辑。
+ * - Windows: `shell.openPath` 相当于 ShellExecute `open` 动词,对绝大部分应用等于
+ *   "运行一次 exe",默认会另起进程/窗口。要复用已有实例必须先通过 user32 的
+ *   SetForegroundWindow / SwitchToThisWindow 把主窗口切到前台,拿不到窗口(未运行
+ *   或纯托盘应用)时才回退到 openPath。
+ *
+ * 返回同 shell.openPath 一致的字符串(空串代表成功,非空为错误信息),方便调用方复用。
+ */
+async function launchOrFocusApp(appPath: string): Promise<string> {
+  if (process.platform === 'win32') {
+    try {
+      const result = await focusExistingAppWindow(appPath);
+      if (result.activated) return '';
+      // running===true 但 activated===false 时,通常是纯托盘/无窗口应用,再走 openPath
+      // 让应用自己处理"二次启动"(多数会显示托盘菜单或还原主窗口)。
+    } catch (err) {
+      logger.error('focusExistingAppWindow error, fallback to openPath:', err);
+    }
+  }
+  return shell.openPath(appPath);
+}
+
+/**
  * 对规则判不出(categorySource==='default')且尚未 AI 分类过的应用,批量送模型兜底分类。
  * 仅在存在启用的 AI provider 且开启智能分类时触发;结果写回扫描缓存并就地修正本次返回值。
  * 任何失败都静默回退(保留 utilities),不阻断扫描主流程。
@@ -1016,7 +1043,7 @@ ipcMain.handle('radial:launch', async (_event, raw: unknown) => {
     if (!isAllowedAppPath(appPath)) {
       return { success: false, error: '无效或未授权的软件路径' };
     }
-    const error = await shell.openPath(appPath);
+    const error = await launchOrFocusApp(appPath);
     if (error) return { success: false, error };
     if (item.targetId.length > 0 && item.targetId.length <= 256) {
       try {
@@ -1036,7 +1063,7 @@ ipcMain.handle('radial:launch', async (_event, raw: unknown) => {
   const paths = (item.workflowPaths ?? []).filter((p): p is string => isAllowedAppPath(p));
   let launched = 0;
   for (let i = 0; i < paths.length; i++) {
-    const error = await shell.openPath(paths[i]);
+    const error = await launchOrFocusApp(paths[i]);
     if (!error) launched++;
     if (i < paths.length - 1) {
       await new Promise((resolve) => setTimeout(resolve, 400));
@@ -1049,7 +1076,7 @@ ipcMain.handle('software:launch', async (_event, appPath: string, softwareId?: s
   if (!isAllowedAppPath(appPath)) {
     return { success: false, error: '无效或未授权的软件路径' };
   }
-  const error = await shell.openPath(appPath);
+  const error = await launchOrFocusApp(appPath);
   if (error) {
     return { success: false, error };
   }
@@ -1076,7 +1103,7 @@ ipcMain.handle('software:launchBatch', async (_event, appPaths: string[]) => {
       results.push({ path: String(appPath), success: false, error: '无效或未授权的软件路径' });
       continue;
     }
-    const error = await shell.openPath(appPath);
+    const error = await launchOrFocusApp(appPath);
     results.push(error ? { path: appPath, success: false, error } : { path: appPath, success: true });
 
     if (i < appPaths.length - 1) {
