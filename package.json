@@ -83,7 +83,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "OWNER_PLACEHOLDER",
+        "owner": "bayernjf",
         "repo": "soft-desk"
       }
     ],
