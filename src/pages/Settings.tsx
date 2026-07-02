@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
 import { AiModelsSection } from '@/components/features/AiModelsSection';
 import { RadialMenuSection } from '@/components/features/RadialMenuSection';
+import { UpdateSection } from '@/components/features/UpdateSection';
 
 type TabId = 'appearance' | 'notifications' | 'radial' | 'data' | 'privacy' | 'ai' | 'help';
 
@@ -288,6 +289,8 @@ export function Settings() {
                 <h2 className="text-base font-semibold text-slate-100 mb-1">帮助与常见问题</h2>
                 <p className="text-sm text-slate-500">遇到问题？这里是常见情况的解决办法</p>
               </div>
+
+              <UpdateSection />
 
               <div className="rounded-2xl bg-slate-800/40 border border-slate-800 overflow-hidden">
                 <div className="flex items-start gap-3 p-4 border-b border-slate-800/80">
