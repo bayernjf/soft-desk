@@ -578,9 +578,15 @@ async function mapWithConcurrency<T, R>(
 }
 
 export async function scanInstalledApps(smartGrouping = true): Promise<ScannedApp[]> {
+  if (process.platform === 'win32') {
+    // Windows 走独立扫描模块（注册表 + 快捷方式 + app.getFileIcon）。
+    // smartGrouping 参数当前不使用（Win 端分类走关键字规则），保留签名保证 IPC 兼容。
+    void smartGrouping;
+    const { scanInstalledAppsWin } = await import('./scanner-win');
+    return scanInstalledAppsWin();
+  }
   if (process.platform !== 'darwin') {
-    // 非 macOS 平台暂未实现原生扫描，Phase 1 会通过平台策略层补齐 Windows 实现。
-    // 当前阶段返回空数组，保证主进程与前端能正常启动。
+    // 其它平台（linux）暂无实现，返回空数组避免主进程崩溃。
     return [];
   }
   await loadMetaCache();
@@ -663,13 +669,22 @@ async function pruneOrphanIcons(): Promise<void> {
 /** 用 FSEvents(fs.watch) 监听应用目录的安装/卸载,替代窗口聚焦轮询。 */
 let watchers: FSWatcher[] = [];
 let watchDebounce: NodeJS.Timeout | null = null;
+let winPollTimer: NodeJS.Timeout | null = null;
 
 /**
  * 变化经 400ms 去抖后触发回调,由调用方重新扫描(命中缓存,极快)。
  */
 export function startAppWatcher(onChange: () => void): void {
+  if (process.platform === 'win32') {
+    // Windows 无 FSEvents 等价物；改为 10 分钟轮询触发一次 onChange（命中缓存极快）。
+    // 后续 Phase 可改为 ReadDirectoryChangesW / 注册表通知优化。
+    stopAppWatcher();
+    const timer = setInterval(onChange, 10 * 60 * 1000);
+    winPollTimer = timer;
+    return;
+  }
   if (process.platform !== 'darwin') {
-    // 非 macOS 平台暂无对应文件系统监听策略，Phase 1 由平台策略层实现。
+    // 非 macOS / Windows 平台暂无监听策略。
     return;
   }
   stopAppWatcher();
@@ -699,6 +714,10 @@ export function stopAppWatcher(): void {
   if (watchDebounce) {
     clearTimeout(watchDebounce);
     watchDebounce = null;
+  }
+  if (winPollTimer) {
+    clearInterval(winPollTimer);
+    winPollTimer = null;
   }
   for (const w of watchers) {
     try {
