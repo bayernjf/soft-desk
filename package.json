@@ -76,7 +76,8 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "build/icon.*"
     ],
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**",

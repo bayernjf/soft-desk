@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage, screen } from 'electron';
 import path from 'node:path';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as childProcess from 'node:child_process';
@@ -142,18 +142,32 @@ function persistWindowPrefs(): void {
   }
 }
 
-const TRAY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 32 32" fill="none">
-  <path d="M10 12L16 8L22 12L16 16L10 12Z" fill="black"/>
-  <path d="M10 16L16 20L22 16" stroke="black" stroke-width="2" stroke-linecap="round" fill="none"/>
-  <circle cx="16" cy="16" r="2" fill="black"/>
-</svg>`;
+// 主进程可访问的 SoftDesk 品牌图标(dev/打包两种模式下都能命中):
+// - dev: APP_ROOT = 项目根,直接读 build/icon.*
+// - 打包: files 白名单已把 build/icon.* 打进 app.asar,APP_ROOT 指向 asar 根,同样可读
+function resolveBrandIconPath(preferIco = false): string {
+  const root = process.env.APP_ROOT ?? path.join(__dirname, '..');
+  if (preferIco && process.platform === 'win32') {
+    const ico = path.join(root, 'build', 'icon.ico');
+    // .ico 缺失时回退到 .png,Electron 在 Windows 上同样可以处理 PNG 任务栏图标
+    if (existsSync(ico)) return ico;
+  }
+  return path.join(root, 'build', 'icon.png');
+}
 
 function createTrayIcon(): Electron.NativeImage {
-  const img = nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(TRAY_ICON_SVG).toString('base64')}`
-  );
-  img.setTemplateImage(true);
-  return img;
+  // Windows 优先 .ico,其它平台读 build/icon.png;托盘统一缩放到 22×22(mac)/32×32(其它)
+  const iconPath = resolveBrandIconPath(true);
+  const img = nativeImage.createFromPath(iconPath);
+  if (img.isEmpty()) {
+    // 图标文件缺失时用空图,至少让 Tray 构造不抛
+    return nativeImage.createEmpty();
+  }
+  if (process.platform === 'darwin') {
+    // macOS 状态栏建议 22×22;当前 icon.png 是彩色 logo,不走 template 以保留色彩
+    return img.resize({ width: 22, height: 22 });
+  }
+  return img.resize({ width: 32, height: 32 });
 }
 
 function showWindow(): void {
@@ -741,6 +755,8 @@ function createWindow() {
     backgroundColor: '#161618',
     show: !windowPrefs.startMinimized,
     titleBarStyle: 'hiddenInset',
+    // Windows/Linux 通过窗口 icon 决定任务栏图标(macOS 走 .icns,不需要这里指定)
+    icon: process.platform === 'win32' ? resolveBrandIconPath(true) : resolveBrandIconPath(false),
     webPreferences: {
       preload: PRELOAD_PATH,
       contextIsolation: true,
