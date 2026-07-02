@@ -69,8 +69,13 @@ interface RegistryEntry {
  * 不使用 `native-reg` 之类 native 模块以规避 electron-rebuild 依赖。
  */
 async function readUninstallRegistry(): Promise<RegistryEntry[]> {
+  // 强制 PowerShell 用 UTF-8 输出,否则中文系统下(默认 CP936/GBK)通过
+  // stdout 传回来的 DisplayName 里的中文会被 Node 的 utf8 解码替换成 U+FFFD,
+  // 造成"百度网盘"等应用名显示为 �������。
   const script = `
     $ErrorActionPreference = 'SilentlyContinue'
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding = [System.Text.Encoding]::UTF8
     $paths = @(
       'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
       'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
@@ -190,8 +195,8 @@ function iconCacheFileName(exePath: string, mtimeMs: number): string {
 }
 
 /**
- * 用 Electron app.getFileIcon 抽取 Windows 应用图标为 PNG，
- * 结果缓存在 userData/icon-cache/ 下，避免每次扫描都重复调用 Shell API。
+ * 用 Electron app.getFileIcon 抽取 Windows 应用图标为 PNG,
+ * 结果缓存在 userData/icon-cache/ 下,避免每次扫描都重复调用 Shell API。
  */
 async function extractIcon(exePath: string, mtimeMs: number): Promise<string | null> {
   try {
@@ -206,7 +211,7 @@ async function extractIcon(exePath: string, mtimeMs: number): Promise<string | n
     }
     const img = await app.getFileIcon(exePath, { size: 'large' });
     if (img.isEmpty()) return null;
-    // 统一缩放到 128px，避免尺寸不一致导致前端 rendering 差异
+    // 统一缩放到 128px,避免尺寸不一致导致前端 rendering 差异
     const resized = img.resize({ width: 128, height: 128, quality: 'good' });
     const png = resized.toPNG();
     if (!png || png.length === 0) return null;
@@ -214,6 +219,21 @@ async function extractIcon(exePath: string, mtimeMs: number): Promise<string | n
     return outPath;
   } catch (err) {
     logger.warn('extractIcon failed for', exePath, err);
+    return null;
+  }
+}
+
+/**
+ * 把缓存的图标 PNG 读成 base64 data URL。渲染层 <AppIcon> 只识别
+ * data:image / file:// 开头的 icon 字段,dev 模式又无法直接加载 file://,
+ * 因此这里必须把 PNG inline 成 data URL,否则前端会退化到首字母占位。
+ */
+async function iconFileToDataUrl(iconCacheFile: string | null): Promise<string | null> {
+  if (!iconCacheFile) return null;
+  try {
+    const buf = await fs.readFile(iconCacheFile);
+    return `data:image/png;base64,${buf.toString('base64')}`;
+  } catch {
     return null;
   }
 }
@@ -253,13 +273,14 @@ async function collectFromRegistry(): Promise<ScannedApp[]> {
 
     const { category, source } = categorizeByName(row.displayName, row.publisher);
     const iconCacheFile = (await extractIcon(exe, stat.mtimeMs)) ?? undefined;
+    const iconDataUrl = (await iconFileToDataUrl(iconCacheFile ?? null)) ?? 'AppWindow';
     const id = hashId(exe);
 
     results.push({
       id,
       name: row.displayName.trim(),
       description: '',
-      icon: 'AppWindow',
+      icon: iconDataUrl,
       iconCacheFile,
       category,
       categorySource: source,
@@ -280,11 +301,13 @@ async function collectFromRegistry(): Promise<ScannedApp[]> {
 }
 
 async function readShortcutTarget(lnkPath: string): Promise<string | null> {
-  // 用 PowerShell WScript.Shell 解析 .lnk 目标；单次调用较慢，但 startmenu
-  // 通常只有几十条，整体在秒级完成。
+  // 用 PowerShell WScript.Shell 解析 .lnk 目标;单次调用较慢,但 startmenu
+  // 通常只有几十条,整体在秒级完成。UTF-8 输出以兼容中文路径。
   return new Promise((resolve) => {
     const script = `
       $ErrorActionPreference = 'SilentlyContinue'
+      [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+      $OutputEncoding = [System.Text.Encoding]::UTF8
       $s = New-Object -ComObject WScript.Shell
       $t = $s.CreateShortcut('${lnkPath.replace(/'/g, "''")}').TargetPath
       if ($t) { Write-Output $t }
@@ -350,13 +373,14 @@ async function collectFromStartMenu(existing: Set<string>): Promise<ScannedApp[]
     const displayName = path.basename(lnk, '.lnk');
     const { category, source } = categorizeByName(displayName);
     const iconCacheFile = (await extractIcon(exe, stat.mtimeMs)) ?? undefined;
+    const iconDataUrl = (await iconFileToDataUrl(iconCacheFile ?? null)) ?? 'AppWindow';
     const id = hashId(exe);
 
     results.push({
       id,
       name: displayName,
       description: '',
-      icon: 'AppWindow',
+      icon: iconDataUrl,
       iconCacheFile,
       category,
       categorySource: source,
