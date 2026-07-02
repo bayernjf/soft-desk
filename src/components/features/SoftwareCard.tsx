@@ -144,9 +144,9 @@ function RadialSlotPicker({ software, className }: { software: Software; classNa
   const softwareById = new Map(softwareList.map((s) => [s.id, s]));
   const workflowById = new Map(workflows.map((w) => [w.id, w]));
 
-  const labelFor = (targetId: string, type: 'app' | 'workflow') => {
-    if (type === 'app') return softwareById.get(targetId)?.name ?? '(已卸载)';
-    return workflowById.get(targetId)?.name ?? '(已删除)';
+  const labelFor = (targetId: string, type: 'app' | 'workflow', snapshotName?: string) => {
+    if (type === 'app') return softwareById.get(targetId)?.name ?? snapshotName ?? '';
+    return workflowById.get(targetId)?.name ?? snapshotName ?? '(已删除)';
   };
 
   const isInRadial = radial.items.some((it) => it.type === 'app' && it.targetId === software.id);
@@ -237,7 +237,7 @@ function RadialSlotPicker({ software, className }: { software: Software; classNa
                   fontSize={10}
                   fill={item ? ring.label : ring.labelEmpty}
                 >
-                  {item ? labelFor(item.targetId, item.type).slice(0, 5) : '+'}
+                  {item ? labelFor(item.targetId, item.type, item.name).slice(0, 5) : '+'}
                 </text>
                 {isCurrent && (
                   <circle
