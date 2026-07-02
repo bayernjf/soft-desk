@@ -170,3 +170,112 @@ export async function warpCursor(x: number, y: number, opts: WarpCursorOptions =
     logger.error('warpCursor failed:', err);
   }
 }
+
+// Windows 端「聚焦已运行应用」脚本:
+// 1. Get-Process 匹配 exe 绝对路径,拿到 pid 与 MainWindowHandle;
+// 2. 若 MainWindowHandle 为 0(比如软件在托盘 / 无主窗口),枚举该 pid 下所有可见顶层窗口取第一个;
+// 3. 通过 P/Invoke:
+//    - IsIconic + ShowWindowAsync(SW_RESTORE=9) 处理最小化窗口
+//    - AllowSetForegroundWindow / SwitchToThisWindow 绕过 SetForegroundWindow 的前台窗口限制
+//    - SetForegroundWindow 兜底
+// 输出 JSON: { running, activated, hwnd }
+// exe 路径通过占位符 __EXE_PATH__ 在调用点用单引号包裹后内插进来 —— 使用 -Command
+// 时后置参数不会自动绑定到 param(),故直接字符串替换。路径已由 isAllowedAppPath 校验。
+const FOCUS_WIN_SCRIPT_TEMPLATE = `
+$ExePath = '__EXE_PATH__'
+$ErrorActionPreference = 'SilentlyContinue'
+Add-Type -Namespace SoftDesk -Name Win32 -MemberDefinition @"
+    [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr hWnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool ShowWindowAsync(System.IntPtr hWnd, int nCmdShow);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsIconic(System.IntPtr hWnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr hWnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool AllowSetForegroundWindow(int dwProcessId);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern void SwitchToThisWindow(System.IntPtr hWnd, bool fAltTab);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(System.IntPtr hWnd, out int lpdwProcessId);
+    public delegate bool EnumWindowsProc(System.IntPtr hWnd, System.IntPtr lParam);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, System.IntPtr lParam);
+"@
+
+function Find-VisibleWindow([int]$targetPid) {
+    $script:found = [System.IntPtr]::Zero
+    $cb = [SoftDesk.Win32+EnumWindowsProc]{
+        param($hWnd, $lParam)
+        $procId = 0
+        [void][SoftDesk.Win32]::GetWindowThreadProcessId($hWnd, [ref]$procId)
+        if ($procId -eq $targetPid -and [SoftDesk.Win32]::IsWindowVisible($hWnd)) {
+            $script:found = $hWnd
+            return $false
+        }
+        return $true
+    }
+    [void][SoftDesk.Win32]::EnumWindows($cb, [System.IntPtr]::Zero)
+    return $script:found
+}
+
+$procs = @(Get-Process | Where-Object { $_.Path -and ($_.Path -ieq $ExePath) })
+if ($procs.Count -eq 0) {
+    Write-Output '{"running":false,"activated":false}'
+    exit 0
+}
+
+$activated = $false
+$usedHwnd = 0
+foreach ($p in $procs) {
+    [void][SoftDesk.Win32]::AllowSetForegroundWindow($p.Id)
+    $h = $p.MainWindowHandle
+    if ($h -eq [System.IntPtr]::Zero) {
+        $h = Find-VisibleWindow $p.Id
+    }
+    if ($h -ne [System.IntPtr]::Zero) {
+        if ([SoftDesk.Win32]::IsIconic($h)) {
+            [void][SoftDesk.Win32]::ShowWindowAsync($h, 9)
+        } else {
+            [void][SoftDesk.Win32]::ShowWindowAsync($h, 5)
+        }
+        [SoftDesk.Win32]::SwitchToThisWindow($h, $true)
+        if ([SoftDesk.Win32]::SetForegroundWindow($h)) {
+            $activated = $true
+            $usedHwnd = $h.ToInt64()
+            break
+        }
+    }
+}
+$obj = @{ running = $true; activated = $activated; hwnd = $usedHwnd }
+$obj | ConvertTo-Json -Compress
+`;
+
+export interface FocusResult {
+  running: boolean;
+  activated: boolean;
+}
+
+/**
+ * Windows 平台:尝试把已运行应用的主窗口切到前台。
+ * - 未运行:{ running:false, activated:false } —— 调用方应回退到 shell.openPath
+ * - 已运行但无可用窗口(常见于纯托盘应用):{ running:true, activated:false } ——
+ *   调用方一般也回退到 openPath,让应用自己处理二次点击
+ * - 成功切前台:{ running:true, activated:true }
+ * 非 Windows 平台直接返回 { running:false, activated:false } 让调用方走默认逻辑。
+ */
+export async function focusExistingAppWindow(exePath: string): Promise<FocusResult> {
+  if (process.platform !== 'win32') return { running: false, activated: false };
+  try {
+    const safePath = exePath.replace(/'/g, "''");
+    const script = FOCUS_WIN_SCRIPT_TEMPLATE.replace('__EXE_PATH__', safePath);
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { windowsHide: true, timeout: 4000 }
+    );
+    const trimmed = stdout.trim();
+    if (!trimmed) return { running: false, activated: false };
+    const parsed = JSON.parse(trimmed) as { running?: boolean; activated?: boolean };
+    return {
+      running: parsed.running === true,
+      activated: parsed.activated === true,
+    };
+  } catch (err) {
+    logger.error('focusExistingAppWindow failed:', err);
+    return { running: false, activated: false };
+  }
+}
