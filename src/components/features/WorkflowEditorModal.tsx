@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, Search, LogIn } from 'lucide-react';
-import type { Workflow } from '@/types';
+import type { Workflow, SoftwareCategory } from '@/types';
 import { useSoftwareStore, type WorkflowInput } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { WORKFLOW_COLORS, CATEGORIES } from '@/data/categories';
@@ -44,15 +44,36 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
   );
 
   // 已选软件(按选择顺序),用于上方展示区;
-  // 对于已卸载/已删除/找不到的软件,仍保留其 id,并置灰显示「未安装」
-  const selectedSoftware = useMemo(
-    () =>
-      selectedIds.map((id) => ({
+  // 对于已卸载/已删除/找不到的软件,仍保留其 id,基于 workflow 快照渲染名称+图标并置灰标记「未安装」
+  const selectedSoftware = useMemo(() => {
+    const metaById = new Map((workflow?.softwareMeta ?? []).map((m) => [m.softwareId, m]));
+    return selectedIds.map((id) => {
+      const sw = software.find((s) => s.id === id);
+      if (sw) {
+        return {
+          id,
+          name: sw.name,
+          icon: sw.icon,
+          color: sw.color,
+          category: sw.category,
+          missing: false,
+          uninstalled: !!sw.uninstalled,
+          deleted: !!sw.deleted,
+        };
+      }
+      const snap = metaById.get(id);
+      return {
         id,
-        sw: software.find((s) => s.id === id),
-      })),
-    [selectedIds, software]
-  );
+        name: snap?.name ?? '未安装的软件',
+        icon: snap?.icon ?? '',
+        color: snap?.color ?? '#64748b',
+        category: (snap?.category ?? 'utilities') as SoftwareCategory,
+        missing: true,
+        uninstalled: false,
+        deleted: false,
+      };
+    });
+  }, [selectedIds, software, workflow?.softwareMeta]);
 
   // 下方候选列表:剔除已选,点击即移入展示区
   const availableSoftware = filteredSoftware.filter((s) => !selectedIds.includes(s.id));
@@ -211,42 +232,44 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
-                  {selectedSoftware.map(({ id, sw }) => {
-                    const missing = !sw;
-                    const unavailable = missing || sw.uninstalled || sw.deleted;
-                    const displayName = sw?.name ?? '未安装的软件';
-                    const statusLabel = missing
+                  {selectedSoftware.map((m) => {
+                    const unavailable = m.missing || m.uninstalled || m.deleted;
+                    const statusLabel = m.missing
                       ? '未安装'
-                      : sw.deleted
+                      : m.deleted
                         ? '已从本地电脑删除'
-                        : sw.uninstalled
+                        : m.uninstalled
                           ? '已弃用'
                           : '';
                     return (
                       <div
-                        key={id}
+                        key={m.id}
                         className={cn(
                           'relative flex items-center gap-2 pl-2 pr-7 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/60',
                           unavailable && 'opacity-60'
                         )}
-                        title={
-                          unavailable
-                            ? `${displayName}（${statusLabel}）`
-                            : displayName
-                        }
+                        title={unavailable ? `${m.name}（${statusLabel}）` : m.name}
                       >
-                        {sw ? (
-                          <div className={cn(unavailable && 'grayscale')}>
-                            <AppIcon software={sw} size={28} rounded="rounded-md" />
-                          </div>
-                        ) : (
-                          <div
-                            className="w-7 h-7 rounded-md flex items-center justify-center bg-slate-700/60 text-slate-400 shrink-0"
-                            aria-label="未安装的软件"
-                          >
-                            <span className="text-[10px]">?</span>
-                          </div>
-                        )}
+                        <div className={cn(unavailable && 'grayscale')}>
+                          <AppIcon
+                            software={{
+                              id: m.id,
+                              name: m.name,
+                              icon: m.icon ?? '',
+                              color: m.color ?? '#64748b',
+                              category: m.category ?? 'utilities',
+                              description: '',
+                              size: 0,
+                              lastUsed: '',
+                              usageMinutes: 0,
+                              launchCount: 0,
+                              path: '',
+                              tags: [],
+                            }}
+                            size={28}
+                            rounded="rounded-md"
+                          />
+                        </div>
                         <div className="flex-1 min-w-0">
                           <span
                             className={cn(
@@ -254,17 +277,17 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
                               unavailable ? 'text-slate-400' : 'text-slate-200'
                             )}
                           >
-                            {displayName}
+                            {m.name}
                           </span>
                           {unavailable && (
-                            <span className="block text-[10px] text-amber-400 truncate">
-                              {statusLabel}
+                            <span className="block text-[10px] text-slate-500 truncate">
+                              未安装
                             </span>
                           )}
                         </div>
                         <button
-                          onClick={() => removeSoftware(id)}
-                          aria-label={`移除 ${displayName}`}
+                          onClick={() => removeSoftware(m.id)}
+                          aria-label={`移除 ${m.name}`}
                           className="absolute top-1 right-1 p-0.5 rounded-md text-slate-500 hover:text-rose-400 hover:bg-slate-700/60 transition-colors"
                         >
                           <X className="w-3 h-3" />
