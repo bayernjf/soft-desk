@@ -21,13 +21,29 @@ const logger = createLogger('scanner-win');
  *   - 内部要求"大图标"(SHGFI_LARGEICON 等价于 GetSystemMetrics(SM_CXICON) 通常 32px),
  *     返回后会在 Node 侧 resize 到 128px 对齐 macOS 端尺寸
  */
-const EXTRACT_ICON_PS = `
-param([string]$File, [int]$Index)
+interface ExtractResult {
+  ok: boolean;
+  b64?: string;
+  err?: string;
+}
+
+/**
+ * 用 PS+Win32 ExtractIconEx 精确抽指定 index 的图标,返回 PNG Buffer。失败返回 null。
+ *
+ * 关键:PowerShell 的 -Command 模式下 param() 不会从命令行参数读取!
+ * 之前用 -Command + -File/-Index 传参是错误的 —— -Command 会把后面所有 token 当命令文本,
+ * -File/-Index 被吞掉,$File/$Index 始终为 $null,脚本永远失败,静默回退到 app.getFileIcon。
+ * 修正:直接把 file/index 内联到脚本字符串中(路径单引号用 '' 转义)。
+ */
+async function extractIconByIndex(file: string, index: number): Promise<Buffer | null> {
+  // PowerShell 单引号字符串中,单引号用 '' 转义
+  const safeFile = file.replace(/'/g, "''");
+  const script = `
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Drawing
-if (-not ('Win32.IconExtractor' -as [type])) {
+if (-not ('Win32IconExtractor' -as [type])) {
   Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -39,32 +55,29 @@ public static class Win32IconExtractor {
 }
 '@
 }
+$File = '${safeFile}'
+$Index = ${index}
 function Fail([string]$msg) {
   Write-Output ('{"ok":false,"err":' + (ConvertTo-Json $msg) + '}')
   exit 0
 }
-if (-not (Test-Path $File)) { Fail "file not found: $File"; exit 0 }
+if (-not (Test-Path -LiteralPath $File)) { Fail 'file not found'; exit 0 }
 $large = [IntPtr[]]::new(1)
 $small = [IntPtr[]]::new(1)
 $count = [Win32IconExtractor]::ExtractIconEx($File, $Index, $large, $small, 1)
 if ($count -le 0 -or $large[0] -eq [IntPtr]::Zero) {
-  # 某些 dll 负数索引走 ExtractIcon 取
   if ($small[0] -ne [IntPtr]::Zero) { [Win32IconExtractor]::DestroyIcon($small[0]) }
-  Fail "no icon at index $Index in $File"
+  Fail 'no icon at index'
   exit 0
 }
 try {
-  $hIcon = $large[0]
-  $icon = [System.Drawing.Icon]::FromHandle($hIcon)
+  $icon = [System.Drawing.Icon]::FromHandle($large[0])
   $bmp = $icon.ToBitmap()
   $ms = New-Object System.IO.MemoryStream
   $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-  $bytes = $ms.ToArray()
-  $b64 = [Convert]::ToBase64String($bytes)
+  $b64 = [Convert]::ToBase64String($ms.ToArray())
   Write-Output ('{"ok":true,"b64":"' + $b64 + '"}')
-  $ms.Dispose()
-  $bmp.Dispose()
-  $icon.Dispose()
+  $ms.Dispose(); $bmp.Dispose(); $icon.Dispose()
 } catch {
   Fail $_.Exception.Message
 } finally {
@@ -72,17 +85,6 @@ try {
   if ($small[0] -ne [IntPtr]::Zero) { [Win32IconExtractor]::DestroyIcon($small[0]) }
 }
 `;
-
-interface ExtractResult {
-  ok: boolean;
-  b64?: string;
-  err?: string;
-}
-
-/**
- * 用 PS+Win32 ExtractIconEx 精确抽指定 index 的图标,返回 PNG Buffer。失败返回 null。
- */
-async function extractIconByIndex(file: string, index: number): Promise<Buffer | null> {
   return new Promise((resolve) => {
     try {
       const child = spawn(
@@ -91,9 +93,7 @@ async function extractIconByIndex(file: string, index: number): Promise<Buffer |
           '-NoProfile',
           '-NonInteractive',
           '-ExecutionPolicy', 'Bypass',
-          '-Command', EXTRACT_ICON_PS,
-          '-File', file,
-          '-Index', String(index),
+          '-Command', script,
         ],
         { windowsHide: true }
       );
@@ -109,18 +109,18 @@ async function extractIconByIndex(file: string, index: number): Promise<Buffer |
           if (json.ok && json.b64) {
             resolve(Buffer.from(json.b64, 'base64'));
           } else {
-            if (err.trim()) logger.warn('extractIconByIndex err:', err.slice(0, 200));
+            if (err.trim()) logger.warn('extractIconByIndex err:', err.slice(0, 300));
             resolve(null);
           }
         } catch {
+          if (out.trim()) logger.warn('extractIconByIndex unparseable:', out.slice(0, 300));
           resolve(null);
         }
       });
-      // 保险:10s 超时
       setTimeout(() => {
         try { child.kill(); } catch { /* noop */ }
         resolve(null);
-      }, 10000).unref();
+      }, 15000).unref();
     } catch (e) {
       logger.warn('extractIconByIndex spawn failed:', e);
       resolve(null);
@@ -683,17 +683,15 @@ async function extractIcon(
       // not cached yet
     }
 
-    // 决定真正用于抽取图标的文件 + 是否有显式索引
-    const primary = iconSource ?? launchExe;
-    const hasExplicitIndex = typeof iconIndex === 'number';
+    // 仅在有专门的 iconSource(Office stub exe / .dll / .ico 容器)且指定了 index 时,
+    // 才 spawn PowerShell 调 ExtractIconEx。对普通 exe(无 iconSource 或 index=0),
+    // app.getFileIcon 已经能拿到正确图标,不需要启动 PS 进程(省 2-5s/个)。
+    const hasContainerIcon = !!iconSource && typeof iconIndex === 'number';
 
-    // 1) 若指定了 index,先尝试 ExtractIconEx 精确抽取
-    if (hasExplicitIndex) {
+    if (hasContainerIcon) {
       try {
-        const pngBuf = await extractIconByIndex(primary, iconIndex as number);
+        const pngBuf = await extractIconByIndex(iconSource!, iconIndex as number);
         if (pngBuf && pngBuf.length > 0) {
-          // ExtractIconEx 返回的是系统默认大图标尺寸(通常 32px/48px),
-          // 用 nativeImage 解码后 resize 到 128px 与其他平台对齐
           const img = nativeImage.createFromBuffer(pngBuf);
           if (!img.isEmpty()) {
             const resized = img.resize({ width: 128, height: 128, quality: 'good' });
@@ -705,7 +703,7 @@ async function extractIcon(
           }
         }
       } catch (err) {
-        logger.warn('extractIconByIndex failed for', primary, 'idx', iconIndex, err);
+        logger.warn('extractIconByIndex failed for', iconSource, 'idx', iconIndex, err);
       }
     }
 
