@@ -140,47 +140,178 @@ async function readUninstallRegistry(): Promise<RegistryEntry[]> {
 }
 
 /**
- * 从 DisplayIcon / InstallLocation 猜到真正可执行的 exe 路径。
- * DisplayIcon 常见形态：
- *   "C:\\Program Files\\Foo\\foo.exe"
- *   "C:\\Program Files\\Foo\\foo.exe,0"（索引）
- *   "C:\\Program Files\\Foo\\resource.dll,-101"（资源引用，不能直接跑）
+ * 从 DisplayIcon / InstallLocation 猜到真正可执行的 exe 路径,以及对应的图标源路径。
+ *
+ * Windows 注册表里的 DisplayIcon 常见形态:
+ *   "C:\Program Files\Foo\foo.exe"                              —— 直接 exe
+ *   "C:\Program Files\Foo\foo.exe,0"                            —— exe + icon index
+ *   "%SystemRoot%\system32\Taskmgr.exe,0"                      —— 含环境变量
+ *   "C:\Program Files\Foo\foo.ico"                              —— 独立 ico 文件
+ *   "C:\Program Files\Microsoft Office\root\vfs\Windows\Installer\{9016...}\WORDICON.EXE,1"
+ *                                                               —— Office 的 stub,图标在资源索引 1
+ *   "C:\Windows\System32\imageres.dll,-102"                    —— 资源 DLL,负数表示 icon id
+ *
+ * 我们返回:
+ *   - launchExe:用于启动/去重/stat 的真实 exe(如果找不到就返回 null,此条丢弃)
+ *   - iconSource:用于提取图标的文件路径(可能是 exe/dll/ico/stub);
+ *                为 null 表示回退到 launchExe 自身。
  */
-async function resolveExePath(entry: RegistryEntry): Promise<string | null> {
-  const candidate = (entry.displayIcon ?? '')
-    .replace(/^"|"$/g, '')
-    .replace(/,[-\d]+$/, '')
-    .trim();
-  if (candidate && candidate.toLowerCase().endsWith('.exe')) {
-    try {
-      await fs.access(candidate);
-      return candidate;
-    } catch {
-      // 继续下面的 fallback
+export interface ResolveResult {
+  launchExe: string;
+  iconSource?: string | null;
+}
+
+/**
+ * 展开 Windows 风格环境变量 %VAR%。未设置的变量保留原样(后续会被 fs.access 判为不存在)。
+ */
+function expandEnvVars(p: string): string {
+  if (!p.includes('%')) return p;
+  return p.replace(/%([^%]+)%/g, (_m, name: string) => process.env[name] ?? `%${name}%`);
+}
+
+/**
+ * 把 DisplayIcon 字段拆成 (filePath, iconIndex)。
+ * 注意:仅切最后一个英文逗号后的数字(正负均可),不做过多假设,因为路径本身可能含逗号的情况极罕见。
+ */
+function parseIconSpec(raw: string): { file: string; index: number | null } {
+  const trimmed = raw.trim().replace(/^"|"$/g, '');
+  const m = trimmed.match(/^(.+?),([-]?\d+)$/);
+  if (m) return { file: m[1].trim(), index: parseInt(m[2], 10) };
+  return { file: trimmed, index: null };
+}
+
+const NON_MAIN_EXE_PATTERN =
+  /(unins|uninstall|setup|update|updater|crash|helper|install|repair|setup_?ui|vcredist|c2r|clicktorun|officeclicktorun|integratedoffice|appvshnotify|squirrel|elevate|launcher|tray|notification|win32calc)$/i;
+
+/**
+ * 规范化可执行名用于模糊匹配:去掉版本/位数/发行商后缀,小写。
+ * e.g. "WINWORD.EXE" -> "winword"; "Trae CN (User).exe" -> "traecnuser"
+ */
+function normalizeExeBase(basename: string): string {
+  return basename
+    .toLowerCase()
+    .replace(/\.exe$/, '')
+    .replace(/[\s_\-.()[\]{}]+/g, '')
+    .replace(/(x64|x86|ia64|amd64|arm64|win32|win64|64bit|32bit|user|portable)$/g, '');
+}
+
+/**
+ * 计算 displayName 与一个 exe 文件名的相似度分数(0~1)。
+ * 双向子串包含即可给分:完全包含给 1,部分字符重叠给较低分。
+ */
+function nameMatchScore(displayName: string, exeBasename: string): number {
+  const dn = normalizeExeBase(displayName);
+  const en = normalizeExeBase(exeBasename);
+  if (!dn || !en) return 0;
+  if (dn === en) return 1;
+  if (en.includes(dn) || dn.includes(en)) {
+    // 长度越接近分数越高,避免 "setup.exe" 之类被误中
+    const ratio = Math.min(dn.length, en.length) / Math.max(dn.length, en.length);
+    return 0.6 + 0.4 * ratio;
+  }
+  // 字符交集粗算
+  let hit = 0;
+  for (const ch of en) if (dn.includes(ch)) hit++;
+  return (hit / en.length) * 0.3;
+}
+
+async function resolveExePath(entry: RegistryEntry): Promise<ResolveResult | null> {
+  // 1) 优先用 DisplayIcon 字段 —— 同时也可作为图标源
+  let iconFromDisplay: string | null = null;
+  if (entry.displayIcon) {
+    const parsed = parseIconSpec(expandEnvVars(entry.displayIcon));
+    if (parsed.file) {
+      try {
+        await fs.access(parsed.file);
+        const lower = parsed.file.toLowerCase();
+        if (lower.endsWith('.exe')) {
+          // 检查一下是不是主程序(过滤卸载器等)
+          const base = path.basename(parsed.file);
+          if (!NON_MAIN_EXE_PATTERN.test(base)) {
+            return { launchExe: parsed.file, iconSource: null };
+          }
+          // 如果是 uninstaller/setup 之类,不能作为主程序,但该文件可能也含图标,
+          // 比如 Office 的 WORDICON.EXE 就是图标容器,后面会被当作 iconSource 回写到结果
+          iconFromDisplay = parsed.file;
+        } else if (lower.endsWith('.ico') || lower.endsWith('.dll')) {
+          // ico / dll 不能启动,但可以作为图标源
+          iconFromDisplay = parsed.file;
+        }
+      } catch {
+        // DisplayIcon 指向的文件不存在,继续 fallback
+      }
     }
   }
+
+  // 2) 在 InstallLocation 里找主 exe
+  let installDir: string | null = null;
   if (entry.installLocation) {
-    const dir = entry.installLocation.replace(/^"|"$/g, '');
+    const dir = expandEnvVars(entry.installLocation).replace(/^"|"$/g, '').trim();
     try {
-      const files = await fs.readdir(dir);
-      // 优先与 DisplayName 相近的 exe
-      const target = files.find(
-        (f) =>
-          f.toLowerCase().endsWith('.exe') &&
-          entry.displayName
-            .toLowerCase()
-            .replace(/\s+/g, '')
-            .includes(f.toLowerCase().replace('.exe', '').replace(/\s+/g, ''))
-      );
-      if (target) return path.join(dir, target);
-      // 退化：找第一个非 uninstall 的 exe
-      const any = files.find(
-        (f) => f.toLowerCase().endsWith('.exe') && !/unins|uninstall|setup/i.test(f)
-      );
-      if (any) return path.join(dir, any);
+      const st = await fs.stat(dir);
+      if (st.isDirectory()) installDir = dir;
     } catch {
       // ignore
     }
+  }
+  // 若 UninstallString 含路径,也可从中反推安装目录(某些软件不写 InstallLocation)
+  if (!installDir && entry.uninstallString) {
+    const { file } = parseIconSpec(expandEnvVars(entry.uninstallString));
+    if (file) {
+      const dir = path.dirname(file);
+      try {
+        const st = await fs.stat(dir);
+        if (st.isDirectory()) installDir = dir;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  if (installDir) {
+    // 递归收集所有 exe(最多到 depth=3,避免进入 node_modules 之类)
+    const allExes: string[] = [];
+    const walk = async (dir: string, depth: number) => {
+      if (depth > 3) return;
+      let entries;
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        if (e.name.startsWith('.')) continue;
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          // 跳过明显无关目录
+          if (/^(unins|uninstall|resources?|locales?|plugins?|addons?|node_modules|__pycache__|redist|vc_redist)$/i.test(e.name)) continue;
+          await walk(p, depth + 1);
+        } else if (e.isFile() && e.name.toLowerCase().endsWith('.exe')) {
+          allExes.push(p);
+        }
+      }
+    };
+    await walk(installDir, 0);
+
+    // 按"非主程序"黑名单过滤,再按与 DisplayName 的相似度排序
+    const candidates = allExes
+      .filter((f) => !NON_MAIN_EXE_PATTERN.test(path.basename(f)))
+      .map((f) => ({ file: f, score: nameMatchScore(entry.displayName, path.basename(f)) }))
+      .sort((a, b) => b.score - a.score);
+
+    if (candidates.length > 0 && candidates[0].score > 0.3) {
+      return { launchExe: candidates[0].file, iconSource: iconFromDisplay ?? null };
+    }
+    // 没命中名字,退化到第一个非 uninstaller 的 exe(通常在安装根目录)
+    const any = allExes.find((f) => !NON_MAIN_EXE_PATTERN.test(path.basename(f)));
+    if (any) return { launchExe: any, iconSource: iconFromDisplay ?? null };
+  }
+
+  // 3) 最后兜底:如果 DisplayIcon 给了一个 .exe 但被 NON_MAIN 过滤掉了(如 Office stub),
+  // 仍返回它作为 launchExe——启动可能失败,但至少能在列表里出现并显示图标;
+  // 否则完全无法定位,此条丢弃。
+  if (iconFromDisplay && iconFromDisplay.toLowerCase().endsWith('.exe')) {
+    return { launchExe: iconFromDisplay, iconSource: null };
   }
   return null;
 }
@@ -189,36 +320,91 @@ function iconCacheDir(): string {
   return path.join(app.getPath('userData'), 'icon-cache');
 }
 
-function iconCacheFileName(exePath: string, mtimeMs: number): string {
-  const hash = crypto.createHash('sha1').update(exePath).digest('hex');
+/**
+ * 缓存 key 需要把 iconSource 也纳入 hash:同一个 exe 的文件系统 mtime 不变,
+ * 但 DisplayIcon 指向的 .ico/.dll 可能更新,或者我们改了匹配策略,
+ * 仅以 exePath+mtime 为 key 会复用旧图标。把两者拼起来 hash 即可。
+ */
+function iconCacheFileName(exePath: string, mtimeMs: number, iconSource?: string | null): string {
+  const raw = iconSource ? `${exePath}|${iconSource}` : exePath;
+  const hash = crypto.createHash('sha1').update(raw).digest('hex');
   return `${hash}-${Math.round(mtimeMs)}.png`;
 }
 
 /**
  * 用 Electron app.getFileIcon 抽取 Windows 应用图标为 PNG,
  * 结果缓存在 userData/icon-cache/ 下,避免每次扫描都重复调用 Shell API。
+ *
+ * iconSource 优先于 launchExe:当注册表/快捷方式给出专门的 .ico/.dll/stub exe 时,
+ * 用它作为图标源;否则退回到 launchExe 自身。
+ *
+ * 对 .ico 文件:Electron 的 nativeImage 可以直接读取 ICO 格式(多尺寸),
+ * 比 getFileIcon 更精准(后者对 .ico 也能用,但 .ico 直接解码更可靠)。
  */
-async function extractIcon(exePath: string, mtimeMs: number): Promise<string | null> {
+async function extractIcon(
+  launchExe: string,
+  mtimeMs: number,
+  iconSource?: string | null,
+): Promise<string | null> {
   try {
     const dir = iconCacheDir();
     await fs.mkdir(dir, { recursive: true });
-    const outPath = path.join(dir, iconCacheFileName(exePath, mtimeMs));
+    const outPath = path.join(dir, iconCacheFileName(launchExe, mtimeMs, iconSource));
     try {
       await fs.access(outPath);
       return outPath;
     } catch {
       // not cached yet
     }
-    const img = await app.getFileIcon(exePath, { size: 'large' });
-    if (img.isEmpty()) return null;
-    // 统一缩放到 128px,避免尺寸不一致导致前端 rendering 差异
-    const resized = img.resize({ width: 128, height: 128, quality: 'good' });
-    const png = resized.toPNG();
-    if (!png || png.length === 0) return null;
-    await fs.writeFile(outPath, png);
-    return outPath;
+
+    // 优先使用 iconSource 取图标
+    const sourceCandidates: Array<{ file: string; isIco: boolean }> = [];
+    if (iconSource) {
+      try {
+        await fs.access(iconSource);
+        const lower = iconSource.toLowerCase();
+        sourceCandidates.push({ file: iconSource, isIco: lower.endsWith('.ico') });
+      } catch {
+        // iconSource 失效,回退到 exe
+      }
+    }
+    sourceCandidates.push({ file: launchExe, isIco: false });
+
+    for (let i = 0; i < sourceCandidates.length; i++) {
+      const { file, isIco } = sourceCandidates[i];
+      const isLast = i === sourceCandidates.length - 1;
+      try {
+        let img: Electron.NativeImage;
+        if (isIco) {
+          const buf = await fs.readFile(file);
+          img = nativeImage.createFromBuffer(buf);
+        } else {
+          img = await app.getFileIcon(file, { size: 'large' });
+        }
+        if (img.isEmpty()) {
+          if (isLast) return null;
+          continue;
+        }
+        const resized = img.resize({ width: 128, height: 128, quality: 'good' });
+        const png = resized.toPNG();
+        if (!png || png.length === 0) {
+          if (isLast) return null;
+          continue;
+        }
+        // 对非主候选(iconSource),若取到的是过小的"默认占位图"(<5KB,基本是
+        // Windows 给未知 EXE/DLL 返回的通用蓝白图),跳过继续尝试 launchExe 自身。
+        // 主候选(launchExe)即使小也保留,避免完全无图。
+        if (!isLast && png.length < 5 * 1024) continue;
+        await fs.writeFile(outPath, png);
+        return outPath;
+      } catch (err) {
+        logger.warn('extractIcon candidate failed for', file, err);
+        if (isLast) return null;
+      }
+    }
+    return null;
   } catch (err) {
-    logger.warn('extractIcon failed for', exePath, err);
+    logger.warn('extractIcon failed for', launchExe, err);
     return null;
   }
 }
@@ -258,12 +444,13 @@ async function collectFromRegistry(): Promise<ScannedApp[]> {
 
   for (const row of rows) {
     if (!row.displayName) continue;
-    // 跳过明显是 Windows 更新 / 补丁 / SDK 的项
-    if (/^(Update for |Security Update|Microsoft \.NET|Visual C\+\+|Windows SDK|Hotfix)/i.test(row.displayName)) {
+    // 跳过明显是 Windows 更新 / 补丁 / SDK / 运行库 / 语言包的项
+    if (/^(Update for |Security Update|Microsoft \.NET|Visual C\+\+|Windows SDK|Hotfix|KB\d+|Language Pack for|Proofing Tools)/i.test(row.displayName)) {
       continue;
     }
-    const exe = await resolveExePath(row);
-    if (!exe) continue;
+    const resolved = await resolveExePath(row);
+    if (!resolved) continue;
+    const exe = resolved.launchExe;
     const key = exe.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -271,8 +458,18 @@ async function collectFromRegistry(): Promise<ScannedApp[]> {
     const stat = await safeStat(exe);
     if (!stat) continue;
 
+    // iconSource 的 mtime 若能拿到,用来参与缓存 key(虽然我们用 launchExe mtime
+    // 为主,但 iconSource 更新时应当失效;这里简单地用两者 mtime 的最大值参与缓存)
+    let iconStatMtime: number | null = null;
+    if (resolved.iconSource) {
+      const is = await safeStat(resolved.iconSource);
+      if (is) iconStatMtime = is.mtimeMs;
+    }
+    const cacheBump = iconStatMtime ? Math.max(stat.mtimeMs, iconStatMtime) : stat.mtimeMs;
+
     const { category, source } = categorizeByName(row.displayName, row.publisher);
-    const iconCacheFile = (await extractIcon(exe, stat.mtimeMs)) ?? undefined;
+    const iconCacheFile =
+      (await extractIcon(exe, cacheBump, resolved.iconSource)) ?? undefined;
     const iconDataUrl = (await iconFileToDataUrl(iconCacheFile ?? null)) ?? 'AppWindow';
     const id = hashId(exe);
 
@@ -300,17 +497,28 @@ async function collectFromRegistry(): Promise<ScannedApp[]> {
   return results;
 }
 
-async function readShortcutTarget(lnkPath: string): Promise<string | null> {
-  // 用 PowerShell WScript.Shell 解析 .lnk 目标;单次调用较慢,但 startmenu
-  // 通常只有几十条,整体在秒级完成。UTF-8 输出以兼容中文路径。
+interface ShortcutResolve {
+  target: string;
+  iconSource?: string | null;
+}
+
+async function readShortcutTarget(lnkPath: string): Promise<ShortcutResolve | null> {
+  // 用 PowerShell WScript.Shell 解析 .lnk 的 TargetPath 与 IconLocation。
+  // IconLocation 通常形如 "C:\...\xxx.exe,0" / "C:\...\xxx.ico,0",是桌面显示的真实图标源。
+  // 单次调用较慢,但开始菜单通常只有几十条,整体在秒级完成。
   return new Promise((resolve) => {
     const script = `
       $ErrorActionPreference = 'SilentlyContinue'
       [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
       $OutputEncoding = [System.Text.Encoding]::UTF8
       $s = New-Object -ComObject WScript.Shell
-      $t = $s.CreateShortcut('${lnkPath.replace(/'/g, "''")}').TargetPath
-      if ($t) { Write-Output $t }
+      $sc = $s.CreateShortcut('${lnkPath.replace(/'/g, "''")}')
+      $t = $sc.TargetPath
+      $i = $sc.IconLocation
+      if ($t -or $i) {
+        Write-Output "TARGET=$t"
+        Write-Output "ICON=$i"
+      }
     `;
     const child = spawn(
       'powershell.exe',
@@ -321,8 +529,27 @@ async function readShortcutTarget(lnkPath: string): Promise<string | null> {
     child.stdout.on('data', (c: Buffer) => (out += c.toString('utf8')));
     child.on('error', () => resolve(null));
     child.on('close', () => {
-      const t = out.trim();
-      resolve(t && t.toLowerCase().endsWith('.exe') ? t : null);
+      const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      let target = '';
+      let iconRaw = '';
+      for (const line of lines) {
+        if (line.startsWith('TARGET=')) target = line.slice(7);
+        else if (line.startsWith('ICON=')) iconRaw = line.slice(5);
+      }
+      if (target && !target.toLowerCase().endsWith('.exe')) target = '';
+      // IconLocation 形如 "path,index";仅取路径部分,再展开环境变量
+      let iconSource: string | null = null;
+      if (iconRaw) {
+        const parsed = parseIconSpec(expandEnvVars(iconRaw));
+        if (parsed.file && /\.(exe|dll|ico)$/i.test(parsed.file)) {
+          iconSource = parsed.file;
+        }
+      }
+      if (!target && !iconSource) return resolve(null);
+      if (!target) return resolve(null); // 没有目标 exe 无法作为条目
+      // 展开 target 里可能的环境变量
+      const resolved = expandEnvVars(target);
+      resolve({ target: resolved, iconSource });
     });
   });
 }
@@ -361,8 +588,9 @@ async function collectFromStartMenu(existing: Set<string>): Promise<ScannedApp[]
 
   const results: ScannedApp[] = [];
   for (const lnk of lnkFiles) {
-    const exe = await readShortcutTarget(lnk);
-    if (!exe) continue;
+    const resolved = await readShortcutTarget(lnk);
+    if (!resolved) continue;
+    const exe = resolved.target;
     const key = exe.toLowerCase();
     if (existing.has(key)) continue;
     existing.add(key);
@@ -370,9 +598,27 @@ async function collectFromStartMenu(existing: Set<string>): Promise<ScannedApp[]
     const stat = await safeStat(exe);
     if (!stat) continue;
 
+    // 校验一下 iconSource 文件确实存在
+    let iconSource: string | null = null;
+    let iconStatMtime: number | null = null;
+    if (resolved.iconSource) {
+      const is = await safeStat(resolved.iconSource);
+      if (is) {
+        iconSource = resolved.iconSource;
+        iconStatMtime = is.mtimeMs;
+      }
+    }
+    const cacheBump = iconStatMtime ? Math.max(stat.mtimeMs, iconStatMtime) : stat.mtimeMs;
+
+    // 跳过明显是卸载器/帮助文档的快捷方式
     const displayName = path.basename(lnk, '.lnk');
+    if (/(uninstall|卸载|remove|删除|help|readme|license|what'?s new|release notes|website|官网|documentation|documentation)/i.test(displayName)) {
+      continue;
+    }
+
     const { category, source } = categorizeByName(displayName);
-    const iconCacheFile = (await extractIcon(exe, stat.mtimeMs)) ?? undefined;
+    const iconCacheFile =
+      (await extractIcon(exe, cacheBump, iconSource)) ?? undefined;
     const iconDataUrl = (await iconFileToDataUrl(iconCacheFile ?? null)) ?? 'AppWindow';
     const id = hashId(exe);
 
@@ -399,6 +645,59 @@ async function collectFromStartMenu(existing: Set<string>): Promise<ScannedApp[]
 }
 
 /**
+ * 追加一批"肯定存在于 Windows 上"的系统工具到扫描结果。
+ * 这些工具在注册表里往往不写 DisplayIcon 或 InstallLocation,靠上面的逻辑容易漏掉或取错图标,
+ * 这里硬编码以确保 Task Manager / 记事本 / 计算器 / 控制面板等常见工具显示正常。
+ */
+async function collectWellKnownSystemApps(existing: Set<string>): Promise<ScannedApp[]> {
+  const sysRoot = process.env.SystemRoot ?? process.env.windir ?? 'C:\\Windows';
+  const sysNative = path.join(sysRoot, 'System32');
+  // 64 位系统上 32 位进程看 System32 是重定向的,但 Electron 一般是 64 位;保持简单直接用 System32。
+  const known: Array<{ name: string; exe: string; category: ScannedCategory; publisher?: string }> = [
+    { name: 'Task Manager', exe: path.join(sysNative, 'Taskmgr.exe'), category: 'utilities' },
+    { name: '记事本', exe: path.join(sysNative, 'notepad.exe'), category: 'productivity' },
+    { name: '计算器', exe: path.join(sysNative, 'calc.exe'), category: 'utilities' },
+    { name: '命令提示符', exe: path.join(sysNative, 'cmd.exe'), category: 'dev-tools' },
+    { name: 'Windows PowerShell', exe: path.join(sysRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), category: 'dev-tools' },
+    { name: '注册表编辑器', exe: path.join(sysNative, 'regedit.exe'), category: 'utilities' },
+    { name: '文件资源管理器', exe: path.join(sysNative, 'explorer.exe'), category: 'utilities' },
+    { name: '控制面板', exe: path.join(sysNative, 'control.exe'), category: 'utilities' },
+    { name: '设置', exe: path.join(sysNative, 'SystemSettings.exe'), category: 'utilities' },
+    { name: '截图工具', exe: path.join(sysNative, 'SnippingTool.exe'), category: 'utilities' },
+  ];
+
+  const results: ScannedApp[] = [];
+  for (const item of known) {
+    const key = item.exe.toLowerCase();
+    if (existing.has(key)) continue;
+    const stat = await safeStat(item.exe);
+    if (!stat) continue;
+    existing.add(key);
+    const iconCacheFile = (await extractIcon(item.exe, stat.mtimeMs)) ?? undefined;
+    const iconDataUrl = (await iconFileToDataUrl(iconCacheFile ?? null)) ?? 'AppWindow';
+    results.push({
+      id: hashId(item.exe),
+      name: item.name,
+      description: '',
+      icon: iconDataUrl,
+      iconCacheFile,
+      category: item.category,
+      categorySource: 'name',
+      version: undefined,
+      publisher: 'Microsoft',
+      size: stat.size,
+      lastUsed: stat.atime.toISOString(),
+      usageMinutes: 0,
+      launchCount: 0,
+      path: item.exe,
+      color: CATEGORY_COLORS[item.category],
+      tags: [],
+    });
+  }
+  return results;
+}
+
+/**
  * Windows 主扫描入口。合并注册表 + 快捷方式两路结果并去重（按 exe 路径）。
  * 与 macOS 的 scanInstalledApps 语义一致，返回可直接进 renderer 展示的 ScannedApp[]。
  */
@@ -408,7 +707,8 @@ export async function scanInstalledAppsWin(): Promise<ScannedApp[]> {
     const fromRegistry = await collectFromRegistry();
     const existing = new Set(fromRegistry.map((a) => a.path.toLowerCase()));
     const fromLnk = await collectFromStartMenu(existing);
-    const all = [...fromRegistry, ...fromLnk];
+    const fromKnown = await collectWellKnownSystemApps(existing);
+    const all = [...fromRegistry, ...fromLnk, ...fromKnown];
     all.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
     return all;
   } catch (err) {
