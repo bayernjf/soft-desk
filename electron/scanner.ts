@@ -8,8 +8,35 @@ import { app } from 'electron';
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * 图标缓存 schema 版本。同版本 App 内如果改了 extractIcon/icns 解析/系统 API 兜底策略,
+ * 手动 +1 一次即可强刷所有图标缓存。
+ * 正常发版不需要改此常量 —— 目录名绑定 app.getVersion(),每次升级版本自动失效。
+ */
+const ICON_CACHE_SCHEMA = 1;
+
 function iconCacheDir(): string {
-  return path.join(app.getPath('userData'), 'icon-cache');
+  const ver = app.getVersion().replace(/[\\/:*?"<>|]/g, '_');
+  return path.join(app.getPath('userData'), `icon-cache-v${ver}-s${ICON_CACHE_SCHEMA}`);
+}
+
+async function pruneOldIconCaches(): Promise<void> {
+  try {
+    const base = app.getPath('userData');
+    const entries = await fs.readdir(base, { withFileTypes: true });
+    const current = path.basename(iconCacheDir());
+    // 匹配: icon-cache、icon-cache-vN、icon-cache-vX.Y.Z、icon-cache-vX.Y.Z-sN
+    const stale = /^icon-cache(?:-v[\w.-]+)?$/;
+    await Promise.all(
+      entries
+        .filter((e) => e.isDirectory() && stale.test(e.name) && e.name !== current)
+        .map((e) =>
+          fs.rm(path.join(base, e.name), { recursive: true, force: true }).catch(() => {})
+        )
+    );
+  } catch {
+    // best-effort
+  }
 }
 
 function safeFileName(id: string): string {
@@ -589,6 +616,7 @@ export async function scanInstalledApps(smartGrouping = true): Promise<ScannedAp
     // 其它平台（linux）暂无实现，返回空数组避免主进程崩溃。
     return [];
   }
+  await pruneOldIconCaches();
   await loadMetaCache();
   const found = await listAppPaths();
 

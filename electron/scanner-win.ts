@@ -316,8 +316,42 @@ async function resolveExePath(entry: RegistryEntry): Promise<ResolveResult | nul
   return null;
 }
 
+/**
+ * 图标缓存 schema 版本。同版本 App 内如果改了 extractIcon/路径解析/图标源选择等逻辑,
+ * 手动 +1 一次即可强刷所有图标缓存。
+ * 正常发版不需要改此常量 —— 目录名绑定 app.getVersion(),每次升级版本自动失效。
+ */
+const ICON_CACHE_SCHEMA = 1;
+
 function iconCacheDir(): string {
-  return path.join(app.getPath('userData'), 'icon-cache');
+  // 用 App 版本号做目录后缀:每次发版 userData 下就会出现新的 icon-cache-vX.Y.Z-sN,
+  // pruneOldIconCaches 会自动清掉旧版本目录,用户无感。
+  const ver = app.getVersion().replace(/[\\/:*?"<>|]/g, '_');
+  return path.join(app.getPath('userData'), `icon-cache-v${ver}-s${ICON_CACHE_SCHEMA}`);
+}
+
+/**
+ * 迁移/清理:把所有历史 icon-cache* 目录(包括旧的固定名 icon-cache、旧版本号目录、
+ * 旧 schema 目录)里不是"当前版本+当前 schema"的全部递归删掉。
+ * 在第一次扫描前调用一次即可,失败不抛出,以免影响主流程。
+ */
+async function pruneOldIconCaches(): Promise<void> {
+  try {
+    const base = app.getPath('userData');
+    const entries = await fs.readdir(base, { withFileTypes: true });
+    const current = path.basename(iconCacheDir());
+    // 匹配: icon-cache、icon-cache-vN、icon-cache-vX.Y.Z、icon-cache-vX.Y.Z-sN
+    const stale = /^icon-cache(?:-v[\w.-]+)?$/;
+    await Promise.all(
+      entries
+        .filter((e) => e.isDirectory() && stale.test(e.name) && e.name !== current)
+        .map((e) =>
+          fs.rm(path.join(base, e.name), { recursive: true, force: true }).catch(() => {})
+        )
+    );
+  } catch {
+    // best-effort,忽略权限等错误
+  }
 }
 
 /**
@@ -704,6 +738,7 @@ async function collectWellKnownSystemApps(existing: Set<string>): Promise<Scanne
 export async function scanInstalledAppsWin(): Promise<ScannedApp[]> {
   if (process.platform !== 'win32') return [];
   try {
+    await pruneOldIconCaches();
     const fromRegistry = await collectFromRegistry();
     const existing = new Set(fromRegistry.map((a) => a.path.toLowerCase()));
     const fromLnk = await collectFromStartMenu(existing);
