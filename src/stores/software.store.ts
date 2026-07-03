@@ -335,7 +335,14 @@ export const useSoftwareStore = create<SoftwareStore>()(
     }
   },
 
-  setWorkflows: (workflows) => set({ workflows }),
+  setWorkflows: (workflows) => {
+    const software = get().software;
+    const filled = workflows.map((wf) => ({
+      ...wf,
+      softwareMeta: buildSoftwareMeta(wf.softwareIds, software, wf.softwareMeta),
+    }));
+    set({ workflows: filled });
+  },
   clearWorkflows: () => set({ workflows: [] }),
 
   uninstallSoftware: (id) => {

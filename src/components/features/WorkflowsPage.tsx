@@ -72,13 +72,8 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
     };
   }, []);
 
-  const metaMap = useRef(new Map<string, ReturnType<typeof resolveMeta>>());
-  const allResolved = workflow.softwareIds.map((id) => {
-    const m = resolveMeta(id, software, workflow.softwareMeta);
-    metaMap.current.set(id, m);
-    return m;
-  });
-  const availableSoftware = allResolved.filter((m) => !m.missing && !m.uninstalled && !m.deleted).slice(0, 4);
+  const allResolved = workflow.softwareIds.map((id) => resolveMeta(id, software, workflow.softwareMeta));
+  const previewSoftware = allResolved.slice(0, 4);
   const unavailableSoftware = allResolved.filter((m) => m.missing || m.uninstalled || m.deleted);
   const unavailableCount = unavailableSoftware.length;
 
@@ -261,29 +256,46 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
 
         <div className="flex items-center justify-between">
           <div className="flex items-center -space-x-2">
-            {availableSoftware.map((m) => (
-              <div key={m.id} className="rounded-xl border-2 border-slate-900" title={m.name}>
-                <AppIcon
-                  software={{
-                    id: m.id,
-                    name: m.name,
-                    icon: m.icon ?? '',
-                    color: m.color ?? '#64748b',
-                    category: m.category ?? 'utilities',
-                    description: '',
-                    size: 0,
-                    lastUsed: '',
-                    usageMinutes: 0,
-                    launchCount: 0,
-                    path: '',
-                    tags: [],
-                  }}
-                  size={36}
-                  rounded="rounded-[10px]"
-                />
-              </div>
-            ))}
-            {(availableSoftware.length > 0 || unavailableCount > 0) && (
+            {previewSoftware.map((m) => {
+              const unavailable = m.missing || m.uninstalled || m.deleted;
+              const title = m.missing
+                ? `${m.name}（未安装）`
+                : m.deleted
+                  ? `${m.name}（已从本地电脑删除，未安装）`
+                  : m.uninstalled
+                    ? `${m.name}（已弃用，未安装）`
+                    : m.name;
+              return (
+                <div
+                  key={m.id}
+                  className={cn(
+                    'rounded-xl border-2 border-slate-900',
+                    unavailable && 'grayscale opacity-50'
+                  )}
+                  title={title}
+                >
+                  <AppIcon
+                    software={{
+                      id: m.id,
+                      name: m.name,
+                      icon: m.icon ?? '',
+                      color: m.color ?? '#64748b',
+                      category: m.category ?? 'utilities',
+                      description: '',
+                      size: 0,
+                      lastUsed: '',
+                      usageMinutes: 0,
+                      launchCount: 0,
+                      path: '',
+                      tags: [],
+                    }}
+                    size={36}
+                    rounded="rounded-[10px]"
+                  />
+                </div>
+              );
+            })}
+            {(previewSoftware.length > 0 || unavailableCount > 0) && (
               <div className="pl-3 ml-3 text-xs text-slate-500 border-l border-slate-700/80">
                 {workflow.softwareIds.length} 个应用
                 {unavailableCount > 0 && (
@@ -302,57 +314,6 @@ const WorkflowCard = memo(function WorkflowCard({ workflow, onEdit }: WorkflowCa
             {formatTimeAgo(workflow.lastUsed)} · {workflow.usageCount} 次使用
           </div>
         </div>
-
-        {unavailableSoftware.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-slate-800/60">
-            <h4 className="text-[10px] font-medium text-slate-600 uppercase tracking-wider mb-2">
-              未安装 ({unavailableSoftware.length})
-            </h4>
-            <div className="grid gap-2 grid-cols-2">
-              {unavailableSoftware.map((m) => {
-                const statusLabel = m.missing
-                  ? '未安装'
-                  : m.deleted
-                    ? '已从本地电脑删除'
-                    : '已弃用';
-                return (
-                  <div
-                    key={m.id}
-                    className="flex items-center gap-2 p-2 rounded-xl border border-slate-800/60 bg-slate-900/20 opacity-60"
-                    title={`${m.name}（${statusLabel}）`}
-                  >
-                    <div className="grayscale">
-                      <AppIcon
-                        software={{
-                          id: m.id,
-                          name: m.name,
-                          icon: m.icon ?? '',
-                          color: m.color ?? '#64748b',
-                          category: m.category ?? 'utilities',
-                          description: '',
-                          size: 0,
-                          lastUsed: '',
-                          usageMinutes: 0,
-                          launchCount: 0,
-                          path: '',
-                          tags: [],
-                        }}
-                        size={28}
-                        rounded="rounded-lg"
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-slate-400 truncate">{m.name}</div>
-                      <span className="text-[10px] px-1 py-0.5 rounded bg-slate-800 text-slate-500">
-                        未安装
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
       {shareOpen && (
