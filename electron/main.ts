@@ -150,15 +150,10 @@ function persistWindowPrefs(): void {
 }
 
 // 主进程可访问的 SoftDesk 品牌图标(dev/打包两种模式下都能命中):
-// - dev: APP_ROOT = 项目根,直接读 build/icon.*
+// - dev: APP_ROOT = 项目根,直接读 build/icon.png
 // - 打包: files 白名单已把 build/icon.* 打进 app.asar,APP_ROOT 指向 asar 根,同样可读
-function resolveBrandIconPath(preferIco = false): string {
+function resolveBrandIconPath(): string {
   const root = process.env.APP_ROOT ?? path.join(__dirname, '..');
-  if (preferIco && process.platform === 'win32') {
-    const ico = path.join(root, 'build', 'icon.ico');
-    // .ico 缺失时回退到 .png,Electron 在 Windows 上同样可以处理 PNG 任务栏图标
-    if (existsSync(ico)) return ico;
-  }
   return path.join(root, 'build', 'icon.png');
 }
 
@@ -188,8 +183,7 @@ function createTrayIcon(): Electron.NativeImage {
       return tpl;
     }
   }
-  // Windows 优先 .ico,其它平台读 build/icon.png;托盘统一缩放到 32×32(非 mac)
-  const iconPath = resolveBrandIconPath(true);
+  const iconPath = resolveBrandIconPath();
   const img = nativeImage.createFromPath(iconPath);
   if (img.isEmpty()) {
     return nativeImage.createEmpty();
@@ -782,8 +776,8 @@ function createWindow() {
     backgroundColor: '#161618',
     show: !windowPrefs.startMinimized,
     titleBarStyle: 'hiddenInset',
-    // Windows/Linux 通过窗口 icon 决定任务栏图标(macOS 走 .icns,不需要这里指定)
-    icon: process.platform === 'win32' ? resolveBrandIconPath(true) : resolveBrandIconPath(false),
+    // Windows/Linux 通过窗口 icon 决定任务栏初始图标(macOS 走 .icns,不需要这里指定)
+    icon: resolveBrandIconPath(),
     webPreferences: {
       preload: PRELOAD_PATH,
       contextIsolation: true,
