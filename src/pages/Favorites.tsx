@@ -141,6 +141,7 @@ interface GroupSectionProps {
   group: FavoriteGroup;
   softwareList: Software[];
   allGroups: FavoriteGroup[];
+  cloudFavorites: CloudFavorite[];
   onToggleExpand: (id: string) => void;
   expanded: boolean;
   selectMode: boolean;
@@ -160,6 +161,7 @@ function GroupSection({
   group,
   softwareList,
   allGroups,
+  cloudFavorites,
   onToggleExpand,
   expanded,
   selectMode,
@@ -190,6 +192,7 @@ function GroupSection({
   const renameFavoriteGroup = useSoftwareStore((s) => s.renameFavoriteGroup);
   const deleteFavoriteGroup = useSoftwareStore((s) => s.deleteFavoriteGroup);
   const moveFavoriteToGroup = useSoftwareStore((s) => s.moveFavoriteToGroup);
+  const toggleFavorite = useSoftwareStore((s) => s.toggleFavorite);
 
   useEffect(() => {
     if (renaming && renameInputRef.current) {
@@ -230,9 +233,34 @@ function GroupSection({
     moveFavoriteToGroup(softwareId, null);
   };
 
-  const installedInGroup = group.softwareIds
-    .map((id) => matchSoftware(softwareList, id))
-    .filter((s): s is Software => Boolean(s) && !s!.uninstalled && !s!.deleted);
+  const softwareInGroup = group.softwareIds
+    .map((id) => {
+      const sw = matchSoftware(softwareList, id);
+      if (sw && !sw.deleted) return { type: 'installed' as const, software: sw, uninstalled: sw.uninstalled ?? false };
+      const cloudFav = cloudFavorites.find((f) => f.software_id === id);
+      if (cloudFav) {
+        const cloudSoftware: Software = {
+          id: cloudFav.software_id,
+          name: cloudFav.name,
+          icon: cloudFav.icon ?? '',
+          color: cloudFav.color ?? '#64748b',
+          category: (cloudFav.category ?? 'utilities') as Software['category'],
+          description: '',
+          size: 0,
+          lastUsed: '',
+          usageMinutes: 0,
+          launchCount: 0,
+          path: '',
+          tags: [],
+          uninstalled: true,
+        };
+        return { type: 'cloud' as const, software: cloudSoftware, uninstalled: true };
+      }
+      return null;
+    })
+    .filter((item): item is { type: 'installed' | 'cloud'; software: Software; uninstalled: boolean } => item !== null);
+
+  const installedInGroup = softwareInGroup.filter((item) => !item.uninstalled).map((item) => item.software);
 
   const allSelected = installedInGroup.length > 0 && installedInGroup.every((s) => selectedIds.includes(s.id));
   const someSelected = installedInGroup.some((s) => selectedIds.includes(s.id)) && !allSelected;
@@ -326,7 +354,7 @@ function GroupSection({
             <ChevronRight className="w-3.5 h-3.5" />
           )}
           <span className="text-2xl">{group.name}</span>
-          <span className="text-slate-600 text-2xl">({installedInGroup.length})</span>
+          <span className="text-slate-600 text-2xl">({softwareInGroup.length})</span>
         </button>
         {!selectMode && (
           <div className="relative" ref={menuRef}>
@@ -422,74 +450,105 @@ function GroupSection({
 
       {expanded && (
         <>
-          {installedInGroup.length > 0 ? (
+          {softwareInGroup.length > 0 ? (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {installedInGroup.map((sw) => (
-                <CardWrapper
-                  key={sw.id}
-                  software={sw}
-                  selectMode={selectMode}
-                  selected={selectedIds.includes(sw.id)}
-                  onToggleSelect={() => onToggleSelect(sw.id)}
-                  sortMode={sortMode}
-                  isDragging={dragId === sw.id}
-                  isDragOver={overId === sw.id && dragId !== sw.id}
-                  onDragStart={() => setDragId(sw.id)}
-                  onDragEnter={() => setOverId(sw.id)}
-                  onDragEnd={() => {
-                    setDragId(null);
-                    setOverId(null);
-                  }}
-                  onDrop={() => handleDrop(sw.id)}
-                  extraActions={
-                    !selectMode ? (
-                      <div className="relative">
-                        <button
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMoveMenuOpen((prev) => (prev === sw.id ? false : sw.id));
-                          }}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800/60 transition-colors"
-                          title="移动到"
-                        >
-                          <FolderInput className="w-3.5 h-3.5" />
-                        </button>
-                        {moveMenuOpen === sw.id && (
-                          <div className="absolute right-0 top-full mt-1 z-30 w-40 py-1 rounded-xl bg-slate-900 border border-slate-700/60 shadow-xl">
-                            <button
-                              onMouseDown={(e) => e.stopPropagation()}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMoveOut(sw.id);
-                                setMoveMenuOpen(false);
-                              }}
-                              className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-800/60 transition-colors"
-                            >
-                              移出分组
-                            </button>
-                            {allGroups
-                              .filter((g) => g.id !== group.id)
-                              .map((g) => (
-                                <button
-                                  key={g.id}
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    moveFavoriteToGroup(sw.id, g.id);
-                                    setMoveMenuOpen(false);
-                                  }}
-                                  className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-800/60 transition-colors"
-                                >
-                                  移动到「{g.name}」
-                                </button>
-                              ))}
-                          </div>
-                        )}
+              {softwareInGroup.map(({ software: sw, uninstalled }) => (
+                uninstalled ? (
+                  <div
+                    key={sw.id}
+                    className={cn(
+                      'relative p-3.5 rounded-2xl border border-slate-800/60',
+                      'bg-slate-900/20 opacity-60'
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <AppIcon software={sw} size={40} rounded="rounded-xl" />
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-semibold text-slate-400 truncate">
+                          {sw.name}
+                        </h3>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
+                            未安装
+                          </span>
+                        </div>
                       </div>
-                    ) : undefined
-                  }
-                />
+                      <button
+                        onClick={() => void toggleFavorite(sw.id)}
+                        className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                        title="取消收藏"
+                      >
+                        <Heart className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <CardWrapper
+                    key={sw.id}
+                    software={sw}
+                    selectMode={selectMode}
+                    selected={selectedIds.includes(sw.id)}
+                    onToggleSelect={() => onToggleSelect(sw.id)}
+                    sortMode={sortMode}
+                    isDragging={dragId === sw.id}
+                    isDragOver={overId === sw.id && dragId !== sw.id}
+                    onDragStart={() => setDragId(sw.id)}
+                    onDragEnter={() => setOverId(sw.id)}
+                    onDragEnd={() => {
+                      setDragId(null);
+                      setOverId(null);
+                    }}
+                    onDrop={() => handleDrop(sw.id)}
+                    extraActions={
+                      !selectMode ? (
+                        <div className="relative">
+                          <button
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMoveMenuOpen((prev) => (prev === sw.id ? false : sw.id));
+                            }}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800/60 transition-colors"
+                            title="移动到"
+                          >
+                            <FolderInput className="w-3.5 h-3.5" />
+                          </button>
+                          {moveMenuOpen === sw.id && (
+                            <div className="absolute right-0 top-full mt-1 z-30 w-40 py-1 rounded-xl bg-slate-900 border border-slate-700/60 shadow-xl">
+                              <button
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMoveOut(sw.id);
+                                  setMoveMenuOpen(false);
+                                }}
+                                className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-800/60 transition-colors"
+                              >
+                                移出分组
+                              </button>
+                              {allGroups
+                                .filter((g) => g.id !== group.id)
+                                .map((g) => (
+                                  <button
+                                    key={g.id}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      moveFavoriteToGroup(sw.id, g.id);
+                                      setMoveMenuOpen(false);
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-800/60 transition-colors"
+                                  >
+                                    移动到「{g.name}」
+                                  </button>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : undefined
+                    }
+                  />
+                )
               ))}
             </div>
           ) : (
@@ -625,7 +684,7 @@ export function Favorites() {
     .map((id) => matchSoftware(software, id))
     .filter((s): s is Software => Boolean(s) && !s!.uninstalled && !s!.deleted);
 
-  const ungroupedFavorites = installedFavorites.filter(
+  const ungroupedInstalledFavorites = installedFavorites.filter(
     (s) => !groupedSoftwareIds.has(s.id)
   );
 
@@ -633,6 +692,12 @@ export function Favorites() {
     const s = matchSoftware(software, f.software_id);
     return !s || s.uninstalled || s.deleted;
   });
+
+  const ungroupedUninstalledFavorites = uninstalledFavorites.filter(
+    (f) => !groupedSoftwareIds.has(f.software_id)
+  );
+
+  const ungroupedFavorites = ungroupedInstalledFavorites;
 
   const totalCount = installedFavorites.length + uninstalledFavorites.length;
 
@@ -905,6 +970,7 @@ export function Favorites() {
                       group={group}
                       softwareList={software}
                       allGroups={favoriteGroups}
+                      cloudFavorites={cloudFavorites}
                       onToggleExpand={toggleGroupExpand}
                       expanded={expandedGroups[group.id] ?? true}
                       selectMode={selectMode}
@@ -927,7 +993,7 @@ export function Favorites() {
               )}
 
               {/* 未分组软件 */}
-              {ungroupedFavorites.length > 0 && (
+              {(ungroupedFavorites.length > 0 || ungroupedUninstalledFavorites.length > 0) && (
                 <section>
                   <div className="flex items-center gap-2 mb-3">
                     {selectMode && (
@@ -965,7 +1031,7 @@ export function Favorites() {
                         <ChevronRight className="w-3.5 h-3.5" />
                       )}
                       <span>未分组</span>
-                      <span className="text-slate-600">({ungroupedFavorites.length})</span>
+                      <span className="text-slate-600">({ungroupedFavorites.length + ungroupedUninstalledFavorites.length})</span>
                     </button>
                   </div>
                   {ungroupedExpanded && (
@@ -1022,66 +1088,55 @@ export function Favorites() {
                           }
                         />
                       ))}
+                      {ungroupedUninstalledFavorites.map((fav) => (
+                        <div
+                          key={fav.software_id}
+                          className={cn(
+                            'relative p-3.5 rounded-2xl border border-slate-800/60',
+                            'bg-slate-900/20 opacity-60'
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <AppIcon
+                              software={{
+                                id: fav.software_id,
+                                name: fav.name,
+                                icon: fav.icon ?? '',
+                                color: fav.color ?? '#64748b',
+                                category: (fav.category ?? 'utilities') as import('@/types').SoftwareCategory,
+                                description: '',
+                                size: 0,
+                                lastUsed: '',
+                                usageMinutes: 0,
+                                launchCount: 0,
+                                path: '',
+                                tags: [],
+                              }}
+                              size={40}
+                              rounded="rounded-xl"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-sm font-semibold text-slate-400 truncate">
+                                {fav.name}
+                              </h3>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
+                                  未安装
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => void toggleFavorite(fav.software_id)}
+                              className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                              title="取消收藏"
+                            >
+                              <Heart className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
-                </section>
-              )}
-
-              {/* 未安装收藏 */}
-              {uninstalledFavorites.length > 0 && (
-                <section>
-                  <h2 className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">
-                    未安装 ({uninstalledFavorites.length})
-                  </h2>
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {uninstalledFavorites.map((fav) => (
-                      <div
-                        key={fav.software_id}
-                        className={cn(
-                          'relative p-3.5 rounded-2xl border border-slate-800/60',
-                          'bg-slate-900/20 opacity-60'
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <AppIcon
-                            software={{
-                              id: fav.software_id,
-                              name: fav.name,
-                              icon: fav.icon ?? '',
-                              color: fav.color ?? '#64748b',
-                              category: (fav.category ?? 'utilities') as import('@/types').SoftwareCategory,
-                              description: '',
-                              size: 0,
-                              lastUsed: '',
-                              usageMinutes: 0,
-                              launchCount: 0,
-                              path: '',
-                              tags: [],
-                            }}
-                            size={40}
-                            rounded="rounded-xl"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-sm font-semibold text-slate-400 truncate">
-                              {fav.name}
-                            </h3>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
-                                未安装
-                              </span>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => void toggleFavorite(fav.software_id)}
-                            className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                            title="取消收藏"
-                          >
-                            <Heart className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                 </section>
               )}
             </div>
