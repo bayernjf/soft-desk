@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { createLogger } from '@/lib/logger';
-import type { Workflow } from '@/types';
+import type { Workflow, SoftwareCategory } from '@/types';
 
 const logger = createLogger('workflows');
 
@@ -11,6 +11,13 @@ export interface CloudWorkflow {
   name: string;
   description: string;
   software_ids: string[];
+  software_meta: Array<{
+    software_id: string;
+    name: string;
+    icon: string | null;
+    color: string | null;
+    category: string | null;
+  }> | null;
   usage_count: number;
   last_used: string;
   is_favorite: boolean;
@@ -24,6 +31,15 @@ function cloudToLocal(row: CloudWorkflow): Workflow {
     name: row.name,
     description: row.description,
     softwareIds: row.software_ids,
+    softwareMeta: Array.isArray(row.software_meta)
+      ? row.software_meta.map((m) => ({
+          softwareId: m.software_id,
+          name: m.name,
+          icon: m.icon ?? undefined,
+          color: m.color ?? undefined,
+          category: (m.category ?? 'utilities') as SoftwareCategory,
+        }))
+      : [],
     usageCount: row.usage_count,
     lastUsed: row.last_used,
     isFavorite: row.is_favorite,
@@ -39,6 +55,13 @@ function localToCloud(userId: string, wf: Workflow): Omit<CloudWorkflow, 'id'> {
     name: wf.name,
     description: wf.description,
     software_ids: wf.softwareIds,
+    software_meta: (wf.softwareMeta ?? []).map((m) => ({
+      software_id: m.softwareId,
+      name: m.name,
+      icon: m.icon ?? null,
+      color: m.color ?? null,
+      category: m.category ?? null,
+    })),
     usage_count: wf.usageCount,
     last_used: wf.lastUsed,
     is_favorite: wf.isFavorite,

@@ -41,11 +41,22 @@ export interface Workflow {
   name: string;
   description: string;
   softwareIds: string[];
+  /** 创建/更新工作流时缓存的软件元数据(名称/图标/颜色/分类),
+   *  用于在软件被卸载或跨设备缺失时,仍能像收藏夹一样显示名称+图标并置灰标记「未安装」 */
+  softwareMeta?: SoftwareMetaSnapshot[];
   usageCount: number;
   lastUsed: string;
   isFavorite: boolean;
   color: string;
   updatedAt: string;
+}
+
+export interface SoftwareMetaSnapshot {
+  softwareId: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  category?: SoftwareCategory;
 }
 
 export interface FavoriteGroup {

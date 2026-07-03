@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Software, Workflow, SoftwareCategory, FavoriteGroup } from '@/types';
+import type { Software, Workflow, SoftwareCategory, FavoriteGroup, SoftwareMetaSnapshot } from '@/types';
 import { WORKFLOW_COLORS } from '@/data/categories';
 import { useSettingsStore, registerRadialSyncBridge } from '@/stores/settings.store';
 import { useAuthStore } from '@/stores/auth.store';
@@ -87,6 +87,30 @@ export interface WorkflowInput {
 
 const hasBridge = typeof window !== 'undefined' && !!window.softdesk;
 
+function buildSoftwareMeta(
+  softwareIds: string[],
+  software: Software[],
+  existing?: SoftwareMetaSnapshot[]
+): SoftwareMetaSnapshot[] {
+  const byId = new Map(software.map((s) => [s.id, s]));
+  const prevById = new Map((existing ?? []).map((m) => [m.softwareId, m]));
+  return softwareIds.map((id) => {
+    const sw = byId.get(id);
+    if (sw) {
+      return {
+        softwareId: sw.id,
+        name: sw.name,
+        icon: sw.icon,
+        color: sw.color,
+        category: sw.category,
+      };
+    }
+    const prev = prevById.get(id);
+    if (prev) return prev;
+    return { softwareId: id, name: '未安装的软件' };
+  });
+}
+
 export const useSoftwareStore = create<SoftwareStore>()(
   persist(
     (set, get) => ({
@@ -130,10 +154,17 @@ export const useSoftwareStore = create<SoftwareStore>()(
       }
     }
 
-    set({ software: merged });
+    // 软件列表刷新后,把工作流中缺失的 softwareMeta 快照自动补齐,
+    // 保证旧版本创建的工作流在软件被卸载后也能显示名称+图标
+    const workflows = get().workflows.map((wf) => ({
+      ...wf,
+      softwareMeta: buildSoftwareMeta(wf.softwareIds, merged, wf.softwareMeta),
+    }));
+
+    set({ software: merged, workflows });
 
     // 应用列表(含 path/icon)刷新后,把 radial 配置 resolve 并重新同步给主进程
-    syncRadialToMain(useSettingsStore.getState().radial, merged, get().workflows);
+    syncRadialToMain(useSettingsStore.getState().radial, merged, workflows);
   },
 
   scanSoftware: async () => {
@@ -248,6 +279,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
       name: data.name.trim(),
       description: data.description.trim(),
       softwareIds: data.softwareIds,
+      softwareMeta: buildSoftwareMeta(data.softwareIds, get().software),
       color: data.color || WORKFLOW_COLORS[existing.length % WORKFLOW_COLORS.length],
       usageCount: 0,
       lastUsed: now,
@@ -266,6 +298,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
 
   updateWorkflow: (id, data) => {
     const now = new Date().toISOString();
+    const previous = get().workflows.find((w) => w.id === id);
     const workflows = get().workflows.map((w) =>
       w.id === id
         ? {
@@ -273,6 +306,11 @@ export const useSoftwareStore = create<SoftwareStore>()(
             name: data.name.trim(),
             description: data.description.trim(),
             softwareIds: data.softwareIds,
+            softwareMeta: buildSoftwareMeta(
+              data.softwareIds,
+              get().software,
+              previous?.softwareMeta
+            ),
             color: data.color || w.color,
             updatedAt: now,
           }
