@@ -17,6 +17,8 @@ export interface Software {
   uninstalled?: boolean;
   deleted?: boolean;
   aiDescription?: string;
+  /** 跨平台 bundleId(Mac CFBundleIdentifier / Windows 伪 bundleId),用于跨设备匹配 */
+  bundleId?: string;
 }
 
 export type SoftwareCategory =
@@ -57,6 +59,9 @@ export interface SoftwareMetaSnapshot {
   icon?: string;
   color?: string;
   category?: SoftwareCategory;
+  /** 跨平台 bundleId(Mac CFBundleIdentifier / Windows 伪 bundleId),
+   *  用于跨设备同步时按 bundleId 兜底匹配,解决 Mac↔Windows id 不一致问题 */
+  bundleId?: string;
 }
 
 export interface FavoriteGroup {

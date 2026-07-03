@@ -5,6 +5,7 @@ import type {
   Software,
   Workflow,
 } from '@/types';
+import { matchSoftware } from '@/services/software-matching';
 
 /**
  * 把渲染层的 radial 配置(只存 targetId)resolve 成主进程可用的完整配置:
@@ -20,19 +21,18 @@ export function resolveRadialConfig(
   software: Software[],
   workflows: Workflow[]
 ): RadialSyncConfig {
-  const softwareById = new Map(software.map((s) => [s.id, s]));
   const workflowById = new Map(workflows.map((w) => [w.id, w]));
 
   const items: RadialSyncItem[] = [];
   for (const item of config.items) {
     if (item.type === 'app') {
-      const sw = softwareById.get(item.targetId);
+      const sw = matchSoftware(software, item.targetId);
       const usable = sw && !sw.uninstalled && !sw.deleted && sw.path;
       if (usable) {
         items.push({
           slot: item.slot,
           type: 'app',
-          targetId: item.targetId,
+          targetId: sw.id,
           name: sw.name,
           icon: sw.icon,
           color: sw.color,
@@ -65,7 +65,7 @@ export function resolveRadialConfig(
         continue;
       }
       const paths = wf.softwareIds
-        .map((sid) => softwareById.get(sid))
+        .map((sid) => matchSoftware(software, sid))
         .filter((s) => s && !s.uninstalled && !s.deleted && s.path)
         .map((s) => s!.path);
       items.push({

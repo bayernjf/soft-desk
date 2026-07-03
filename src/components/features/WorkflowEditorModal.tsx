@@ -5,6 +5,7 @@ import { useSoftwareStore, type WorkflowInput } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { WORKFLOW_COLORS, CATEGORIES } from '@/data/categories';
 import { formatMinutes } from '@/services/software.service';
+import { matchSoftware, findMetaSnapshot } from '@/services/software-matching';
 import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
 
@@ -46,12 +47,11 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
   // 已选软件(按选择顺序),用于上方展示区;
   // 对于已卸载/已删除/找不到的软件,仍保留其 id,基于 workflow 快照渲染名称+图标并置灰标记「未安装」
   const selectedSoftware = useMemo(() => {
-    const metaById = new Map((workflow?.softwareMeta ?? []).map((m) => [m.softwareId, m]));
     return selectedIds.map((id) => {
-      const sw = software.find((s) => s.id === id);
+      const sw = matchSoftware(software, id);
       if (sw) {
         return {
-          id,
+          id: sw.id,
           name: sw.name,
           icon: sw.icon,
           color: sw.color,
@@ -61,7 +61,7 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
           deleted: !!sw.deleted,
         };
       }
-      const snap = metaById.get(id);
+      const snap = findMetaSnapshot(workflow?.softwareMeta, id);
       return {
         id,
         name: snap?.name ?? '未安装的软件',

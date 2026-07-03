@@ -18,6 +18,7 @@ import {
   reorderCloudFavoriteGroups,
 } from '@/services/favorites.service';
 import { upsertCloudWorkflow, deleteCloudWorkflow } from '@/services/workflows.service';
+import { matchSoftware, findMetaSnapshot } from '@/services/software-matching';
 
 export interface WorkflowLaunchResult {
   total: number;
@@ -92,10 +93,8 @@ function buildSoftwareMeta(
   software: Software[],
   existing?: SoftwareMetaSnapshot[]
 ): SoftwareMetaSnapshot[] {
-  const byId = new Map(software.map((s) => [s.id, s]));
-  const prevById = new Map((existing ?? []).map((m) => [m.softwareId, m]));
   return softwareIds.map((id) => {
-    const sw = byId.get(id);
+    const sw = matchSoftware(software, id);
     if (sw) {
       return {
         softwareId: sw.id,
@@ -103,10 +102,11 @@ function buildSoftwareMeta(
         icon: sw.icon,
         color: sw.color,
         category: sw.category,
+        bundleId: sw.bundleId,
       };
     }
-    const prev = prevById.get(id);
-    if (prev) return prev;
+    const prev = findMetaSnapshot(existing, id);
+    if (prev) return { ...prev, softwareId: prev.softwareId };
     return { softwareId: id, name: '未安装的软件' };
   });
 }
@@ -189,13 +189,13 @@ export const useSoftwareStore = create<SoftwareStore>()(
   },
 
   launchSoftware: (id) => {
-    const target = get().software.find((s) => s.id === id);
+    const target = matchSoftware(get().software, id);
     if (target?.uninstalled || target?.deleted) return;
     if (window.softdesk && target?.path) {
       window.softdesk.launchSoftware(target.path, target.id);
     }
     const software = get().software.map((s) =>
-      s.id === id
+      s.id === target?.id
         ? { ...s, launchCount: s.launchCount + 1, lastUsed: new Date().toISOString() }
         : s
     );
@@ -208,7 +208,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
       return { total: 0, launched: 0, failed: 0, missing: 0, isElectron: get().isElectron };
     }
 
-    const matched = wf.softwareIds.map((sid) => get().software.find((s) => s.id === sid));
+    const matched = wf.softwareIds.map((sid) => matchSoftware(get().software, sid));
     const paths = matched
       .filter((s): s is Software => !!s?.path && !s.uninstalled && !s.deleted)
       .map((s) => s.path);
@@ -403,21 +403,22 @@ export const useSoftwareStore = create<SoftwareStore>()(
   setRecommendationLoading: (recommendationLoading) => set({ recommendationLoading }),
 
   toggleFavorite: async (id) => {
-    const nextIds = get().favoriteIds.includes(id)
-      ? get().favoriteIds.filter((x) => x !== id)
-      : [...get().favoriteIds, id];
+    const sw = matchSoftware(get().software, id);
+    const canonicalId = sw?.id ?? id;
+    const nextIds = get().favoriteIds.includes(canonicalId)
+      ? get().favoriteIds.filter((x) => x !== canonicalId)
+      : [...get().favoriteIds, canonicalId];
     set({ favoriteIds: nextIds });
 
     const userId = useAuthStore.getState().profile?.userId;
     if (!userId) return;
 
-    const software = get().software.find((s) => s.id === id);
-    if (!software) return;
+    if (!sw) return;
 
-    if (nextIds.includes(id)) {
-      void addCloudFavorite(userId, software);
+    if (nextIds.includes(canonicalId)) {
+      void addCloudFavorite(userId, sw);
     } else {
-      void removeCloudFavorite(userId, id);
+      void removeCloudFavorite(userId, canonicalId);
     }
   },
 

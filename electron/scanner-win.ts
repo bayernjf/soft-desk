@@ -500,7 +500,7 @@ async function resolveExePath(entry: RegistryEntry): Promise<ResolveResult | nul
   // 注意:readUninstallRegistry 已经把 DisplayIcon 拆成了 displayIcon(纯路径) + iconIndex,
   // 这里直接使用,不再重复 parse。
   let iconFromDisplay: string | null = null;
-  let iconIndex: number | null = entry.iconIndex ?? null;
+  const iconIndex: number | null = entry.iconIndex ?? null;
   if (entry.displayIcon) {
     const iconPath = expandEnvVars(entry.displayIcon);
     try {

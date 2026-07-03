@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { formatTimeAgo } from '@/services/software.service';
 import { hasActiveAiProvider } from '@/services/ai.service';
 import { serializeWorkflow } from '@/services/share-serializer';
+import { matchSoftware, findMetaSnapshot } from '@/services/software-matching';
 import { cn } from '@/lib/utils';
 import { WorkflowEditorModal } from './WorkflowEditorModal';
 import { AiWorkflowModal } from './AiWorkflowModal';
@@ -29,10 +30,10 @@ function resolveMeta(
   software: ReturnType<typeof useSoftwareStore.getState>['software'],
   meta?: SoftwareMetaSnapshot[]
 ) {
-  const sw = software.find((s) => s.id === id);
+  const sw = matchSoftware(software, id);
   if (sw) {
     return {
-      id,
+      id: sw.id,
       name: sw.name,
       icon: sw.icon,
       color: sw.color,
@@ -42,7 +43,7 @@ function resolveMeta(
       missing: false,
     };
   }
-  const snap = meta?.find((m) => m.softwareId === id);
+  const snap = findMetaSnapshot(meta, id);
   return {
     id,
     name: snap?.name ?? '未安装的软件',

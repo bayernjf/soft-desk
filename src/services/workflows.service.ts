@@ -38,6 +38,7 @@ function cloudToLocal(row: CloudWorkflow): Workflow {
           icon: m.icon ?? undefined,
           color: m.color ?? undefined,
           category: (m.category ?? 'utilities') as SoftwareCategory,
+          bundleId: (m as Record<string, unknown>).bundle_id as string | undefined,
         }))
       : [],
     usageCount: row.usage_count,
@@ -61,6 +62,7 @@ function localToCloud(userId: string, wf: Workflow): Omit<CloudWorkflow, 'id'> {
       icon: m.icon ?? null,
       color: m.color ?? null,
       category: m.category ?? null,
+      bundle_id: m.bundleId ?? null,
     })),
     usage_count: wf.usageCount,
     last_used: wf.lastUsed,

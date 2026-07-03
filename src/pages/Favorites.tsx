@@ -28,6 +28,7 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 import { fetchCloudFavoriteGroups, fetchCloudFavoriteDetails } from '@/services/favorites.service';
 import type { CloudFavorite } from '@/services/favorites.service';
 import type { FavoriteGroup, Software } from '@/types';
+import { matchSoftware } from '@/services/software-matching';
 import { cn } from '@/lib/utils';
 
 /* ── 软件卡片包装器（含多选 checkbox / 拖拽排序） ── */
@@ -230,7 +231,7 @@ function GroupSection({
   };
 
   const installedInGroup = group.softwareIds
-    .map((id) => softwareList.find((s) => s.id === id))
+    .map((id) => matchSoftware(softwareList, id))
     .filter((s): s is Software => Boolean(s) && !s!.uninstalled && !s!.deleted);
 
   const allSelected = installedInGroup.length > 0 && installedInGroup.every((s) => selectedIds.includes(s.id));
@@ -620,17 +621,18 @@ export function Favorites() {
     favoriteGroups.flatMap((g) => g.softwareIds)
   );
 
-  const installedFavorites = software.filter(
-    (s) => favoriteIds.includes(s.id) && !s.uninstalled && !s.deleted
+  const installedFavorites = favoriteIds
+    .map((id) => matchSoftware(software, id))
+    .filter((s): s is Software => Boolean(s) && !s!.uninstalled && !s!.deleted);
+
+  const ungroupedFavorites = installedFavorites.filter(
+    (s) => !groupedSoftwareIds.has(s.id)
   );
 
-  const ungroupedFavorites = favoriteIds
-    .map((id) => installedFavorites.find((s) => s.id === id))
-    .filter((s): s is Software => Boolean(s) && !groupedSoftwareIds.has(s!.id));
-
-  const uninstalledFavorites = cloudFavorites.filter(
-    (f) => !software.some((s) => s.id === f.software_id && !s.uninstalled && !s.deleted)
-  );
+  const uninstalledFavorites = cloudFavorites.filter((f) => {
+    const s = matchSoftware(software, f.software_id);
+    return !s || s.uninstalled || s.deleted;
+  });
 
   const totalCount = installedFavorites.length + uninstalledFavorites.length;
 
