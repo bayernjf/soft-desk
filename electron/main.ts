@@ -52,6 +52,13 @@ if (SANDBOX_DISABLED) {
   app.commandLine.appendSwitch('no-sandbox');
 }
 
+// Windows 必须在 app.ready 之前设置 AppUserModelID,任务栏才会把窗口和 exe 正确关联,
+// 否则会退回到 Electron 默认的 AUMID(electron.app.Electron),任务栏图标永远是 Electron 默认图。
+// 取值与 package.json 里 build.appId 一致,保证与安装包/桌面快捷方式的 AUMID 匹配。
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.softdesk.app');
+}
+
 // 仅开发模式把 userData 重定向到项目目录,便于调试查看落盘数据;
 // 打包模式必须使用 Electron 默认 userData(~/Library/Application Support/<productName>),
 // 否则会指向只读的 app.asar 内部路径,导致 radial-config.json 等配置无法落盘,
@@ -155,17 +162,33 @@ function resolveBrandIconPath(preferIco = false): string {
   return path.join(root, 'build', 'icon.png');
 }
 
+const MAC_TRAY_TEMPLATE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44" fill="none">
+  <path d="M9 11 H19 a11 11 0 0 1 0 22 H9 Z" stroke="black" stroke-width="3.6" stroke-linejoin="round" fill="none"/>
+  <path d="M15 17 L23 22 L15 27 Z" fill="black"/>
+  <rect x="8" y="35" width="20" height="2.4" rx="1.2" fill="black"/>
+</svg>`;
+
+function createMacTemplateImage(size: number): Electron.NativeImage {
+  const dataUrl = `data:image/svg+xml;base64,${Buffer.from(MAC_TRAY_TEMPLATE_SVG).toString('base64')}`;
+  const img = nativeImage.createFromDataURL(dataUrl);
+  if (img.isEmpty()) return nativeImage.createEmpty();
+  const sized = img.resize({ width: size, height: size, quality: 'best' });
+  sized.setTemplateImage(true);
+  return sized;
+}
+
 function createTrayIcon(): Electron.NativeImage {
-  // Windows 优先 .ico,其它平台读 build/icon.png;托盘统一缩放到 22×22(mac)/32×32(其它)
+  if (process.platform === 'darwin') {
+    // macOS 菜单栏使用单色 template 图像:系统会根据深浅色菜单自动选择白色/黑色,
+    // 深色菜单栏下呈现白色图标,与其他系统状态栏图标风格一致
+    const tpl = createMacTemplateImage(22);
+    if (!tpl.isEmpty()) return tpl;
+  }
+  // Windows 优先 .ico,其它平台读 build/icon.png;托盘统一缩放到 32×32(非 mac)
   const iconPath = resolveBrandIconPath(true);
   const img = nativeImage.createFromPath(iconPath);
   if (img.isEmpty()) {
-    // 图标文件缺失时用空图,至少让 Tray 构造不抛
     return nativeImage.createEmpty();
-  }
-  if (process.platform === 'darwin') {
-    // macOS 状态栏建议 22×22;当前 icon.png 是彩色 logo,不走 template 以保留色彩
-    return img.resize({ width: 22, height: 22 });
   }
   return img.resize({ width: 32, height: 32 });
 }
