@@ -162,27 +162,31 @@ function resolveBrandIconPath(preferIco = false): string {
   return path.join(root, 'build', 'icon.png');
 }
 
-const MAC_TRAY_TEMPLATE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44" fill="none">
-  <path d="M9 11 H19 a11 11 0 0 1 0 22 H9 Z" stroke="black" stroke-width="3.6" stroke-linejoin="round" fill="none"/>
-  <path d="M15 17 L23 22 L15 27 Z" fill="black"/>
-  <rect x="8" y="35" width="20" height="2.4" rx="1.2" fill="black"/>
-</svg>`;
-
-function createMacTemplateImage(size: number): Electron.NativeImage {
-  const dataUrl = `data:image/svg+xml;base64,${Buffer.from(MAC_TRAY_TEMPLATE_SVG).toString('base64')}`;
-  const img = nativeImage.createFromDataURL(dataUrl);
-  if (img.isEmpty()) return nativeImage.createEmpty();
-  const sized = img.resize({ width: size, height: size, quality: 'best' });
-  sized.setTemplateImage(true);
-  return sized;
+function resolveMacTrayTemplatePath(): string {
+  const root = process.env.APP_ROOT ?? path.join(__dirname, '..');
+  // Prefer @2x (44x44) on Retina displays; Electron auto-picks best representation when
+  // both files live side by side with Apple's "@2x" suffix convention.
+  const scale = screen.getPrimaryDisplay().scaleFactor || 1;
+  if (scale >= 2) {
+    const hi = path.join(root, 'build', 'trayTemplate@2x.png');
+    if (existsSync(hi)) return hi;
+  }
+  return path.join(root, 'build', 'trayTemplate.png');
 }
 
 function createTrayIcon(): Electron.NativeImage {
   if (process.platform === 'darwin') {
-    // macOS 菜单栏使用单色 template 图像:系统会根据深浅色菜单自动选择白色/黑色,
-    // 深色菜单栏下呈现白色图标,与其他系统状态栏图标风格一致
-    const tpl = createMacTemplateImage(22);
-    if (!tpl.isEmpty()) return tpl;
+    // macOS 菜单栏使用黑色单色 template PNG(带透明通道):
+    // - 由 scripts/build-tray-icon.mjs 预生成 build/trayTemplate.png 与 @2x 版本,
+    //   纯 Node (zlib + 软件光栅化),无外部依赖。
+    // - setTemplateImage(true) 后系统按菜单栏深浅自动渲染为白色/黑色,
+    //   深色菜单栏下即显示白色图标,与 Wi-Fi/电池等系统图标一致。
+    const tplPath = resolveMacTrayTemplatePath();
+    const tpl = nativeImage.createFromPath(tplPath);
+    if (!tpl.isEmpty()) {
+      tpl.setTemplateImage(true);
+      return tpl;
+    }
   }
   // Windows 优先 .ico,其它平台读 build/icon.png;托盘统一缩放到 32×32(非 mac)
   const iconPath = resolveBrandIconPath(true);
