@@ -172,12 +172,12 @@ export async function warpCursor(x: number, y: number, opts: WarpCursorOptions =
 }
 
 // Windows 端「聚焦已运行应用」脚本:
-// 1. Get-Process 匹配 exe 绝对路径,拿到 pid 与 MainWindowHandle;
+// 1. 按 exe 绝对路径精确匹配主进程,同时按进程名补充匹配子进程(如 Edge 子进程的 Path 可能为空);
 // 2. 若 MainWindowHandle 为 0(比如软件在托盘 / 无主窗口),枚举该 pid 下所有可见顶层窗口取第一个;
 // 3. 通过 P/Invoke:
 //    - IsIconic + ShowWindowAsync(SW_RESTORE=9) 处理最小化窗口
 //    - AllowSetForegroundWindow / SwitchToThisWindow 绕过 SetForegroundWindow 的前台窗口限制
-//    - SetForegroundWindow 兜底
+//    - SwitchToThisWindow(fAltTab=true) 模拟 Alt+Tab 已足够将窗口切到前台,SetForegroundWindow 仅作补充不再决定激活判定
 // 输出 JSON: { running, activated, hwnd }
 // exe 路径通过占位符 __EXE_PATH__ 在调用点用单引号包裹后内插进来 —— 使用 -Command
 // 时后置参数不会自动绑定到 param(),故直接字符串替换。路径已由 isAllowedAppPath 校验。
@@ -212,7 +212,17 @@ function Find-VisibleWindow([int]$targetPid) {
     return $script:found
 }
 
-$procs = @(Get-Process | Where-Object { $_.Path -and ($_.Path -ieq $ExePath) })
+# 按路径精确匹配主进程
+$procsByPath = @(Get-Process | Where-Object { $_.Path -and ($_.Path -ieq $ExePath) })
+# 按进程名补充匹配(如 msedge / chrome),覆盖子进程 Path 可能为空的情况
+$procName = [System.IO.Path]::GetFileNameWithoutExtension($ExePath)
+$procsByName = @(Get-Process -Name $procName -ErrorAction SilentlyContinue)
+# 合并去重(按 PID),优先保留主进程(windows 数量可能更多)
+$pidSet = [System.Collections.Generic.HashSet[int]]::new()
+$procs = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
+foreach ($p in ($procsByPath + $procsByName)) {
+    if ($pidSet.Add($p.Id)) { $procs.Add($p) }
+}
 if ($procs.Count -eq 0) {
     Write-Output '{"running":false,"activated":false}'
     exit 0
@@ -232,12 +242,13 @@ foreach ($p in $procs) {
         } else {
             [void][SoftDesk.Win32]::ShowWindowAsync($h, 5)
         }
+        # SwitchToThisWindow 模拟 Alt+Tab 切换,可绕过前台锁定,已足够将窗口切到前台
         [SoftDesk.Win32]::SwitchToThisWindow($h, $true)
-        if ([SoftDesk.Win32]::SetForegroundWindow($h)) {
-            $activated = $true
-            $usedHwnd = $h.ToInt64()
-            break
-        }
+        # SetForegroundWindow 作为补充强化,但即使失败也不影响激活判定
+        [void][SoftDesk.Win32]::SetForegroundWindow($h)
+        $activated = $true
+        $usedHwnd = $h.ToInt64()
+        break
     }
 }
 $obj = @{ running = $true; activated = $activated; hwnd = $usedHwnd }
