@@ -12,8 +12,9 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - "feature/**"
       - main
+      - dev
+      - "feature/*"
     paths:
       # 只有这些位置的改动才自动构建，避免文档改动也跑一次 macOS 打包。
       - "package.json"

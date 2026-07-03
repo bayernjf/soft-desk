@@ -10,7 +10,8 @@ on:
   push:
     branches:
       - main
-      - "feature/**"
+      - dev
+      - "feature/*"
 
 concurrency:
   # 同一分支的多次 push 只保留最新一次运行，节省 Actions 分钟数。
