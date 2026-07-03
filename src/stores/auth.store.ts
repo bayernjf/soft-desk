@@ -30,9 +30,16 @@ interface AuthStore {
 
 async function syncSupabaseSession(): Promise<void> {
   if (typeof window === 'undefined' || !window.softdesk?.getAuthTokens) return;
-  const tokens = await window.softdesk.getAuthTokens();
-  if (tokens) {
-    await setSupabaseSession(tokens.accessToken, tokens.refreshToken);
+  try {
+    const tokens = await window.softdesk.getAuthTokens();
+    if (tokens) {
+      await setSupabaseSession(tokens.accessToken, tokens.refreshToken);
+      console.log('[syncSupabaseSession] session set successfully');
+    } else {
+      console.warn('[syncSupabaseSession] no tokens returned from getAuthTokens');
+    }
+  } catch (err) {
+    console.error('[syncSupabaseSession] failed:', err);
   }
 }
 
@@ -65,46 +72,51 @@ export const useAuthStore = create<AuthStore>()(
           // 恢复登录后异步合并云端收藏、AI 配置、径向菜单与工作流
           if (session.loggedIn && session.profile?.userId) {
             queueMicrotask(async () => {
-              const { useSoftwareStore } = await import('@/stores/software.store');
-              const {
-                fetchCloudFavorites,
-                fetchCloudFavoriteGroups,
-              } = await import('@/services/favorites.service');
-              // 云端收藏 ID 列表拉回本地,保证收藏夹"已安装"分区在扫描完成后立即可见
-              const cloudIds = await fetchCloudFavorites(session.profile!.userId);
-              if (cloudIds.length > 0) {
-                useSoftwareStore.getState().setFavoriteIds(cloudIds);
-              }
-              // 同步收藏分组(页面内 fetchCloudFavoriteDetails 会再合并分组内关联)
-              const cloudGroups = await fetchCloudFavoriteGroups(session.profile!.userId);
-              if (cloudGroups.length > 0) {
-                const groupMap = new Map<string, string[]>();
-                const existing = useSoftwareStore.getState().favoriteGroups;
-                const localById = new Map(existing.map((g) => [g.id, g]));
-                const merged: FavoriteGroup[] = cloudGroups.map((cg) => {
-                  const local = localById.get(cg.group_id);
-                  return {
-                    id: cg.group_id,
-                    name: cg.name,
-                    softwareIds: local?.softwareIds ?? groupMap.get(cg.group_id) ?? [],
-                    createdAt: cg.created_at,
-                  };
-                });
-                // 保留仅存在于本地的分组(本次拉取未覆盖到)
-                for (const g of existing) {
-                  if (!cloudGroups.some((cg) => cg.group_id === g.id)) {
-                    merged.push(g);
-                  }
+              try {
+                const { useSoftwareStore } = await import('@/stores/software.store');
+                const {
+                  fetchCloudFavorites,
+                  fetchCloudFavoriteGroups,
+                } = await import('@/services/favorites.service');
+                // 云端收藏 ID 列表拉回本地,保证收藏夹"已安装"分区在扫描完成后立即可见
+                const cloudIds = await fetchCloudFavorites(session.profile!.userId);
+                if (cloudIds.length > 0) {
+                  useSoftwareStore.getState().setFavoriteIds(cloudIds);
                 }
-                useSoftwareStore.getState().setFavoriteGroups(merged);
+                // 同步收藏分组(页面内 fetchCloudFavoriteDetails 会再合并分组内关联)
+                const cloudGroups = await fetchCloudFavoriteGroups(session.profile!.userId);
+                if (cloudGroups.length > 0) {
+                  const groupMap = new Map<string, string[]>();
+                  const existing = useSoftwareStore.getState().favoriteGroups;
+                  const localById = new Map(existing.map((g) => [g.id, g]));
+                  const merged: FavoriteGroup[] = cloudGroups.map((cg) => {
+                    const local = localById.get(cg.group_id);
+                    return {
+                      id: cg.group_id,
+                      name: cg.name,
+                      softwareIds: local?.softwareIds ?? groupMap.get(cg.group_id) ?? [],
+                      createdAt: cg.created_at,
+                    };
+                  });
+                  // 保留仅存在于本地的分组(本次拉取未覆盖到)
+                  for (const g of existing) {
+                    if (!cloudGroups.some((cg) => cg.group_id === g.id)) {
+                      merged.push(g);
+                    }
+                  }
+                  useSoftwareStore.getState().setFavoriteGroups(merged);
+                }
+                const { useSettingsStore } = await import('@/stores/settings.store');
+                await useSettingsStore.getState().mergeCloudAiProviders();
+                await useSettingsStore.getState().mergeCloudRadialConfig();
+                const { syncWorkflowsOnLogin } = await import('@/services/workflows.service');
+                const localWorkflows = useSoftwareStore.getState().workflows;
+                const mergedWf = await syncWorkflowsOnLogin(session.profile!.userId, localWorkflows);
+                console.log('[hydrateSession] syncWorkflowsOnLogin result:', mergedWf.length, 'workflows');
+                useSoftwareStore.getState().setWorkflows(mergedWf);
+              } catch (err) {
+                console.error('[hydrateSession] sync failed:', err);
               }
-              const { useSettingsStore } = await import('@/stores/settings.store');
-              await useSettingsStore.getState().mergeCloudAiProviders();
-              await useSettingsStore.getState().mergeCloudRadialConfig();
-              const { syncWorkflowsOnLogin } = await import('@/services/workflows.service');
-              const localWorkflows = useSoftwareStore.getState().workflows;
-              const mergedWf = await syncWorkflowsOnLogin(session.profile!.userId, localWorkflows);
-              useSoftwareStore.getState().setWorkflows(mergedWf);
             });
           }
         } catch {
@@ -128,40 +140,45 @@ export const useAuthStore = create<AuthStore>()(
         });
         // 登录成功后异步拉取云端收藏、分组、AI 配置、径向菜单与工作流，避免循环依赖
         queueMicrotask(async () => {
-          const { useSoftwareStore } = await import('@/stores/software.store');
-          const {
-            fetchCloudFavorites,
-            fetchCloudFavoriteGroups,
-          } = await import('@/services/favorites.service');
-          const cloudIds = await fetchCloudFavorites(res.profile.userId);
-          if (cloudIds.length > 0) {
-            useSoftwareStore.getState().setFavoriteIds(cloudIds);
-          }
-          const cloudGroups = await fetchCloudFavoriteGroups(res.profile.userId);
-          if (cloudGroups.length > 0) {
-            const existing = useSoftwareStore.getState().favoriteGroups;
-            const localById = new Map(existing.map((g) => [g.id, g]));
-            const merged: FavoriteGroup[] = cloudGroups.map((cg) => {
-              const local = localById.get(cg.group_id);
-              return {
-                id: cg.group_id,
-                name: cg.name,
-                softwareIds: local?.softwareIds ?? [],
-                createdAt: cg.created_at,
-              };
-            });
-            for (const g of existing) {
-              if (!cloudGroups.some((cg) => cg.group_id === g.id)) merged.push(g);
+          try {
+            const { useSoftwareStore } = await import('@/stores/software.store');
+            const {
+              fetchCloudFavorites,
+              fetchCloudFavoriteGroups,
+            } = await import('@/services/favorites.service');
+            const cloudIds = await fetchCloudFavorites(res.profile.userId);
+            if (cloudIds.length > 0) {
+              useSoftwareStore.getState().setFavoriteIds(cloudIds);
             }
-            useSoftwareStore.getState().setFavoriteGroups(merged);
+            const cloudGroups = await fetchCloudFavoriteGroups(res.profile.userId);
+            if (cloudGroups.length > 0) {
+              const existing = useSoftwareStore.getState().favoriteGroups;
+              const localById = new Map(existing.map((g) => [g.id, g]));
+              const merged: FavoriteGroup[] = cloudGroups.map((cg) => {
+                const local = localById.get(cg.group_id);
+                return {
+                  id: cg.group_id,
+                  name: cg.name,
+                  softwareIds: local?.softwareIds ?? [],
+                  createdAt: cg.created_at,
+                };
+              });
+              for (const g of existing) {
+                if (!cloudGroups.some((cg) => cg.group_id === g.id)) merged.push(g);
+              }
+              useSoftwareStore.getState().setFavoriteGroups(merged);
+            }
+            const { useSettingsStore } = await import('@/stores/settings.store');
+            await useSettingsStore.getState().mergeCloudAiProviders();
+            await useSettingsStore.getState().mergeCloudRadialConfig();
+            const { syncWorkflowsOnLogin } = await import('@/services/workflows.service');
+            const localWorkflows = useSoftwareStore.getState().workflows;
+            const mergedWf = await syncWorkflowsOnLogin(res.profile.userId, localWorkflows);
+            console.log('[login] syncWorkflowsOnLogin result:', mergedWf.length, 'workflows');
+            useSoftwareStore.getState().setWorkflows(mergedWf);
+          } catch (err) {
+            console.error('[login] sync failed:', err);
           }
-          const { useSettingsStore } = await import('@/stores/settings.store');
-          await useSettingsStore.getState().mergeCloudAiProviders();
-          await useSettingsStore.getState().mergeCloudRadialConfig();
-          const { syncWorkflowsOnLogin } = await import('@/services/workflows.service');
-          const localWorkflows = useSoftwareStore.getState().workflows;
-          const mergedWf = await syncWorkflowsOnLogin(res.profile.userId, localWorkflows);
-          useSoftwareStore.getState().setWorkflows(mergedWf);
         });
         return { ok: true };
       },
