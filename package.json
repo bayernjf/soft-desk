@@ -10,6 +10,7 @@
     "dev": "vite",
     "restart": "pkill -f 'soft-desk.*Electron' 2>/dev/null || true; sleep 1; npm run dev",
     "build": "tsc -b && vite build",
+    "prebuild:icons": "node scripts/build-ico.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
@@ -19,7 +20,7 @@
     "rebuild": "electron-rebuild -f -w better-sqlite3,uiohook-napi",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && cross-env ELECTRON_BUILDER_CACHE=./.cache/electron-builder ELECTRON_CACHE=./.cache/electron ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --mac --publish never",
-    "dist:win": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false ELECTRON_BUILDER_CACHE=./.cache/electron-builder ELECTRON_CACHE=./.cache/electron ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win --publish never"
+    "dist:win": "npm run prebuild:icons && npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false ELECTRON_BUILDER_CACHE=./.cache/electron-builder ELECTRON_CACHE=./.cache/electron ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win --publish never"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
@@ -100,7 +101,7 @@
       "category": "public.app-category.utilities"
     },
     "win": {
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
         {
