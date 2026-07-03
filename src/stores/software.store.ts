@@ -163,7 +163,9 @@ export const useSoftwareStore = create<SoftwareStore>()(
 
     set({ software: merged, workflows });
 
-    // 应用列表(含 path/icon)刷新后,把 radial 配置 resolve 并重新同步给主进程
+    // 应用列表(含 path/icon)刷新后,把 radial 配置 resolve 并重新同步给主进程。
+    // 启动阶段云端工作流/径向配置可能先于扫描到达,此时 software 为空导致所有扇区被
+    // resolve 为 unavailable,此处用最新 merged/workflows 再同步一次以纠正灰显状态。
     syncRadialToMain(useSettingsStore.getState().radial, merged, workflows);
   },
 
@@ -342,8 +344,12 @@ export const useSoftwareStore = create<SoftwareStore>()(
       softwareMeta: buildSoftwareMeta(wf.softwareIds, software, wf.softwareMeta),
     }));
     set({ workflows: filled });
+    syncRadialToMain(useSettingsStore.getState().radial, software, filled);
   },
-  clearWorkflows: () => set({ workflows: [] }),
+  clearWorkflows: () => {
+    set({ workflows: [] });
+    syncRadialToMain(useSettingsStore.getState().radial, get().software, []);
+  },
 
   uninstallSoftware: (id) => {
     const software = get().software.map((s) =>
