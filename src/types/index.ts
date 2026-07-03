@@ -91,6 +91,8 @@ export interface RadialItem {
   icon?: string;
   /** 配置时写入的颜色快照 */
   color?: string;
+  /** 配置时写入的 bundleId 快照;跨设备匹配时使用 */
+  bundleId?: string;
 }
 
 /** 主进程下发给径向窗口渲染层的扇区项(已带展示所需的名称/图标/颜色) */

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart,
@@ -235,9 +235,9 @@ function GroupSection({
 
   const softwareInGroup = group.softwareIds
     .map((id) => {
-      const sw = matchSoftware(softwareList, id);
-      if (sw && !sw.deleted) return { type: 'installed' as const, software: sw, uninstalled: sw.uninstalled ?? false };
       const cloudFav = cloudFavorites.find((f) => f.software_id === id);
+      const sw = matchSoftware(softwareList, id, { name: cloudFav?.name, bundleId: cloudFav?.bundle_id ?? undefined });
+      if (sw && !sw.deleted) return { type: 'installed' as const, software: sw, uninstalled: sw.uninstalled ?? false };
       if (cloudFav) {
         const cloudSoftware: Software = {
           id: cloudFav.software_id,
@@ -676,20 +676,38 @@ export function Favorites() {
     }
   }, [batchMoveOpen]);
 
+  const cloudMetaById = useMemo(() => {
+    const nameMap = new Map<string, string>();
+    const bundleIdMap = new Map<string, string>();
+    for (const f of cloudFavorites) {
+      nameMap.set(f.software_id, f.name);
+      if (f.bundle_id) bundleIdMap.set(f.software_id, f.bundle_id);
+    }
+    return { nameMap, bundleIdMap };
+  }, [cloudFavorites]);
+
   const groupedSoftwareIds = new Set(
     favoriteGroups.flatMap((g) => g.softwareIds)
   );
 
+  const groupedLocalSoftwareIds = new Set(
+    favoriteGroups.flatMap((g) =>
+      g.softwareIds
+        .map((id) => matchSoftware(software, id, { name: cloudMetaById.nameMap.get(id), bundleId: cloudMetaById.bundleIdMap.get(id) })?.id)
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+
   const installedFavorites = favoriteIds
-    .map((id) => matchSoftware(software, id))
+    .map((id) => matchSoftware(software, id, { name: cloudMetaById.nameMap.get(id), bundleId: cloudMetaById.bundleIdMap.get(id) }))
     .filter((s): s is Software => Boolean(s) && !s!.uninstalled && !s!.deleted);
 
   const ungroupedInstalledFavorites = installedFavorites.filter(
-    (s) => !groupedSoftwareIds.has(s.id)
+    (s) => !groupedLocalSoftwareIds.has(s.id)
   );
 
   const uninstalledFavorites = cloudFavorites.filter((f) => {
-    const s = matchSoftware(software, f.software_id);
+    const s = matchSoftware(software, f.software_id, { name: f.name, bundleId: f.bundle_id ?? undefined });
     return !s || s.uninstalled || s.deleted;
   });
 

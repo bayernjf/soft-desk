@@ -99,9 +99,14 @@ export async function syncWorkflowsOnLogin(
   userId: string,
   localWorkflows: Workflow[]
 ): Promise<Workflow[]> {
-  if (!isSupabaseConfigured() || !supabase) return localWorkflows;
+  if (!isSupabaseConfigured() || !supabase) {
+    logger.warn('syncWorkflowsOnLogin: Supabase not configured');
+    return localWorkflows;
+  }
 
   try {
+    logger.info(`syncWorkflowsOnLogin: local=${localWorkflows.length}, userId=${userId}`);
+
     if (localWorkflows.length > 0) {
       const rows = localWorkflows.map((wf) => localToCloud(userId, wf));
       const { error: upsertError } = await supabase
@@ -122,8 +127,11 @@ export async function syncWorkflowsOnLogin(
       return localWorkflows;
     }
 
+    logger.info(`syncWorkflowsOnLogin: fetched ${data?.length ?? 0} remote workflows`);
     const remote = (data ?? []).map(cloudToLocal);
-    return mergeWorkflows(localWorkflows, remote);
+    const merged = mergeWorkflows(localWorkflows, remote);
+    logger.info(`syncWorkflowsOnLogin: merged result has ${merged.length} workflows`);
+    return merged;
   } catch (err) {
     logger.error('sync workflows error:', err);
     return localWorkflows;

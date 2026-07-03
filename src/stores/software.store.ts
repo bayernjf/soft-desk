@@ -208,7 +208,13 @@ export const useSoftwareStore = create<SoftwareStore>()(
       return { total: 0, launched: 0, failed: 0, missing: 0, isElectron: get().isElectron };
     }
 
-    const matched = wf.softwareIds.map((sid) => matchSoftware(get().software, sid));
+    const matched = wf.softwareIds.map((sid) => {
+      const snap = findMetaSnapshot(wf.softwareMeta, sid);
+      return matchSoftware(get().software, sid, {
+        name: snap?.name,
+        bundleId: snap?.bundleId,
+      });
+    });
     const paths = matched
       .filter((s): s is Software => !!s?.path && !s.uninstalled && !s.deleted)
       .map((s) => s.path);

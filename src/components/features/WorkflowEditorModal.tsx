@@ -48,7 +48,8 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
   // 对于已卸载/已删除/找不到的软件,仍保留其 id,基于 workflow 快照渲染名称+图标并置灰标记「未安装」
   const selectedSoftware = useMemo(() => {
     return selectedIds.map((id) => {
-      const sw = matchSoftware(software, id);
+      const snap = findMetaSnapshot(workflow?.softwareMeta, id);
+      const sw = matchSoftware(software, id, { name: snap?.name, bundleId: snap?.bundleId });
       if (sw) {
         return {
           id: sw.id,
@@ -61,7 +62,6 @@ export function WorkflowEditorModal({ workflow, onClose }: WorkflowEditorModalPr
           deleted: !!sw.deleted,
         };
       }
-      const snap = findMetaSnapshot(workflow?.softwareMeta, id);
       return {
         id,
         name: snap?.name ?? '未安装的软件',

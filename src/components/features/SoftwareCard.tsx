@@ -132,6 +132,7 @@ function RadialSlotPicker({ software, className }: { software: Software; classNa
       name: software.name,
       icon: software.icon,
       color: software.color,
+      bundleId: software.bundleId,
     });
     setJustPicked(true);
     if (pickTimer.current) clearTimeout(pickTimer.current);

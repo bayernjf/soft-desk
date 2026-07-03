@@ -26,7 +26,7 @@ export function resolveRadialConfig(
   const items: RadialSyncItem[] = [];
   for (const item of config.items) {
     if (item.type === 'app') {
-      const sw = matchSoftware(software, item.targetId);
+      const sw = matchSoftware(software, item.targetId, { name: item.name, bundleId: item.bundleId });
       const usable = sw && !sw.uninstalled && !sw.deleted && sw.path;
       if (usable) {
         items.push({
@@ -64,8 +64,14 @@ export function resolveRadialConfig(
         });
         continue;
       }
+      const metaMap = new Map((wf.softwareMeta ?? []).map((m) => [m.softwareId, m]));
       const paths = wf.softwareIds
-        .map((sid) => matchSoftware(software, sid))
+        .map((sid) =>
+          matchSoftware(software, sid, {
+            name: metaMap.get(sid)?.name,
+            bundleId: metaMap.get(sid)?.bundleId,
+          })
+        )
         .filter((s) => s && !s.uninstalled && !s.deleted && s.path)
         .map((s) => s!.path);
       items.push({

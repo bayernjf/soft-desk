@@ -30,7 +30,8 @@ function resolveMeta(
   software: ReturnType<typeof useSoftwareStore.getState>['software'],
   meta?: SoftwareMetaSnapshot[]
 ) {
-  const sw = matchSoftware(software, id);
+  const snap = findMetaSnapshot(meta, id);
+  const sw = matchSoftware(software, id, { name: snap?.name, bundleId: snap?.bundleId });
   if (sw) {
     return {
       id: sw.id,
@@ -43,7 +44,6 @@ function resolveMeta(
       missing: false,
     };
   }
-  const snap = findMetaSnapshot(meta, id);
   return {
     id,
     name: snap?.name ?? '未安装的软件',
