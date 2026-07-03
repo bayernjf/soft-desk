@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile);
  * 手动 +1 一次即可强刷所有图标缓存。
  * 正常发版不需要改此常量 —— 目录名绑定 app.getVersion(),每次升级版本自动失效。
  */
-const ICON_CACHE_SCHEMA = 1;
+const ICON_CACHE_SCHEMA = 2;
 
 function iconCacheDir(): string {
   const ver = app.getVersion().replace(/[\\/:*?"<>|]/g, '_');
