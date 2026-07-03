@@ -71,6 +71,7 @@
   "build": {
     "appId": "com.softdesk.app",
     "productName": "SoftDesk",
+    "copyright": "Copyright © 2026 SoftDesk",
     "directories": {
       "output": "release"
     },
@@ -102,7 +103,6 @@
     "win": {
       "icon": "build/icon.png",
       "executableName": "SoftDesk",
-      "legalCopyright": "Copyright © 2026 SoftDesk",
       "target": [
         {
           "target": "nsis",
