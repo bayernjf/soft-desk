@@ -39,6 +39,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set timezone to Beijing
+        shell: pwsh
+        run: tzutil /s "China Standard Time"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

@@ -50,6 +50,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set timezone to Beijing (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: tzutil /s "China Standard Time"
+
+      - name: Set timezone to Beijing (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          sudo systemsetup -settimezone "Asia/Shanghai"
+          date
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

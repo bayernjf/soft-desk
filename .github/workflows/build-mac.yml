@@ -39,6 +39,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set timezone to Beijing
+        run: |
+          sudo systemsetup -settimezone "Asia/Shanghai"
+          date
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
