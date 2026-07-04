@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { createLogger } from '@/lib/logger';
+import { getPlatform } from '@/lib/utils';
 import type { Workflow, SoftwareCategory } from '@/types';
 
 const logger = createLogger('workflows');
@@ -8,6 +9,7 @@ export interface CloudWorkflow {
   id: number;
   user_id: string;
   workflow_id: string;
+  platform: string;
   name: string;
   description: string;
   software_ids: string[];
@@ -17,6 +19,7 @@ export interface CloudWorkflow {
     icon: string | null;
     color: string | null;
     category: string | null;
+    bundle_id?: string | null;
   }> | null;
   usage_count: number;
   last_used: string;
@@ -53,6 +56,7 @@ function localToCloud(userId: string, wf: Workflow): Omit<CloudWorkflow, 'id'> {
   return {
     user_id: userId,
     workflow_id: wf.id,
+    platform: getPlatform(),
     name: wf.name,
     description: wf.description,
     software_ids: wf.softwareIds,
@@ -120,7 +124,8 @@ export async function syncWorkflowsOnLogin(
     const { data, error } = await supabase
       .from('workflows')
       .select('*')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('platform', getPlatform());
 
     if (error) {
       logger.error('fetch workflows error:', error);
@@ -168,7 +173,8 @@ export async function deleteCloudWorkflow(
       .from('workflows')
       .delete()
       .eq('user_id', userId)
-      .eq('workflow_id', workflowId);
+      .eq('workflow_id', workflowId)
+      .eq('platform', getPlatform());
     if (error) {
       logger.error('delete workflow error:', error);
       return false;

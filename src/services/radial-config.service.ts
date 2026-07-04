@@ -1,11 +1,13 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { createLogger } from '@/lib/logger';
+import { getPlatform } from '@/lib/utils';
 import type { RadialItem, RadialMenuConfig, RadialStyle } from '@/types';
 
 const logger = createLogger('radial-config');
 
 interface CloudRadialConfig {
   user_id: string;
+  platform: string;
   enabled: boolean;
   hotkey: string;
   mouse_wheel_toggle: boolean;
@@ -41,6 +43,7 @@ function cloudToLocal(row: CloudRadialConfig): RadialMenuConfig {
 function localToCloud(userId: string, config: RadialMenuConfig): CloudRadialConfig {
   return {
     user_id: userId,
+    platform: getPlatform(),
     enabled: config.enabled,
     hotkey: config.hotkey,
     mouse_wheel_toggle: config.mouseWheelToggle,
@@ -60,6 +63,7 @@ export async function fetchCloudRadialConfig(userId: string): Promise<RadialMenu
       .from('radial_configs')
       .select('*')
       .eq('user_id', userId)
+      .eq('platform', getPlatform())
       .maybeSingle();
     if (error) {
       logger.error('fetchCloudRadialConfig error:', error);
@@ -72,7 +76,7 @@ export async function fetchCloudRadialConfig(userId: string): Promise<RadialMenu
   }
 }
 
-/** 把本地 radial 配置 upsert 到云端单行(user_id 主键)。 */
+/** 把本地 radial 配置 upsert 到云端单行(user_id + platform 联合主键)。 */
 export async function syncRadialConfigToCloud(
   userId: string,
   config: RadialMenuConfig
@@ -81,7 +85,7 @@ export async function syncRadialConfigToCloud(
   try {
     const { error } = await supabase
       .from('radial_configs')
-      .upsert(localToCloud(userId, config), { onConflict: 'user_id' });
+      .upsert(localToCloud(userId, config), { onConflict: 'user_id,platform' });
     if (error) {
       logger.error('syncRadialConfigToCloud error:', error);
     }
