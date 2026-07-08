@@ -1,0 +1,92 @@
+name: Build Windows Installer
+
+# 手动或 push 到指定分支时，在 windows-latest runner 上出 NSIS 安装包，
+# 并把 exe / latest.yml / blockmap 作为 artifact 上传。适合没有本地
+# Windows 打包环境时快速验证构建产物。
+#
+# 使用方式：
+#   GitHub → Actions → Build Windows Installer → Run workflow
+#   完成后在 Summary 页点击 "softdesk-win-installer" artifact 下载。
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "electron/**"
+      - "src/**"
+      - "build/**"
+      - "vite.config.ts"
+      - "tsconfig*.json"
+      - ".github/workflows/build-win.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-win-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build-win-x64
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set timezone to Beijing
+        shell: pwsh
+        run: tzutil /s "China Standard Time"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Package Windows installer (NSIS x64)
+        # dist:win 已经在 package.json 里配好了：
+        # - cross-env 注入镜像（npmmirror）与本地 cache（./.cache/…）
+        # - CSC_IDENTITY_AUTO_DISCOVERY=false 关闭证书自动发现
+        # - --publish never  只出本地产物，不上传 GH Release
+        # GitHub Actions 的 windows-latest runner 网络直连 GitHub，
+        # 镜像其实用不到，但保留可让脚本单一入口、双端一致。
+        env:
+          # Vite 构建期必须读到这两个变量，否则前端 supabase 客户端为 null
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run dist:win
+
+      - name: List build output
+        shell: pwsh
+        run: |
+          Write-Host "=== release directory ==="
+          Get-ChildItem release | Format-Table Name, Length, LastWriteTime
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: softdesk-win-installer
+          # 只挑最终发布需要的文件，避免把 win-unpacked/ 也塞进去。
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/latest.yml
+          if-no-files-found: error
+          retention-days: 14

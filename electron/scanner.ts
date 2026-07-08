@@ -8,8 +8,35 @@ import { app } from 'electron';
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * 图标缓存 schema 版本。同版本 App 内如果改了 extractIcon/icns 解析/系统 API 兜底策略,
+ * 手动 +1 一次即可强刷所有图标缓存。
+ * 正常发版不需要改此常量 —— 目录名绑定 app.getVersion(),每次升级版本自动失效。
+ */
+const ICON_CACHE_SCHEMA = 2;
+
 function iconCacheDir(): string {
-  return path.join(app.getPath('userData'), 'icon-cache');
+  const ver = app.getVersion().replace(/[\\/:*?"<>|]/g, '_');
+  return path.join(app.getPath('userData'), `icon-cache-v${ver}-s${ICON_CACHE_SCHEMA}`);
+}
+
+async function pruneOldIconCaches(): Promise<void> {
+  try {
+    const base = app.getPath('userData');
+    const entries = await fs.readdir(base, { withFileTypes: true });
+    const current = path.basename(iconCacheDir());
+    // 匹配: icon-cache、icon-cache-vN、icon-cache-vX.Y.Z、icon-cache-vX.Y.Z-sN
+    const stale = /^icon-cache(?:-v[\w.-]+)?$/;
+    await Promise.all(
+      entries
+        .filter((e) => e.isDirectory() && stale.test(e.name) && e.name !== current)
+        .map((e) =>
+          fs.rm(path.join(base, e.name), { recursive: true, force: true }).catch(() => {})
+        )
+    );
+  } catch {
+    // best-effort
+  }
 }
 
 function safeFileName(id: string): string {
@@ -578,6 +605,18 @@ async function mapWithConcurrency<T, R>(
 }
 
 export async function scanInstalledApps(smartGrouping = true): Promise<ScannedApp[]> {
+  if (process.platform === 'win32') {
+    // Windows 走独立扫描模块（注册表 + 快捷方式 + app.getFileIcon）。
+    // smartGrouping 参数当前不使用（Win 端分类走关键字规则），保留签名保证 IPC 兼容。
+    void smartGrouping;
+    const { scanInstalledAppsWin } = await import('./scanner-win');
+    return scanInstalledAppsWin();
+  }
+  if (process.platform !== 'darwin') {
+    // 其它平台（linux）暂无实现，返回空数组避免主进程崩溃。
+    return [];
+  }
+  await pruneOldIconCaches();
   await loadMetaCache();
   const found = await listAppPaths();
 
@@ -614,6 +653,7 @@ export async function scanInstalledApps(smartGrouping = true): Promise<ScannedAp
 export async function applyAiCategories(
   mapping: Record<string, ScannedCategory>
 ): Promise<void> {
+  if (process.platform !== 'darwin') return;
   if (!mapping || Object.keys(mapping).length === 0) return;
   await loadMetaCache();
   let changed = false;
@@ -657,11 +697,24 @@ async function pruneOrphanIcons(): Promise<void> {
 /** 用 FSEvents(fs.watch) 监听应用目录的安装/卸载,替代窗口聚焦轮询。 */
 let watchers: FSWatcher[] = [];
 let watchDebounce: NodeJS.Timeout | null = null;
+let winPollTimer: NodeJS.Timeout | null = null;
 
 /**
  * 变化经 400ms 去抖后触发回调,由调用方重新扫描(命中缓存,极快)。
  */
 export function startAppWatcher(onChange: () => void): void {
+  if (process.platform === 'win32') {
+    // Windows 无 FSEvents 等价物；改为 10 分钟轮询触发一次 onChange（命中缓存极快）。
+    // 后续 Phase 可改为 ReadDirectoryChangesW / 注册表通知优化。
+    stopAppWatcher();
+    const timer = setInterval(onChange, 10 * 60 * 1000);
+    winPollTimer = timer;
+    return;
+  }
+  if (process.platform !== 'darwin') {
+    // 非 macOS / Windows 平台暂无监听策略。
+    return;
+  }
   stopAppWatcher();
   // /System/Applications 为只读系统目录,基本不变,无需监听
   const watchDirs = [
@@ -689,6 +742,10 @@ export function stopAppWatcher(): void {
   if (watchDebounce) {
     clearTimeout(watchDebounce);
     watchDebounce = null;
+  }
+  if (winPollTimer) {
+    clearInterval(winPollTimer);
+    winPollTimer = null;
   }
   for (const w of watchers) {
     try {

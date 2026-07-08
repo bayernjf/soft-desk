@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Software, Workflow, SoftwareCategory, FavoriteGroup } from '@/types';
+import type { Software, Workflow, SoftwareCategory, FavoriteGroup, SoftwareMetaSnapshot } from '@/types';
 import { WORKFLOW_COLORS } from '@/data/categories';
 import { useSettingsStore, registerRadialSyncBridge } from '@/stores/settings.store';
 import { useAuthStore } from '@/stores/auth.store';
@@ -18,6 +18,7 @@ import {
   reorderCloudFavoriteGroups,
 } from '@/services/favorites.service';
 import { upsertCloudWorkflow, deleteCloudWorkflow } from '@/services/workflows.service';
+import { matchSoftware, findMetaSnapshot } from '@/services/software-matching';
 
 export interface WorkflowLaunchResult {
   total: number;
@@ -87,6 +88,29 @@ export interface WorkflowInput {
 
 const hasBridge = typeof window !== 'undefined' && !!window.softdesk;
 
+function buildSoftwareMeta(
+  softwareIds: string[],
+  software: Software[],
+  existing?: SoftwareMetaSnapshot[]
+): SoftwareMetaSnapshot[] {
+  return softwareIds.map((id) => {
+    const sw = matchSoftware(software, id);
+    if (sw) {
+      return {
+        softwareId: sw.id,
+        name: sw.name,
+        icon: sw.icon,
+        color: sw.color,
+        category: sw.category,
+        bundleId: sw.bundleId,
+      };
+    }
+    const prev = findMetaSnapshot(existing, id);
+    if (prev) return { ...prev, softwareId: prev.softwareId };
+    return { softwareId: id, name: '未安装的软件' };
+  });
+}
+
 export const useSoftwareStore = create<SoftwareStore>()(
   persist(
     (set, get) => ({
@@ -130,10 +154,19 @@ export const useSoftwareStore = create<SoftwareStore>()(
       }
     }
 
-    set({ software: merged });
+    // 软件列表刷新后,把工作流中缺失的 softwareMeta 快照自动补齐,
+    // 保证旧版本创建的工作流在软件被卸载后也能显示名称+图标
+    const workflows = get().workflows.map((wf) => ({
+      ...wf,
+      softwareMeta: buildSoftwareMeta(wf.softwareIds, merged, wf.softwareMeta),
+    }));
 
-    // 应用列表(含 path/icon)刷新后,把 radial 配置 resolve 并重新同步给主进程
-    syncRadialToMain(useSettingsStore.getState().radial, merged, get().workflows);
+    set({ software: merged, workflows });
+
+    // 应用列表(含 path/icon)刷新后,把 radial 配置 resolve 并重新同步给主进程。
+    // 启动阶段云端工作流/径向配置可能先于扫描到达,此时 software 为空导致所有扇区被
+    // resolve 为 unavailable,此处用最新 merged/workflows 再同步一次以纠正灰显状态。
+    syncRadialToMain(useSettingsStore.getState().radial, merged, workflows);
   },
 
   scanSoftware: async () => {
@@ -156,13 +189,13 @@ export const useSoftwareStore = create<SoftwareStore>()(
   },
 
   launchSoftware: (id) => {
-    const target = get().software.find((s) => s.id === id);
+    const target = matchSoftware(get().software, id);
     if (target?.uninstalled || target?.deleted) return;
     if (window.softdesk && target?.path) {
       window.softdesk.launchSoftware(target.path, target.id);
     }
     const software = get().software.map((s) =>
-      s.id === id
+      s.id === target?.id
         ? { ...s, launchCount: s.launchCount + 1, lastUsed: new Date().toISOString() }
         : s
     );
@@ -175,8 +208,16 @@ export const useSoftwareStore = create<SoftwareStore>()(
       return { total: 0, launched: 0, failed: 0, missing: 0, isElectron: get().isElectron };
     }
 
-    const matched = wf.softwareIds.map((sid) => get().software.find((s) => s.id === sid));
-    const paths = matched.filter((s): s is Software => !!s?.path).map((s) => s.path);
+    const matched = wf.softwareIds.map((sid) => {
+      const snap = findMetaSnapshot(wf.softwareMeta, sid);
+      return matchSoftware(get().software, sid, {
+        name: snap?.name,
+        bundleId: snap?.bundleId,
+      });
+    });
+    const paths = matched
+      .filter((s): s is Software => !!s?.path && !s.uninstalled && !s.deleted)
+      .map((s) => s.path);
     const missing = wf.softwareIds.length - paths.length;
 
     const updateStats = () => {
@@ -246,6 +287,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
       name: data.name.trim(),
       description: data.description.trim(),
       softwareIds: data.softwareIds,
+      softwareMeta: buildSoftwareMeta(data.softwareIds, get().software),
       color: data.color || WORKFLOW_COLORS[existing.length % WORKFLOW_COLORS.length],
       usageCount: 0,
       lastUsed: now,
@@ -264,6 +306,7 @@ export const useSoftwareStore = create<SoftwareStore>()(
 
   updateWorkflow: (id, data) => {
     const now = new Date().toISOString();
+    const previous = get().workflows.find((w) => w.id === id);
     const workflows = get().workflows.map((w) =>
       w.id === id
         ? {
@@ -271,6 +314,11 @@ export const useSoftwareStore = create<SoftwareStore>()(
             name: data.name.trim(),
             description: data.description.trim(),
             softwareIds: data.softwareIds,
+            softwareMeta: buildSoftwareMeta(
+              data.softwareIds,
+              get().software,
+              previous?.softwareMeta
+            ),
             color: data.color || w.color,
             updatedAt: now,
           }
@@ -295,8 +343,19 @@ export const useSoftwareStore = create<SoftwareStore>()(
     }
   },
 
-  setWorkflows: (workflows) => set({ workflows }),
-  clearWorkflows: () => set({ workflows: [] }),
+  setWorkflows: (workflows) => {
+    const software = get().software;
+    const filled = workflows.map((wf) => ({
+      ...wf,
+      softwareMeta: buildSoftwareMeta(wf.softwareIds, software, wf.softwareMeta),
+    }));
+    set({ workflows: filled });
+    syncRadialToMain(useSettingsStore.getState().radial, software, filled);
+  },
+  clearWorkflows: () => {
+    set({ workflows: [] });
+    syncRadialToMain(useSettingsStore.getState().radial, get().software, []);
+  },
 
   uninstallSoftware: (id) => {
     const software = get().software.map((s) =>
@@ -350,21 +409,22 @@ export const useSoftwareStore = create<SoftwareStore>()(
   setRecommendationLoading: (recommendationLoading) => set({ recommendationLoading }),
 
   toggleFavorite: async (id) => {
-    const nextIds = get().favoriteIds.includes(id)
-      ? get().favoriteIds.filter((x) => x !== id)
-      : [...get().favoriteIds, id];
+    const sw = matchSoftware(get().software, id);
+    const canonicalId = sw?.id ?? id;
+    const nextIds = get().favoriteIds.includes(canonicalId)
+      ? get().favoriteIds.filter((x) => x !== canonicalId)
+      : [...get().favoriteIds, canonicalId];
     set({ favoriteIds: nextIds });
 
     const userId = useAuthStore.getState().profile?.userId;
     if (!userId) return;
 
-    const software = get().software.find((s) => s.id === id);
-    if (!software) return;
+    if (!sw) return;
 
-    if (nextIds.includes(id)) {
-      void addCloudFavorite(userId, software);
+    if (nextIds.includes(canonicalId)) {
+      void addCloudFavorite(userId, sw);
     } else {
-      void removeCloudFavorite(userId, id);
+      void removeCloudFavorite(userId, canonicalId);
     }
   },
 

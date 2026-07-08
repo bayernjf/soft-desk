@@ -1,0 +1,117 @@
+name: Build macOS Installer
+
+# 手动或 push 到指定分支时，在 macos-latest runner 上出 dmg + zip 安装包，
+# 并把产物作为 artifact 上传。适合快速验证 Mac 端构建产物，或在没有
+# Xcode / 证书环境的机器上也能拿到可分发的 dmg。
+#
+# 使用方式：
+#   GitHub → Actions → Build macOS Installer → Run workflow
+#   完成后在 Summary 页点击 "softdesk-mac-installer" artifact 下载。
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "electron/**"
+      - "src/**"
+      - "build/**"
+      - "vite.config.ts"
+      - "tsconfig*.json"
+      - ".github/workflows/build-mac.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-mac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build-mac
+    runs-on: macos-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set timezone to Beijing
+        run: |
+          sudo systemsetup -settimezone "Asia/Shanghai"
+          date
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Package macOS installer (dmg + zip)
+        env:
+          # Phase 0 暂不签 macOS，关掉自动证书发现避免 electron-builder
+          # 去扫 keychain。以后要签名时把 CSC_LINK / APPLE_ID 等 secret
+          # 补上即可自动启用。
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # Vite 构建期必须读到这两个变量，否则前端 supabase 客户端为 null
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        # dist:mac 已经在 package.json 里配好了：
+        # - cross-env 注入 npmmirror 镜像与 ./.cache/ 本地缓存
+        # - --publish never 只出本地产物，不上传 GH Release
+        run: npm run dist:mac
+
+      - name: Ad-hoc codesign SoftDesk.app
+        # electron-builder v22+ 在未配置 CSC_LINK 时会自动对 .app 做 ad-hoc 签名，
+        # 但保险起见我们再执行一次显式签名并验证。ad-hoc 签名（sign 身份为 "-"）
+        # 不需要 Apple 证书、$0 成本，能保证 .app 至少有一份可校验的签名摘要。
+        #
+        # 单靠 ad-hoc 签名并不能绕过 macOS Gatekeeper 对已 quarantine 文件的
+        # "已损坏" 校验（那需要 Developer ID + 公证），所以我们同时会在
+        # README 里给用户提供 xattr -cr 命令做最后一步；等接入真证书后
+        # 这段代码会自动被 CSC_LINK 分支覆盖，无需再改。
+        run: |
+          set -e
+          shopt -s nullglob
+          signed_any=false
+          for app in release/mac*/SoftDesk.app; do
+            echo "Ad-hoc signing $app"
+            codesign --force --deep --sign - "$app"
+            codesign --verify --deep --strict --verbose=2 "$app" || true
+            signed_any=true
+          done
+          if [ "$signed_any" = false ]; then
+            echo "No SoftDesk.app found under release/mac*/, skipping"
+          fi
+
+      - name: List build output
+        run: |
+          echo "=== release directory ==="
+          ls -lah release || true
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: softdesk-mac-installer
+          # 只挑最终发布需要的文件，避免把 mac/ 子目录也塞进去。
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 14

@@ -28,5 +28,8 @@ release
 
 .electron-data
 
+# electron-builder local caches (electron / winCodeSign / etc.)
+.cache/
+
 .env*
 !.env.example

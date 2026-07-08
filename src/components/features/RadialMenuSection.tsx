@@ -209,8 +209,8 @@ export function RadialMenuSection() {
 
   const labelFor = (item: RadialItem | undefined): string => {
     if (!item) return '';
-    if (item.type === 'app') return softwareById.get(item.targetId)?.name ?? '(已卸载)';
-    return workflowById.get(item.targetId)?.name ?? '(已删除)';
+    if (item.type === 'app') return softwareById.get(item.targetId)?.name ?? item.name ?? '';
+    return workflowById.get(item.targetId)?.name ?? item.name ?? '(已删除)';
   };
 
   const handlePreview = () => {

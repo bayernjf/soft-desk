@@ -155,6 +155,40 @@ export type AuthResult =
   | { success: true; profile: AuthProfile }
   | { success: false; error: string };
 
+/**
+ * 主进程 electron-updater 推送给渲染层的更新事件。
+ * 与 electron/updater.ts 里的 UpdaterEvent 保持字段一致。
+ */
+export type UpdaterEvent =
+  | { type: 'checking' }
+  | { type: 'available'; version: string; releaseDate?: string; releaseNotes?: string }
+  | { type: 'not-available'; version: string }
+  | { type: 'error'; message: string }
+  | {
+      type: 'progress';
+      percent: number;
+      bytesPerSecond: number;
+      transferred: number;
+      total: number;
+    }
+  | { type: 'downloaded'; version: string; releaseDate?: string; releaseNotes?: string };
+
+export type UpdaterCheckResult =
+  | { ok: false; reason: 'dev-mode' | 'unavailable' | 'error'; message?: string }
+  | {
+      ok: true;
+      currentVersion: string;
+      latestVersion: string | null;
+      hasUpdate: boolean;
+    };
+
+export interface UpdaterStatus {
+  currentVersion: string;
+  downloadInProgress: boolean;
+  updateReady: boolean;
+  devMode: boolean;
+}
+
 export interface SoftdeskBridge {
   scanSoftware: (smartGrouping?: boolean) => Promise<Software[]>;
   launchSoftware: (
@@ -255,6 +289,14 @@ export interface SoftdeskBridge {
   ) => Promise<{ success: boolean; error?: string; hotkeyRegistered?: boolean }>;
   /** 设置页"试一下":无视 enabled,在屏幕中央弹一次径向菜单预览 */
   radialPreview: () => Promise<{ success: boolean }>;
+  /** 手动触发一次 electron-updater 检查更新 */
+  checkForUpdates: () => Promise<UpdaterCheckResult>;
+  /** 更新包已下载完成时,立刻退出并安装(Win 静默重启 / Mac 关闭后重开) */
+  quitAndInstall: () => Promise<{ ok: boolean; reason?: string }>;
+  /** 查询更新器当前状态(当前版本、是否在下载、是否已就绪、是否 dev 模式) */
+  getUpdaterStatus: () => Promise<UpdaterStatus>;
+  /** 订阅更新器状态变化事件流,返回取消订阅函数 */
+  onUpdaterEvent: (callback: (event: UpdaterEvent) => void) => () => void;
 }
 
 declare global {
