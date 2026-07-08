@@ -17,6 +17,8 @@ export interface Software {
   uninstalled?: boolean;
   deleted?: boolean;
   aiDescription?: string;
+  /** 跨平台 bundleId(Mac CFBundleIdentifier / Windows 伪 bundleId),用于跨设备匹配 */
+  bundleId?: string;
 }
 
 export type SoftwareCategory =
@@ -41,11 +43,25 @@ export interface Workflow {
   name: string;
   description: string;
   softwareIds: string[];
+  /** 创建/更新工作流时缓存的软件元数据(名称/图标/颜色/分类),
+   *  用于在软件被卸载或跨设备缺失时,仍能像收藏夹一样显示名称+图标并置灰标记「未安装」 */
+  softwareMeta?: SoftwareMetaSnapshot[];
   usageCount: number;
   lastUsed: string;
   isFavorite: boolean;
   color: string;
   updatedAt: string;
+}
+
+export interface SoftwareMetaSnapshot {
+  softwareId: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  category?: SoftwareCategory;
+  /** 跨平台 bundleId(Mac CFBundleIdentifier / Windows 伪 bundleId),
+   *  用于跨设备同步时按 bundleId 兜底匹配,解决 Mac↔Windows id 不一致问题 */
+  bundleId?: string;
 }
 
 export interface FavoriteGroup {
@@ -75,6 +91,8 @@ export interface RadialItem {
   icon?: string;
   /** 配置时写入的颜色快照 */
   color?: string;
+  /** 配置时写入的 bundleId 快照;跨设备匹配时使用 */
+  bundleId?: string;
 }
 
 /** 主进程下发给径向窗口渲染层的扇区项(已带展示所需的名称/图标/颜色) */

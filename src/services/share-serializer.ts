@@ -139,12 +139,18 @@ export function matchSoftware(
   software: Software[]
 ): ImportSoftwareMatch[] {
   const byId = new Map(software.map((s) => [s.id, s]));
+  const byBundle = new Map<string, Software>();
+  for (const s of software) {
+    if (s.bundleId) byBundle.set(s.bundleId, s);
+  }
   const byName = new Map(software.map((s) => [s.name.toLowerCase(), s]));
   return metas.map((meta) => {
-    const byBundle = meta.bundleId ? byId.get(meta.bundleId) : undefined;
+    const byBundleHit = meta.bundleId
+      ? (byBundle.get(meta.bundleId) ?? byId.get(meta.bundleId))
+      : undefined;
     const byMetaId = byId.get(meta.softwareId);
     const byNameHit = byName.get(meta.name.toLowerCase());
-    const hit = byBundle ?? byMetaId ?? byNameHit;
+    const hit = byBundleHit ?? byMetaId ?? byNameHit;
     return {
       meta,
       installedId: hit && !hit.uninstalled && !hit.deleted ? hit.id : null,

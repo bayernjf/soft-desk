@@ -15,13 +15,18 @@
     "check": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist": "npm run build && electron-builder"
+    "postinstall": "electron-builder install-app-deps",
+    "rebuild": "electron-rebuild -f -w better-sqlite3,uiohook-napi",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && cross-env ELECTRON_BUILDER_CACHE=./.cache/electron-builder ELECTRON_CACHE=./.cache/electron ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --mac --publish never",
+    "dist:win": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false ELECTRON_BUILDER_CACHE=./.cache/electron-builder ELECTRON_CACHE=./.cache/electron ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win --publish never"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "@types/qrcode": "^1.5.6",
     "better-sqlite3": "^12.11.1",
     "clsx": "^2.1.1",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^0.511.0",
     "pinyin-pro": "^3.28.1",
     "qrcode": "^1.5.4",
@@ -45,6 +50,7 @@
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
     "babel-plugin-react-dev-locator": "^1.0.0",
+    "cross-env": "^10.1.0",
     "electron": "^31.7.7",
     "electron-builder": "^24.13.3",
     "eslint": "^9.25.0",
@@ -65,23 +71,53 @@
   "build": {
     "appId": "com.softdesk.app",
     "productName": "SoftDesk",
+    "copyright": "Copyright © 2026 SoftDesk",
     "directories": {
       "output": "release"
     },
+    "afterPack": "./scripts/after-pack.mjs",
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "build/icon.*",
+      "build/trayTemplate*.png"
     ],
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**",
       "**/node_modules/uiohook-napi/**"
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "bayernjf",
+        "repo": "soft-desk"
+      }
+    ],
     "mac": {
       "icon": "build/icon.icns",
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
       "category": "public.app-category.utilities"
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "executableName": "SoftDesk",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "shortcutName": "SoftDesk"
     }
   }
 }

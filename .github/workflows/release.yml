@@ -1,0 +1,160 @@
+name: Release
+
+# Release Workflow
+#
+# 两种触发方式：
+#   1. 推送 v* tag → 正式发布（prerelease: false，生成 release notes）
+#   2. push 到 main 分支 → Dev Snapshot（prerelease: true，tag 为 snapshot，
+#      每次覆盖上一个，产物始终指向最新 main 的可用构建）
+#
+# 两端并行构建，都成功后才创建 / 更新 Release，避免"半个版本"。
+# electron-updater 会读取 latest*.yml 完成自动更新分发。
+#
+# 使用方式（正式发版）：
+#   npm version minor
+#   git push --follow-tags
+#
+# 使用方式（Dev Snapshot）：
+#   push 到 main 分支自动触发，无需手动操作。
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "electron/**"
+      - "src/**"
+      - "build/**"
+      - "vite.config.ts"
+      - "tsconfig*.json"
+      - ".github/workflows/release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    strategy:
+      # 一端失败仍继续跑另一端，方便同时诊断问题
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            script: dist:mac
+            artifact_glob: |
+              release/*.dmg
+              release/*.zip
+              release/latest-mac.yml
+              release/*.blockmap
+          - os: windows-latest
+            script: dist:win
+            artifact_glob: |
+              release/*.exe
+              release/*.exe.blockmap
+              release/latest.yml
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set timezone to Beijing (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: tzutil /s "China Standard Time"
+
+      - name: Set timezone to Beijing (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          sudo systemsetup -settimezone "Asia/Shanghai"
+          date
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify (typecheck + tests)
+        # 发版前再跑一次双端验证，防止误发有回归的 tag
+        run: |
+          npm run check
+          npm test
+
+      - name: Package installer
+        env:
+          # 让 electron-builder 不做代码签名（Phase 0 暂不签），
+          # 后续接入证书时把 CSC_LINK / CSC_KEY_PASSWORD 等 secret
+          # 补上即可自动切换到签名模式。
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # Vite 构建期必须读到这两个变量，否则前端 supabase 客户端为 null，
+          # 用户装完打开会看到 “Supabase 未配置” 的错误提示。
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run ${{ matrix.script }}
+
+      - name: Ad-hoc codesign SoftDesk.app (macOS only)
+        # 与 build-mac.yml 中一致的兜底签名。Windows runner 上这一步整体被
+        # if 短路，不会执行。
+        if: matrix.os == 'macos-latest'
+        run: |
+          set -e
+          shopt -s nullglob
+          for app in release/mac*/SoftDesk.app; do
+            echo "Ad-hoc signing $app"
+            codesign --force --deep --sign - "$app"
+            codesign --verify --deep --strict --verbose=2 "$app" || true
+          done
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish GitHub Release
+    # 关键：只有 Mac + Win 两端都构建成功，才会创建 Release，
+    # 避免 Mac 已发但 Win 挂了导致用户拿到不同步的版本。
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          # 把两个平台的 artifact 都下载到 release/ 下（自动分子目录）
+
+      - name: Flatten artifact tree
+        run: |
+          set -e
+          mkdir -p release-flat
+          # 把子目录里的所有产物拉到同一层，便于统一挂 Release
+          find release -type f -exec cp -v {} release-flat/ \;
+          ls -la release-flat
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'snapshot' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Dev Snapshot' }}
+          draft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          generate_release_notes: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          files: release-flat/*
+          append_body: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

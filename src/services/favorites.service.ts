@@ -76,7 +76,9 @@ export async function addCloudFavorite(
         user_id: userId,
         software_id: software.id,
         name: software.name,
-        bundle_id: software.id,
+        // 跨平台 bundleId(Mac CFBundleIdentifier / Windows 伪 bundleId),
+        // Windows → Mac 方向同步时,Mac 端可凭此字段匹配本机 bundleId 与软件关联
+        bundle_id: software.bundleId ?? software.id,
         category: software.category,
         icon: software.icon,
         color: software.color,

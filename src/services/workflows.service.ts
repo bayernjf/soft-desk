@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { createLogger } from '@/lib/logger';
-import type { Workflow } from '@/types';
+import { getPlatform } from '@/lib/utils';
+import type { Workflow, SoftwareCategory } from '@/types';
 
 const logger = createLogger('workflows');
 
@@ -8,9 +9,18 @@ export interface CloudWorkflow {
   id: number;
   user_id: string;
   workflow_id: string;
+  platform: string;
   name: string;
   description: string;
   software_ids: string[];
+  software_meta: Array<{
+    software_id: string;
+    name: string;
+    icon: string | null;
+    color: string | null;
+    category: string | null;
+    bundle_id?: string | null;
+  }> | null;
   usage_count: number;
   last_used: string;
   is_favorite: boolean;
@@ -24,6 +34,16 @@ function cloudToLocal(row: CloudWorkflow): Workflow {
     name: row.name,
     description: row.description,
     softwareIds: row.software_ids,
+    softwareMeta: Array.isArray(row.software_meta)
+      ? row.software_meta.map((m) => ({
+          softwareId: m.software_id,
+          name: m.name,
+          icon: m.icon ?? undefined,
+          color: m.color ?? undefined,
+          category: (m.category ?? 'utilities') as SoftwareCategory,
+          bundleId: (m as Record<string, unknown>).bundle_id as string | undefined,
+        }))
+      : [],
     usageCount: row.usage_count,
     lastUsed: row.last_used,
     isFavorite: row.is_favorite,
@@ -36,9 +56,18 @@ function localToCloud(userId: string, wf: Workflow): Omit<CloudWorkflow, 'id'> {
   return {
     user_id: userId,
     workflow_id: wf.id,
+    platform: getPlatform(),
     name: wf.name,
     description: wf.description,
     software_ids: wf.softwareIds,
+    software_meta: (wf.softwareMeta ?? []).map((m) => ({
+      software_id: m.softwareId,
+      name: m.name,
+      icon: m.icon ?? null,
+      color: m.color ?? null,
+      category: m.category ?? null,
+      bundle_id: m.bundleId ?? null,
+    })),
     usage_count: wf.usageCount,
     last_used: wf.lastUsed,
     is_favorite: wf.isFavorite,
@@ -74,9 +103,14 @@ export async function syncWorkflowsOnLogin(
   userId: string,
   localWorkflows: Workflow[]
 ): Promise<Workflow[]> {
-  if (!isSupabaseConfigured() || !supabase) return localWorkflows;
+  if (!isSupabaseConfigured() || !supabase) {
+    logger.warn('syncWorkflowsOnLogin: Supabase not configured');
+    return localWorkflows;
+  }
 
   try {
+    logger.info(`syncWorkflowsOnLogin: local=${localWorkflows.length}, userId=${userId}`);
+
     if (localWorkflows.length > 0) {
       const rows = localWorkflows.map((wf) => localToCloud(userId, wf));
       const { error: upsertError } = await supabase
@@ -90,15 +124,19 @@ export async function syncWorkflowsOnLogin(
     const { data, error } = await supabase
       .from('workflows')
       .select('*')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('platform', getPlatform());
 
     if (error) {
       logger.error('fetch workflows error:', error);
       return localWorkflows;
     }
 
+    logger.info(`syncWorkflowsOnLogin: fetched ${data?.length ?? 0} remote workflows`);
     const remote = (data ?? []).map(cloudToLocal);
-    return mergeWorkflows(localWorkflows, remote);
+    const merged = mergeWorkflows(localWorkflows, remote);
+    logger.info(`syncWorkflowsOnLogin: merged result has ${merged.length} workflows`);
+    return merged;
   } catch (err) {
     logger.error('sync workflows error:', err);
     return localWorkflows;
@@ -135,7 +173,8 @@ export async function deleteCloudWorkflow(
       .from('workflows')
       .delete()
       .eq('user_id', userId)
-      .eq('workflow_id', workflowId);
+      .eq('workflow_id', workflowId)
+      .eq('platform', getPlatform());
     if (error) {
       logger.error('delete workflow error:', error);
       return false;

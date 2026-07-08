@@ -8,6 +8,7 @@ import { useSettingsStore } from '@/stores/settings.store';
 import { CATEGORIES } from '@/data/categories';
 import { formatMinutes, formatTimeAgo } from '@/services/software.service';
 import { fetchWorkflowSuggestions, hasActiveAiProvider } from '@/services/ai.service';
+import { matchSoftware } from '@/services/software-matching';
 import { SoftwareCard } from '@/components/features/SoftwareCard';
 import { AppIcon } from '@/components/features/AppIcon';
 import { SmartRecommendations } from '@/components/features/SmartRecommendations';
@@ -363,7 +364,7 @@ export function Dashboard() {
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 {favoriteIds
-                  .map((id) => software.find((s) => s.id === id))
+                  .map((id) => matchSoftware(software, id))
                   .filter((s): s is NonNullable<typeof s> => !!s && !s.uninstalled && !s.deleted)
                   .slice(0, 4)
                   .map((sw) => (

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage, screen } from 'electron';
 import path from 'node:path';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as childProcess from 'node:child_process';
@@ -24,8 +24,9 @@ import {
   type UserProfileInput,
 } from './ai';
 import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession, getTokens as authGetTokens, updateProfile as authUpdateProfile } from './auth';
-import { getAppWindowBounds, warpCursor } from './window-locator';
+import { getAppWindowBounds, warpCursor, focusExistingAppWindow } from './window-locator';
 import { createLogger } from './lib/logger';
+import { startAutoUpdater, stopAutoUpdater } from './updater';
 
 const logger = createLogger('main');
 
@@ -49,6 +50,13 @@ const PRELOAD_PATH = path.join(__dirname, 'preload.cjs');
 const SANDBOX_DISABLED = process.env.SOFTDESK_NO_SANDBOX === '1';
 if (SANDBOX_DISABLED) {
   app.commandLine.appendSwitch('no-sandbox');
+}
+
+// Windows 必须在 app.ready 之前设置 AppUserModelID,任务栏才会把窗口和 exe 正确关联,
+// 否则会退回到 Electron 默认的 AUMID(electron.app.Electron),任务栏图标永远是 Electron 默认图。
+// 取值与 package.json 里 build.appId 一致,保证与安装包/桌面快捷方式的 AUMID 匹配。
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.softdesk.app');
 }
 
 // 仅开发模式把 userData 重定向到项目目录,便于调试查看落盘数据;
@@ -141,18 +149,46 @@ function persistWindowPrefs(): void {
   }
 }
 
-const TRAY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 32 32" fill="none">
-  <path d="M10 12L16 8L22 12L16 16L10 12Z" fill="black"/>
-  <path d="M10 16L16 20L22 16" stroke="black" stroke-width="2" stroke-linecap="round" fill="none"/>
-  <circle cx="16" cy="16" r="2" fill="black"/>
-</svg>`;
+// 主进程可访问的 SoftDesk 品牌图标(dev/打包两种模式下都能命中):
+// - dev: APP_ROOT = 项目根,直接读 build/icon.png
+// - 打包: files 白名单已把 build/icon.* 打进 app.asar,APP_ROOT 指向 asar 根,同样可读
+function resolveBrandIconPath(): string {
+  const root = process.env.APP_ROOT ?? path.join(__dirname, '..');
+  return path.join(root, 'build', 'icon.png');
+}
+
+function resolveMacTrayTemplatePath(): string {
+  const root = process.env.APP_ROOT ?? path.join(__dirname, '..');
+  // Prefer @2x (44x44) on Retina displays; Electron auto-picks best representation when
+  // both files live side by side with Apple's "@2x" suffix convention.
+  const scale = screen.getPrimaryDisplay().scaleFactor || 1;
+  if (scale >= 2) {
+    const hi = path.join(root, 'build', 'trayTemplate@2x.png');
+    if (existsSync(hi)) return hi;
+  }
+  return path.join(root, 'build', 'trayTemplate.png');
+}
 
 function createTrayIcon(): Electron.NativeImage {
-  const img = nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(TRAY_ICON_SVG).toString('base64')}`
-  );
-  img.setTemplateImage(true);
-  return img;
+  if (process.platform === 'darwin') {
+    // macOS 菜单栏使用黑色单色 template PNG(带透明通道):
+    // - 由 scripts/build-tray-icon.mjs 预生成 build/trayTemplate.png 与 @2x 版本,
+    //   纯 Node (zlib + 软件光栅化),无外部依赖。
+    // - setTemplateImage(true) 后系统按菜单栏深浅自动渲染为白色/黑色,
+    //   深色菜单栏下即显示白色图标,与 Wi-Fi/电池等系统图标一致。
+    const tplPath = resolveMacTrayTemplatePath();
+    const tpl = nativeImage.createFromPath(tplPath);
+    if (!tpl.isEmpty()) {
+      tpl.setTemplateImage(true);
+      return tpl;
+    }
+  }
+  const iconPath = resolveBrandIconPath();
+  const img = nativeImage.createFromPath(iconPath);
+  if (img.isEmpty()) {
+    return nativeImage.createEmpty();
+  }
+  return img.resize({ width: 32, height: 32 });
 }
 
 function showWindow(): void {
@@ -740,6 +776,8 @@ function createWindow() {
     backgroundColor: '#161618',
     show: !windowPrefs.startMinimized,
     titleBarStyle: 'hiddenInset',
+    // Windows/Linux 通过窗口 icon 决定任务栏初始图标(macOS 走 .icns,不需要这里指定)
+    icon: resolveBrandIconPath(),
     webPreferences: {
       preload: PRELOAD_PATH,
       contextIsolation: true,
@@ -792,6 +830,13 @@ ipcMain.handle('software:scan', async (_event, smartGrouping?: boolean) => {
 // 防止渲染进程被注入后传入任意路径启动/删除文件
 const knownAppPaths = new Set<string>();
 
+function normalizeAppPathKey(p: string): string {
+  // Windows 文件系统对大小写不敏感（NTFS 也默认不区分），路径大小写在不同
+  // 数据源（注册表 / .lnk / DisplayIcon）之间常常混杂，这里统一小写做 key。
+  // macOS 保留原路径大小写以匹配 case-sensitive 卷。
+  return process.platform === 'win32' ? p.toLowerCase() : p;
+}
+
 // 记录最近一次渲染层传入的"智能分类"开关,供 FSEvents 监听到变化后的重扫沿用
 let lastSmartGrouping = true;
 
@@ -799,7 +844,34 @@ let lastSmartGrouping = true;
 const aiClassifiedIds = new Set<string>();
 
 function isAllowedAppPath(appPath: unknown): appPath is string {
-  return typeof appPath === 'string' && knownAppPaths.has(appPath);
+  return typeof appPath === 'string' && knownAppPaths.has(normalizeAppPathKey(appPath));
+}
+
+/**
+ * 启动或聚焦一个已授权的应用路径。
+ *
+ * 平台差异:
+ * - macOS: `shell.openPath` 底层走 LaunchServices,若目标 .app 已运行,LS 会自动
+ *   把已有实例切到前台(等价于 Dock 点击),因此不需要额外聚焦逻辑。
+ * - Windows: `shell.openPath` 相当于 ShellExecute `open` 动词,对绝大部分应用等于
+ *   "运行一次 exe",默认会另起进程/窗口。要复用已有实例必须先通过 user32 的
+ *   SetForegroundWindow / SwitchToThisWindow 把主窗口切到前台,拿不到窗口(未运行
+ *   或纯托盘应用)时才回退到 openPath。
+ *
+ * 返回同 shell.openPath 一致的字符串(空串代表成功,非空为错误信息),方便调用方复用。
+ */
+async function launchOrFocusApp(appPath: string): Promise<string> {
+  if (process.platform === 'win32') {
+    try {
+      const result = await focusExistingAppWindow(appPath);
+      if (result.activated) return '';
+      // running===true 但 activated===false 时,通常是纯托盘/无窗口应用,再走 openPath
+      // 让应用自己处理"二次启动"(多数会显示托盘菜单或还原主窗口)。
+    } catch (err) {
+      logger.error('focusExistingAppWindow error, fallback to openPath:', err);
+    }
+  }
+  return shell.openPath(appPath);
 }
 
 /**
@@ -851,7 +923,7 @@ async function classifyUncategorized(apps: ScannedApp[]): Promise<ScannedApp[]> 
 async function scanWithUsage(): Promise<ScannedApp[]> {
   const apps = await scanInstalledApps(lastSmartGrouping);
   knownAppPaths.clear();
-  for (const a of apps) knownAppPaths.add(a.path);
+  for (const a of apps) knownAppPaths.add(normalizeAppPathKey(a.path));
   const classified = await classifyUncategorized(apps);
   let summary: ReturnType<typeof getUsageSummary> = [];
   try {
@@ -1008,7 +1080,7 @@ ipcMain.handle('radial:launch', async (_event, raw: unknown) => {
     if (!isAllowedAppPath(appPath)) {
       return { success: false, error: '无效或未授权的软件路径' };
     }
-    const error = await shell.openPath(appPath);
+    const error = await launchOrFocusApp(appPath);
     if (error) return { success: false, error };
     if (item.targetId.length > 0 && item.targetId.length <= 256) {
       try {
@@ -1028,7 +1100,7 @@ ipcMain.handle('radial:launch', async (_event, raw: unknown) => {
   const paths = (item.workflowPaths ?? []).filter((p): p is string => isAllowedAppPath(p));
   let launched = 0;
   for (let i = 0; i < paths.length; i++) {
-    const error = await shell.openPath(paths[i]);
+    const error = await launchOrFocusApp(paths[i]);
     if (!error) launched++;
     if (i < paths.length - 1) {
       await new Promise((resolve) => setTimeout(resolve, 400));
@@ -1041,7 +1113,7 @@ ipcMain.handle('software:launch', async (_event, appPath: string, softwareId?: s
   if (!isAllowedAppPath(appPath)) {
     return { success: false, error: '无效或未授权的软件路径' };
   }
-  const error = await shell.openPath(appPath);
+  const error = await launchOrFocusApp(appPath);
   if (error) {
     return { success: false, error };
   }
@@ -1068,7 +1140,7 @@ ipcMain.handle('software:launchBatch', async (_event, appPaths: string[]) => {
       results.push({ path: String(appPath), success: false, error: '无效或未授权的软件路径' });
       continue;
     }
-    const error = await shell.openPath(appPath);
+    const error = await launchOrFocusApp(appPath);
     results.push(error ? { path: appPath, success: false, error } : { path: appPath, success: true });
 
     if (i < appPaths.length - 1) {
@@ -1459,6 +1531,14 @@ app.whenReady().then(() => {
       logger.error('watcher rescan failed:', err);
     }
   });
+
+  // 只有打包后的正式版才启用 electron-updater;dev 模式内部会短路。
+  // 传入主窗口以便把 checking / progress / downloaded 事件推给渲染层。
+  if (win) {
+    startAutoUpdater(win).catch((err) => {
+      logger.error('startAutoUpdater failed (non-fatal):', err);
+    });
+  }
 });
 
 app.on('before-quit', () => {
@@ -1478,6 +1558,7 @@ app.on('before-quit', () => {
   }
   stopMonitor();
   stopAppWatcher();
+  stopAutoUpdater();
   closeDb();
 });
 

@@ -6,8 +6,14 @@ import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
 import { AiModelsSection } from '@/components/features/AiModelsSection';
 import { RadialMenuSection } from '@/components/features/RadialMenuSection';
+import { UpdateSection } from '@/components/features/UpdateSection';
 
 type TabId = 'appearance' | 'notifications' | 'radial' | 'data' | 'privacy' | 'ai' | 'help';
+
+// 平台判定:目前"帮助"tab 的内容全部是 macOS 特有的排障(App 管理 / 完全磁盘访问权限),
+// Windows 侧暂无对应帮助文案,因此在 Windows 上整体隐藏该 tab。
+// 与 RadialMenuSection.tsx 的判定方式保持一致,统一走 navigator.platform,避免引入额外桥接。
+const IS_MAC = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
 
 const TAB_IDS: readonly TabId[] = [
   'appearance',
@@ -23,7 +29,7 @@ function isTabId(v: string | null): v is TabId {
   return v !== null && (TAB_IDS as readonly string[]).includes(v);
 }
 
-const tabs = [
+const ALL_TABS = [
   { id: 'appearance' as TabId, icon: Monitor, label: '外观' },
   { id: 'notifications' as TabId, icon: Bell, label: '通知' },
   { id: 'radial' as TabId, icon: CircleDot, label: '径向菜单' },
@@ -32,6 +38,9 @@ const tabs = [
   { id: 'ai' as TabId, icon: Sparkles, label: 'AI 功能' },
   { id: 'help' as TabId, icon: LifeBuoy, label: '帮助' },
 ];
+
+// 非 Mac 平台(当前主要是 Windows)过滤掉"帮助"tab —— 无内容可展示时不显示入口
+const tabs = ALL_TABS.filter((t) => (t.id === 'help' ? IS_MAC : true));
 
 interface ToggleProps {
   checked: boolean;
@@ -71,14 +80,20 @@ export function Settings() {
   // 支持通过 URL query 深链定位 tab (例如 /settings?tab=radial),
   // 便于从分享导入成功页 / 通知栏等外部入口直接跳到具体设置分区。
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab: TabId = isTabId(searchParams.get('tab')) ? (searchParams.get('tab') as TabId) : 'appearance';
+  // 若目标 tab 在当前平台不可用(如 Windows 上的 'help'),回退到 'appearance'
+  const resolveTab = (raw: string | null): TabId => {
+    if (!isTabId(raw)) return 'appearance';
+    if (raw === 'help' && !IS_MAC) return 'appearance';
+    return raw;
+  };
+  const initialTab: TabId = resolveTab(searchParams.get('tab'));
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
 
   // URL query 变化 (浏览器前进/后退 / 外部再次深链) 时同步 tab
   useEffect(() => {
-    const t = searchParams.get('tab');
-    if (isTabId(t) && t !== activeTab) {
-      setActiveTab(t);
+    const next = resolveTab(searchParams.get('tab'));
+    if (next !== activeTab) {
+      setActiveTab(next);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -288,6 +303,8 @@ export function Settings() {
                 <h2 className="text-base font-semibold text-slate-100 mb-1">帮助与常见问题</h2>
                 <p className="text-sm text-slate-500">遇到问题？这里是常见情况的解决办法</p>
               </div>
+
+              <UpdateSection />
 
               <div className="rounded-2xl bg-slate-800/40 border border-slate-800 overflow-hidden">
                 <div className="flex items-start gap-3 p-4 border-b border-slate-800/80">
