@@ -1,25 +1,39 @@
 name: Release
 
-# 推送 v* tag 时并行在 macOS 与 Windows runner 上构建正式包，
-# 双端都成功后自动创建 GitHub Release 并挂载产物：
-#   Mac : *.dmg  *.zip  latest-mac.yml
-#   Win : *.exe  *.exe.blockmap  latest.yml
+# Release Workflow
+#
+# 两种触发方式：
+#   1. 推送 v* tag → 正式发布（prerelease: false，生成 release notes）
+#   2. push 到 main 分支 → Dev Snapshot（prerelease: true，tag 为 snapshot，
+#      每次覆盖上一个，产物始终指向最新 main 的可用构建）
+#
+# 两端并行构建，都成功后才创建 / 更新 Release，避免"半个版本"。
 # electron-updater 会读取 latest*.yml 完成自动更新分发。
 #
-# 使用方式（在 Mac 本地）：
-#   npm version minor                # 生成 v1.1.0 tag + 改 package.json 版本
-#   git push --follow-tags            # 推送 tag 触发本 workflow
+# 使用方式（正式发版）：
+#   npm version minor
+#   git push --follow-tags
 #
-# 如果 Mac 或 Windows 任一端构建失败，publish job 不会运行，
-# 也就不会有"半个版本"泄漏给用户。
+# 使用方式（Dev Snapshot）：
+#   push 到 main 分支自动触发，无需手动操作。
 
 on:
   push:
     tags:
       - "v*"
+    branches:
+      - main
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "electron/**"
+      - "src/**"
+      - "build/**"
+      - "vite.config.ts"
+      - "tsconfig*.json"
+      - ".github/workflows/release.yml"
 
 permissions:
-  # softprops/action-gh-release 需要写权限来创建 Release
   contents: write
 
 jobs:
@@ -135,10 +149,12 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # tag_name 从触发 tag 自动读取
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'snapshot' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Dev Snapshot' }}
           draft: false
-          prerelease: false
-          generate_release_notes: true
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          generate_release_notes: ${{ startsWith(github.ref, 'refs/tags/v') }}
           files: release-flat/*
+          append_body: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
