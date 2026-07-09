@@ -23,6 +23,7 @@ on:
       - "v*"
     branches:
       - main
+      - dev
     paths:
       - "package.json"
       - "package-lock.json"
