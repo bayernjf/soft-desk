@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog, CircleDot } from 'lucide-react';
+import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog, CircleDot, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
@@ -8,11 +8,8 @@ import { AiModelsSection } from '@/components/features/AiModelsSection';
 import { RadialMenuSection } from '@/components/features/RadialMenuSection';
 import { UpdateSection } from '@/components/features/UpdateSection';
 
-type TabId = 'appearance' | 'notifications' | 'radial' | 'data' | 'privacy' | 'ai' | 'help';
+type TabId = 'appearance' | 'notifications' | 'radial' | 'data' | 'privacy' | 'ai' | 'help' | 'about';
 
-// 平台判定:目前"帮助"tab 的内容全部是 macOS 特有的排障(App 管理 / 完全磁盘访问权限),
-// Windows 侧暂无对应帮助文案,因此在 Windows 上整体隐藏该 tab。
-// 与 RadialMenuSection.tsx 的判定方式保持一致,统一走 navigator.platform,避免引入额外桥接。
 const IS_MAC = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
 
 const TAB_IDS: readonly TabId[] = [
@@ -23,6 +20,7 @@ const TAB_IDS: readonly TabId[] = [
   'privacy',
   'ai',
   'help',
+  'about',
 ];
 
 function isTabId(v: string | null): v is TabId {
@@ -37,6 +35,7 @@ const ALL_TABS = [
   { id: 'privacy' as TabId, icon: Shield, label: '隐私安全' },
   { id: 'ai' as TabId, icon: Sparkles, label: 'AI 功能' },
   { id: 'help' as TabId, icon: LifeBuoy, label: '帮助' },
+  { id: 'about' as TabId, icon: Info, label: '关于' },
 ];
 
 // 非 Mac 平台(当前主要是 Windows)过滤掉"帮助"tab —— 无内容可展示时不显示入口
@@ -115,6 +114,13 @@ export function Settings() {
   const prefs = useSettingsStore((s) => s.prefs);
   const togglePref = useSettingsStore((s) => s.togglePref);
   const scanSoftware = useSoftwareStore((s) => s.scanSoftware);
+  const [version, setVersion] = useState('1.0.0');
+
+  useEffect(() => {
+    window.softdesk?.getUpdaterStatus().then((s) => {
+      if (s?.currentVersion) setVersion(s.currentVersion);
+    }).catch(() => {});
+  }, []);
 
   // 切换"智能分类"后立即重扫,使新的分类策略即时反映到全局软件列表
   const toggleSmartGrouping = () => {
@@ -304,8 +310,6 @@ export function Settings() {
                 <p className="text-sm text-slate-500">遇到问题？这里是常见情况的解决办法</p>
               </div>
 
-              <UpdateSection />
-
               <div className="rounded-2xl bg-slate-800/40 border border-slate-800 overflow-hidden">
                 <div className="flex items-start gap-3 p-4 border-b border-slate-800/80">
                   <div className="w-9 h-9 rounded-xl bg-rose-500/15 text-rose-400 flex items-center justify-center shrink-0">
@@ -353,6 +357,36 @@ export function Settings() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'about' && (
+            <div className="space-y-6 max-w-xl">
+              <div>
+                <h2 className="text-base font-semibold text-slate-100 mb-1">关于 SoftDesk</h2>
+                <p className="text-sm text-slate-500">本地软件管理与智能启动工具</p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-800/40 border border-slate-800 overflow-hidden">
+                <div className="flex items-start gap-3 p-4 border-b border-slate-800/80">
+                  <div className="w-9 h-9 rounded-xl bg-violet-500/15 text-violet-400 flex items-center justify-center shrink-0">
+                    <Info className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-semibold text-slate-200">版本信息</h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      当前版本 <span className="text-slate-300 tabular-nums font-medium">v{version}</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    SoftDesk 是一款轻量的本地软件管理工具，帮助你快速启动、分类和管理系统中的所有应用，支持工作流、径向菜单和 AI 智能分类。
+                  </p>
+                </div>
+              </div>
+
+              <UpdateSection />
             </div>
           )}
         </main>
