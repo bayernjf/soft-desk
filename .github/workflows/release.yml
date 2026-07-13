@@ -2,20 +2,23 @@ name: Release
 
 # Release Workflow
 #
-# 两种触发方式：
-#   1. 推送 v* tag → 正式发布（prerelease: false，生成 release notes）
-#   2. push 到 main 分支 → Dev Snapshot（prerelease: true，tag 为 snapshot，
-#      每次覆盖上一个，产物始终指向最新 main 的可用构建）
+# 三种触发方式：
+#   1. 推送 v* tag → 正式发布（使用指定版本号，prerelease: false，生成 release notes）
+#   2. push 到 main 分支 → 正式发布（自动递增 patch 版本，prerelease: false）
+#   3. push 到 dev 分支 → Dev Snapshot（prerelease: true，tag 为 snapshot，每次覆盖）
 #
 # 两端并行构建，都成功后才创建 / 更新 Release，避免"半个版本"。
 # electron-updater 会读取 latest*.yml 完成自动更新分发。
 #
-# 使用方式（正式发版）：
+# 使用方式（手动正式发版）：
 #   npm version minor
 #   git push --follow-tags
 #
+# 使用方式（自动正式发版）：
+#   push / merge 到 main 分支自动触发，版本号自动 +0.0.1
+#
 # 使用方式（Dev Snapshot）：
-#   push 到 main 分支自动触发，无需手动操作。
+#   push 到 dev 分支自动触发，无需手动操作。
 
 on:
   push:
@@ -128,6 +131,12 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -142,23 +151,82 @@ jobs:
           find release -type f -exec cp -v {} release-flat/ \;
           ls -la release-flat
 
-      - name: Delete existing snapshot release (branch push only)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+      - name: Resolve release tag and mode
+        id: resolve
+        run: |
+          set -e
+
+          # 默认值
+          IS_TAG=false
+          IS_MAIN=false
+          IS_DEV=false
+          TAG_NAME=""
+          RELEASE_NAME=""
+          IS_PRERELEASE=true
+          GENERATE_NOTES=false
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            # 1. v* tag → 正式发布
+            IS_TAG=true
+            TAG_NAME="${{ github.ref_name }}"
+            RELEASE_NAME="${{ github.ref_name }}"
+            IS_PRERELEASE=false
+            GENERATE_NOTES=true
+          elif [[ "${{ github.ref }}" == refs/heads/main ]]; then
+            # 2. main 分支 → 正式发布，自动递增 patch 版本
+            IS_MAIN=true
+            # 获取最新的 semver tag，没有则从 v0.0.0 开始
+            LATEST_TAG=$(git tag -l 'v*.*.*' --sort=-v:refname | head -n 1 || true)
+            if [[ -z "$LATEST_TAG" ]]; then
+              LATEST_TAG="v0.0.0"
+            fi
+            # 去掉 v 前缀，递增 patch
+            VERSION=${LATEST_TAG#v}
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+            PATCH=$((PATCH + 1))
+            TAG_NAME="v${MAJOR}.${MINOR}.${PATCH}"
+            RELEASE_NAME="${TAG_NAME}"
+            IS_PRERELEASE=false
+            GENERATE_NOTES=true
+            # 打 tag 并推送（用 GITHUB_TOKEN 触发的 tag 不会再次触发 workflow）
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$TAG_NAME"
+            git push origin "$TAG_NAME"
+          elif [[ "${{ github.ref }}" == refs/heads/dev ]]; then
+            # 3. dev 分支 → Dev Snapshot
+            IS_DEV=true
+            TAG_NAME="snapshot"
+            RELEASE_NAME="Dev Snapshot"
+            IS_PRERELEASE=true
+            GENERATE_NOTES=false
+          fi
+
+          echo "is_tag=$IS_TAG" >> $GITHUB_OUTPUT
+          echo "is_main=$IS_MAIN" >> $GITHUB_OUTPUT
+          echo "is_dev=$IS_DEV" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "generate_notes=$GENERATE_NOTES" >> $GITHUB_OUTPUT
+
+      - name: Delete existing snapshot release (dev branch only)
+        if: steps.resolve.outputs.is_dev == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete snapshot --yes --cleanup-tag 2>/dev/null || true
-        # 每次 Dev Snapshot 重建前删掉旧的 release + tag，
-        # 避免旧资产(zip/blockmap/yml 等)残留,确保 assets 始终只有最新的 .dmg 和 .exe
+        # Dev Snapshot 每次重建前删掉旧的 release + tag，
+        # 避免旧资产残留，确保 assets 始终只有最新的 .dmg 和 .exe
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'snapshot' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Dev Snapshot' }}
+          tag_name: ${{ steps.resolve.outputs.tag_name }}
+          name: ${{ steps.resolve.outputs.release_name }}
           draft: false
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-          generate_release_notes: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          prerelease: ${{ steps.resolve.outputs.is_prerelease }}
+          generate_release_notes: ${{ steps.resolve.outputs.generate_notes }}
           files: release-flat/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
