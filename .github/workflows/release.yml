@@ -4,7 +4,8 @@ name: Release
 #
 # 三种触发方式：
 #   1. 推送 v* tag → 正式发布（使用指定版本号，prerelease: false，生成 release notes）
-#   2. push 到 main 分支 → 正式发布（自动递增 patch 版本，prerelease: false）
+#   2. push 到 main 分支 → 正式发布（自动递增 patch 版本，bump package.json 并 commit，
+#      构建产物内嵌新版本号；构建成功后才打 tag + 发 Release，失败则不留 tag）
 #   3. push 到 dev 分支 → Dev Snapshot（prerelease: true，tag 为 snapshot，每次覆盖）
 #
 # 两端并行构建，都成功后才创建 / 更新 Release，避免"半个版本"。
@@ -41,10 +42,91 @@ permissions:
   contents: write
 
 jobs:
+  resolve-version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      is_tag: ${{ steps.resolve.outputs.is_tag }}
+      is_main: ${{ steps.resolve.outputs.is_main }}
+      is_dev: ${{ steps.resolve.outputs.is_dev }}
+      tag_name: ${{ steps.resolve.outputs.tag_name }}
+      release_name: ${{ steps.resolve.outputs.release_name }}
+      is_prerelease: ${{ steps.resolve.outputs.is_prerelease }}
+      generate_notes: ${{ steps.resolve.outputs.generate_notes }}
+      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve release tag and mode
+        id: resolve
+        run: |
+          set -e
+
+          IS_TAG=false
+          IS_MAIN=false
+          IS_DEV=false
+          TAG_NAME=""
+          RELEASE_NAME=""
+          IS_PRERELEASE=true
+          GENERATE_NOTES=false
+          COMMIT_SHA="${{ github.sha }}"
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            IS_TAG=true
+            TAG_NAME="${{ github.ref_name }}"
+            RELEASE_NAME="${{ github.ref_name }}"
+            IS_PRERELEASE=false
+            GENERATE_NOTES=true
+          elif [[ "${{ github.ref }}" == refs/heads/main ]]; then
+            IS_MAIN=true
+            LATEST_TAG=$(git tag -l 'v*.*.*' --sort=-v:refname | head -n 1 || true)
+            if [[ -z "$LATEST_TAG" ]]; then
+              LATEST_TAG="v0.0.0"
+            fi
+            VERSION=${LATEST_TAG#v}
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+            PATCH=$((PATCH + 1))
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            TAG_NAME="v${NEW_VERSION}"
+            RELEASE_NAME="${TAG_NAME}"
+            IS_PRERELEASE=false
+            GENERATE_NOTES=true
+
+            npm version "$NEW_VERSION" --no-git-tag-version
+
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add package.json
+            git commit -m "chore(release): bump version to ${NEW_VERSION} [skip ci]"
+            git push origin HEAD:main
+            COMMIT_SHA=$(git rev-parse HEAD)
+          elif [[ "${{ github.ref }}" == refs/heads/dev ]]; then
+            IS_DEV=true
+            TAG_NAME="snapshot"
+            RELEASE_NAME="Dev Snapshot"
+            IS_PRERELEASE=true
+            GENERATE_NOTES=false
+          fi
+
+          echo "is_tag=$IS_TAG" >> $GITHUB_OUTPUT
+          echo "is_main=$IS_MAIN" >> $GITHUB_OUTPUT
+          echo "is_dev=$IS_DEV" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "generate_notes=$GENERATE_NOTES" >> $GITHUB_OUTPUT
+          echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+
   build:
     name: build (${{ matrix.os }})
+    needs: resolve-version
     strategy:
-      # 一端失败仍继续跑另一端，方便同时诊断问题
       fail-fast: false
       matrix:
         include:
@@ -62,6 +144,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-version.outputs.commit_sha }}
 
       - name: Set timezone to Beijing (Windows)
         if: matrix.os == 'windows-latest'
@@ -84,26 +168,18 @@ jobs:
         run: npm ci
 
       - name: Verify (typecheck + tests)
-        # 发版前再跑一次双端验证，防止误发有回归的 tag
         run: |
           npm run check
           npm test
 
       - name: Package installer
         env:
-          # 让 electron-builder 不做代码签名（Phase 0 暂不签），
-          # 后续接入证书时把 CSC_LINK / CSC_KEY_PASSWORD 等 secret
-          # 补上即可自动切换到签名模式。
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          # Vite 构建期必须读到这两个变量，否则前端 supabase 客户端为 null，
-          # 用户装完打开会看到 “Supabase 未配置” 的错误提示。
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run ${{ matrix.script }}
 
       - name: Ad-hoc codesign SoftDesk.app (macOS only)
-        # 与 build-mac.yml 中一致的兜底签名。Windows runner 上这一步整体被
-        # if 短路，不会执行。
         if: matrix.os == 'macos-latest'
         run: |
           set -e
@@ -124,9 +200,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    # 关键：只有 Mac + Win 两端都构建成功，才会创建 Release，
-    # 避免 Mac 已发但 Win 挂了导致用户拿到不同步的版本。
-    needs: build
+    needs: [resolve-version, build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -134,99 +208,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.resolve-version.outputs.commit_sha }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push tag (main branch only)
+        if: needs.resolve-version.outputs.is_main == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ needs.resolve-version.outputs.tag_name }}"
+          git push origin "${{ needs.resolve-version.outputs.tag_name }}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: release
-          # 把两个平台的 artifact 都下载到 release/ 下（自动分子目录）
 
       - name: Flatten artifact tree
         run: |
           set -e
           mkdir -p release-flat
-          # 把子目录里的所有产物拉到同一层，便于统一挂 Release
           find release -type f -exec cp -v {} release-flat/ \;
           ls -la release-flat
 
-      - name: Resolve release tag and mode
-        id: resolve
-        run: |
-          set -e
-
-          # 默认值
-          IS_TAG=false
-          IS_MAIN=false
-          IS_DEV=false
-          TAG_NAME=""
-          RELEASE_NAME=""
-          IS_PRERELEASE=true
-          GENERATE_NOTES=false
-
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            # 1. v* tag → 正式发布
-            IS_TAG=true
-            TAG_NAME="${{ github.ref_name }}"
-            RELEASE_NAME="${{ github.ref_name }}"
-            IS_PRERELEASE=false
-            GENERATE_NOTES=true
-          elif [[ "${{ github.ref }}" == refs/heads/main ]]; then
-            # 2. main 分支 → 正式发布，自动递增 patch 版本
-            IS_MAIN=true
-            # 获取最新的 semver tag，没有则从 v0.0.0 开始
-            LATEST_TAG=$(git tag -l 'v*.*.*' --sort=-v:refname | head -n 1 || true)
-            if [[ -z "$LATEST_TAG" ]]; then
-              LATEST_TAG="v0.0.0"
-            fi
-            # 去掉 v 前缀，递增 patch
-            VERSION=${LATEST_TAG#v}
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-            PATCH=$((PATCH + 1))
-            TAG_NAME="v${MAJOR}.${MINOR}.${PATCH}"
-            RELEASE_NAME="${TAG_NAME}"
-            IS_PRERELEASE=false
-            GENERATE_NOTES=true
-            # 打 tag 并推送（用 GITHUB_TOKEN 触发的 tag 不会再次触发 workflow）
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git tag "$TAG_NAME"
-            git push origin "$TAG_NAME"
-          elif [[ "${{ github.ref }}" == refs/heads/dev ]]; then
-            # 3. dev 分支 → Dev Snapshot
-            IS_DEV=true
-            TAG_NAME="snapshot"
-            RELEASE_NAME="Dev Snapshot"
-            IS_PRERELEASE=true
-            GENERATE_NOTES=false
-          fi
-
-          echo "is_tag=$IS_TAG" >> $GITHUB_OUTPUT
-          echo "is_main=$IS_MAIN" >> $GITHUB_OUTPUT
-          echo "is_dev=$IS_DEV" >> $GITHUB_OUTPUT
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
-          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-          echo "generate_notes=$GENERATE_NOTES" >> $GITHUB_OUTPUT
-
       - name: Delete existing snapshot release (dev branch only)
-        if: steps.resolve.outputs.is_dev == 'true'
+        if: needs.resolve-version.outputs.is_dev == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete snapshot --yes --cleanup-tag 2>/dev/null || true
-        # Dev Snapshot 每次重建前删掉旧的 release + tag，
-        # 避免旧资产残留，确保 assets 始终只有最新的 .dmg 和 .exe
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.resolve.outputs.tag_name }}
-          name: ${{ steps.resolve.outputs.release_name }}
+          tag_name: ${{ needs.resolve-version.outputs.tag_name }}
+          name: ${{ needs.resolve-version.outputs.release_name }}
           draft: false
-          prerelease: ${{ steps.resolve.outputs.is_prerelease }}
-          generate_release_notes: ${{ steps.resolve.outputs.generate_notes }}
+          prerelease: ${{ needs.resolve-version.outputs.is_prerelease }}
+          generate_release_notes: ${{ needs.resolve-version.outputs.generate_notes }}
           files: release-flat/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
