@@ -8,7 +8,6 @@ import {
   BarChart3,
   Trash2,
   Settings,
-  FolderOpenDot,
   Sparkles,
   ChevronRight,
   ChevronDown,
@@ -90,9 +89,7 @@ export function Sidebar() {
       <div className="p-5 pt-9">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-amber-400 flex items-center justify-center shadow-lg shadow-violet-500/20">
-              <FolderOpenDot className="w-5 h-5 text-white" strokeWidth={2.2} />
-            </div>
+            <img src="/app-logo.svg" alt="SoftDesk" className="w-10 h-10 rounded-xl shadow-lg shadow-violet-500/20" />
             <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0d0d14]" />
           </div>
           <div className="flex-1 min-w-0">
