@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="deskmark" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="50%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#deskmark)"/>
+  <path d="M312 272 H532 a240 240 0 0 1 0 480 H312 Z" fill="none" stroke="#ffffff" stroke-width="80" stroke-linejoin="round"/>
+  <path d="M428 412 L600 512 L428 612 Z" fill="#ffffff"/>
+  <rect x="300" y="784" width="424" height="40" rx="20" fill="#ffffff" fill-opacity="0.9"/>
+</svg>
