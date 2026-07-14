@@ -46,11 +46,10 @@ function isDevelopment(): boolean {
 async function ensureAutoUpdater(): Promise<AppUpdater | null> {
   if (autoUpdater) return autoUpdater;
   try {
-    // 动态 import 避免 dev 模式打包时把 electron-updater 拉进 renderer bundle。
     const mod = await import('electron-updater');
     autoUpdater = mod.autoUpdater;
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.autoDownload = process.platform !== 'darwin';
+    autoUpdater.autoInstallOnAppQuit = process.platform !== 'darwin';
     autoUpdater.logger = {
       info: (msg: unknown) => logger.info('electron-updater', msg),
       warn: (msg: unknown) => logger.warn('electron-updater', msg),
@@ -60,7 +59,9 @@ async function ensureAutoUpdater(): Promise<AppUpdater | null> {
 
     autoUpdater.on('checking-for-update', () => broadcast({ type: 'checking' }));
     autoUpdater.on('update-available', (info) => {
-      downloadInProgress = true;
+      if (process.platform !== 'darwin') {
+        downloadInProgress = true;
+      }
       broadcast({
         type: 'available',
         version: info.version,

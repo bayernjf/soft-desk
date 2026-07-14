@@ -124,4 +124,5 @@ contextBridge.exposeInMainWorld('softdesk', {
     ipcRenderer.on('updater:event', handler);
     return () => ipcRenderer.removeListener('updater:event', handler);
   },
+  openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 });
