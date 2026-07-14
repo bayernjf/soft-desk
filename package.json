@@ -100,12 +100,8 @@
       ],
       "category": "public.app-category.utilities",
       "artifactName": "${productName}-${version}-${arch}-mac.${ext}",
-      "extraFiles": [
-        {
-          "from": "build/mac-contents",
-          "to": "."
-        }
-      ]
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
     },
     "win": {
       "icon": "build/icon.png",
