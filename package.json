@@ -1,7 +1,7 @@
 {
   "name": "soft-desk",
   "private": true,
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "SoftDesk - 本地软件管理与智能启动工具",
   "author": "SoftDesk",
   "type": "module",
