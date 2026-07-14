@@ -147,11 +147,13 @@ npm run rebuild              # 重编译原生模块（better-sqlite3/uiohook-na
 
 ### 发版机制
 
-| 触发方式 | 行为 | tag | prerelease |
-|---------|------|-----|:----------:|
-| push `v*` tag（手动） | 正式发布 | 指定版本号 | false |
-| push/合并到 `main` | 自动 patch 发版 | 最新 tag +0.0.1 | false |
-| push 到 `dev` | Dev Snapshot | `snapshot`（固定，覆盖） | true |
+| 触发方式 | 行为 | 版本号 | tag | prerelease |
+|---------|------|--------|-----|:----------:|
+| push `v*` tag（手动） | 正式发布 | 指定版本号 | vX.Y.Z | false |
+| push/合并到 `main` | 正式发布，自动 patch 递增 | 最新 tag +0.0.1 | vX.Y.Z | false |
+| push 到 `dev` | Dev Snapshot，覆盖式更新 | `0.0.0-dev`（固定） | `snapshot`（固定） | true |
+
+**dev snapshot 覆盖机制**：每次构建前先删除旧的 snapshot release，再重建，保证 assets 始终只有最新的一份。
 
 ### 常用指令
 
