@@ -75,7 +75,6 @@
     "directories": {
       "output": "release"
     },
-    "afterPack": "./scripts/after-pack.mjs",
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
@@ -100,7 +99,13 @@
         "zip"
       ],
       "category": "public.app-category.utilities",
-      "artifactName": "${productName}-${version}-${arch}-mac.${ext}"
+      "artifactName": "${productName}-${version}-${arch}-mac.${ext}",
+      "extraFiles": [
+        {
+          "from": "build/mac-contents",
+          "to": "."
+        }
+      ]
     },
     "win": {
       "icon": "build/icon.png",
