@@ -136,11 +136,14 @@ jobs:
             script: dist:mac
             artifact_glob: |
               release/*.dmg
+              release/*.zip
+              release/*.blockmap
               release/latest-mac.yml
           - os: windows-latest
             script: dist:win
             artifact_glob: |
               release/*.exe
+              release/*.blockmap
               release/latest.yml
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
