@@ -99,7 +99,8 @@
         "dmg",
         "zip"
       ],
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "artifactName": "${productName}-${version}-${arch}-mac.${ext}"
     },
     "win": {
       "icon": "build/icon.png",
@@ -111,7 +112,8 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
