@@ -112,6 +112,8 @@ jobs:
             RELEASE_NAME="Dev Snapshot"
             IS_PRERELEASE=true
             GENERATE_NOTES=false
+
+            npm version 0.0.0-dev --no-git-tag-version --allow-same-version
           fi
 
           echo "is_tag=$IS_TAG" >> $GITHUB_OUTPUT
