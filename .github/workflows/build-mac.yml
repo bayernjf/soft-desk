@@ -63,40 +63,9 @@ jobs:
 
       - name: Package macOS installer (dmg + zip)
         env:
-          # Phase 0 暂不签 macOS，关掉自动证书发现避免 electron-builder
-          # 去扫 keychain。以后要签名时把 CSC_LINK / APPLE_ID 等 secret
-          # 补上即可自动启用。
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          # Vite 构建期必须读到这两个变量，否则前端 supabase 客户端为 null
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        # dist:mac 已经在 package.json 里配好了：
-        # - cross-env 注入 npmmirror 镜像与 ./.cache/ 本地缓存
-        # - --publish never 只出本地产物，不上传 GH Release
         run: npm run dist:mac
-
-      - name: Ad-hoc codesign SoftDesk.app
-        # electron-builder v22+ 在未配置 CSC_LINK 时会自动对 .app 做 ad-hoc 签名，
-        # 但保险起见我们再执行一次显式签名并验证。ad-hoc 签名（sign 身份为 "-"）
-        # 不需要 Apple 证书、$0 成本，能保证 .app 至少有一份可校验的签名摘要。
-        #
-        # 单靠 ad-hoc 签名并不能绕过 macOS Gatekeeper 对已 quarantine 文件的
-        # "已损坏" 校验（那需要 Developer ID + 公证），所以我们同时会在
-        # README 里给用户提供 xattr -cr 命令做最后一步；等接入真证书后
-        # 这段代码会自动被 CSC_LINK 分支覆盖，无需再改。
-        run: |
-          set -e
-          shopt -s nullglob
-          signed_any=false
-          for app in release/mac*/SoftDesk.app; do
-            echo "Ad-hoc signing $app"
-            codesign --force --deep --sign - "$app"
-            codesign --verify --deep --strict --verbose=2 "$app" || true
-            signed_any=true
-          done
-          if [ "$signed_any" = false ]; then
-            echo "No SoftDesk.app found under release/mac*/, skipping"
-          fi
 
       - name: List build output
         run: |

@@ -86,7 +86,7 @@ jobs:
           # 只挑最终发布需要的文件，避免把 win-unpacked/ 也塞进去。
           path: |
             release/*.exe
-            release/*.exe.blockmap
+            release/*.blockmap
             release/latest.yml
           if-no-files-found: error
           retention-days: 14
