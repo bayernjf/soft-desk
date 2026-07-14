@@ -297,6 +297,8 @@ export interface SoftdeskBridge {
   getUpdaterStatus: () => Promise<UpdaterStatus>;
   /** 订阅更新器状态变化事件流,返回取消订阅函数 */
   onUpdaterEvent: (callback: (event: UpdaterEvent) => void) => () => void;
+  /** 用系统默认浏览器打开外部 URL,仅允许 http/https 协议 */
+  openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 declare global {
