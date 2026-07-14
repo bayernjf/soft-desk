@@ -1160,6 +1160,14 @@ ipcMain.handle('app:openUserData', async () => {
   return { success: true };
 });
 
+ipcMain.handle('shell:openExternal', async (_event, url: string) => {
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
+    return { success: false, error: 'Invalid URL' };
+  }
+  await shell.openExternal(url);
+  return { success: true };
+});
+
 // 测试 AI provider 连通性:对 OpenAI 兼容接口发一个最小 /chat/completions 请求,
 // 由主进程发出,避免渲染层 CORS 限制且不在页面暴露 apiKey。
 interface AiTestInput {

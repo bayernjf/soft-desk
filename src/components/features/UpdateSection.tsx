@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Download, RefreshCw, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Download, RefreshCw, CheckCircle2, AlertCircle, Loader2, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { UpdaterEvent, UpdaterStatus } from '@/types/electron';
+
+const LANDING_URL = 'https://soft-desk-landing.pages.dev/';
+const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 
 type UiState =
   | { kind: 'idle' }
@@ -9,6 +12,7 @@ type UiState =
   | { kind: 'up-to-date'; version: string }
   | { kind: 'downloading'; version: string; percent: number; speed: number }
   | { kind: 'ready'; version: string }
+  | { kind: 'manual-update'; version: string }
   | { kind: 'error'; message: string }
   | { kind: 'dev-mode' };
 
@@ -43,7 +47,11 @@ export function UpdateSection() {
           setUi({ kind: 'checking' });
           break;
         case 'available':
-          setUi({ kind: 'downloading', version: event.version, percent: 0, speed: 0 });
+          if (isMac) {
+            setUi({ kind: 'manual-update', version: event.version });
+          } else {
+            setUi({ kind: 'downloading', version: event.version, percent: 0, speed: 0 });
+          }
           break;
         case 'not-available':
           setUi({ kind: 'up-to-date', version: event.version });
@@ -95,6 +103,10 @@ export function UpdateSection() {
     await bridge.quitAndInstall();
   };
 
+  const handleOpenLanding = async () => {
+    await bridge.openExternal(LANDING_URL);
+  };
+
   return (
     <div className="rounded-2xl bg-slate-800/40 border border-slate-800 overflow-hidden">
       <div className="flex items-start gap-3 p-4 border-b border-slate-800/80">
@@ -113,7 +125,9 @@ export function UpdateSection() {
       <div className="p-4 space-y-3">
         {ui.kind === 'idle' && (
           <p className="text-xs text-slate-500 leading-relaxed">
-            SoftDesk 会在启动后自动检查新版本。若发现更新,将在后台下载并提示你重启完成安装。
+            {isMac
+              ? 'SoftDesk 会在启动后自动检查新版本。若发现更新,将提示你前往官网下载安装。'
+              : 'SoftDesk 会在启动后自动检查新版本。若发现更新,将在后台下载并提示你重启完成安装。'}
           </p>
         )}
 
@@ -164,6 +178,25 @@ export function UpdateSection() {
               )}
             >
               立即重启并安装
+            </button>
+          </div>
+        )}
+
+        {ui.kind === 'manual-update' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-xs text-violet-300">
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>发现新版本 v{ui.version},前往官网下载</span>
+            </div>
+            <button
+              onClick={handleOpenLanding}
+              className={cn(
+                'self-start px-4 py-1.5 rounded-lg text-xs font-medium',
+                'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white',
+                'hover:from-violet-400 hover:to-fuchsia-400 transition-colors'
+              )}
+            >
+              前往下载
             </button>
           </div>
         )}
