@@ -24,6 +24,7 @@ import { useSettingsStore, type ThemeMode } from '@/stores/settings.store';
 import { CATEGORIES } from '@/data/categories';
 import { cn } from '@/lib/utils';
 import { getAvatarSvg } from '@/lib/avatars';
+import appLogo from '/app-logo.svg';
 
 const COLLAPSED_CATEGORY_COUNT = 5;
 
@@ -89,7 +90,7 @@ export function Sidebar() {
       <div className="p-5 pt-9">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <img src="/app-logo.svg" alt="SoftDesk" className="w-10 h-10 rounded-xl shadow-lg shadow-violet-500/20" />
+            <img src={appLogo} alt="SoftDesk" className="w-10 h-10 rounded-xl shadow-lg shadow-violet-500/20" />
             <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0d0d14]" />
           </div>
           <div className="flex-1 min-w-0">
