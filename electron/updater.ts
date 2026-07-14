@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Notification } from 'electron';
 import type { AppUpdater } from 'electron-updater';
 import { createLogger } from './lib/logger';
 
@@ -97,6 +97,18 @@ async function ensureAutoUpdater(): Promise<AppUpdater | null> {
         releaseNotes:
           typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
       });
+
+      if (Notification.isSupported()) {
+        const notice = new Notification({
+          title: 'SoftDesk 新版本已就绪',
+          body: `v${info.version} 已下载完成，点击立即重启安装`,
+          silent: false,
+        });
+        notice.on('click', () => {
+          autoUpdater?.quitAndInstall(true, true);
+        });
+        notice.show();
+      }
     });
 
     return autoUpdater;
