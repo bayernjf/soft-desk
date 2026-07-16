@@ -198,7 +198,26 @@ cp .env.example .env
 - 收藏任意软件，在 Supabase Table Editor 中查看 favorites 表
 - 添加 AI Provider，在 ai_configs 表中查看非敏感字段是否已同步
 
-## 10. 已有数据库迁移（v1.x → v2.x 平台隔离）
+## 10. 已有数据库迁移（v1.x -> v2.x 平台隔离）
 
 如果已经创建了上述表，需要执行迁移脚本增加 `platform` 列并修改主键。
 在 Supabase SQL Editor 中执行 `.trae/documents/Platform-Isolation-Migration.sql` 全部内容即可。
+
+## 11. 创建 announcements 表（公告系统）
+
+公告系统：云端下发公告，客户端按平台/时间窗口过滤展示，已读状态存本地 SQLite（不依赖登录）。
+在 Supabase SQL Editor 中执行 `.trae/documents/Announcements-Schema.sql` 全部内容即可。
+
+公告由管理员通过 Supabase Studio 手写记录（无需应用内 admin 界面）。字段说明：
+
+| 字段 | 说明 |
+|------|------|
+| `severity` | `info`=仅侧边栏徽章；`warning`=顶部 banner；`critical`=启动弹窗 |
+| `target_platform` | `all`=全平台；`mac`/`win`=按客户端平台过滤 |
+| `publish_at` | 生效时间（客户端只拉取 `publish_at <= now()` 的记录） |
+| `expire_at` | 过期时间（NULL 表示永不过期） |
+| `is_pinned` | 置顶（排序优先于发布时间） |
+| `is_dismissible` | `critical` 弹窗是否允许关闭（false = 强制停留） |
+| `action_url` | "了解更多"外链，NULL 则不显示按钮（必须 http/https） |
+
+执行后启动 SoftDesk，应看到侧边栏出现"公告"入口；插入一条 `severity='critical'` 的记录后，下次启动会弹出公告窗口。
