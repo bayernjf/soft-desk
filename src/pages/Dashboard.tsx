@@ -13,6 +13,7 @@ import { SoftwareCard } from '@/components/features/SoftwareCard';
 import { AppIcon } from '@/components/features/AppIcon';
 import { SmartRecommendations } from '@/components/features/SmartRecommendations';
 import { cn } from '@/lib/utils';
+import { trackProductEvent } from '@/services/analytics.service';
 import type { CoUsagePair, AiWorkflowSuggestion, SegmentCoUsage, TimeSegment } from '@/types/electron';
 
 function StatCard({
@@ -266,6 +267,10 @@ export function Dashboard() {
       description: sug.description || '由 AI 基于你的使用习惯推荐',
       softwareIds: ids,
       color: '',
+    });
+    void trackProductEvent({
+      eventType: 'ai_suggestion_used',
+      meta: { workflow_count: ids.length },
     });
     showToast('success', `工作流「${sug.name}」创建成功`);
   };

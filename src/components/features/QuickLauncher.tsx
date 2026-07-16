@@ -7,6 +7,7 @@ import { hasActiveAiProvider } from '@/services/ai.service';
 import { fieldMatches } from '@/lib/searchMatch';
 import { AppIcon } from './AppIcon';
 import { cn } from '@/lib/utils';
+import { trackProductEvent } from '@/services/analytics.service';
 import type { Software, Workflow } from '@/types';
 
 interface QuickLauncherProps {
@@ -119,6 +120,14 @@ export function QuickLauncher({ open, onClose }: QuickLauncherProps) {
       launchSoftware(item.software.id);
     } else {
       launchWorkflow(item.workflow.id);
+    }
+    if (semantic.fromAi && item.type === 'software') {
+      const semanticIds = semantic.ids ?? [];
+      if (semanticIds.includes(item.software.id)) {
+        void trackProductEvent({
+          eventType: 'ai_search_used',
+        });
+      }
     }
     onClose();
   };

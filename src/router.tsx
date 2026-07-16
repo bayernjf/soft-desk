@@ -10,6 +10,7 @@ import { Account } from '@/pages/Account';
 import { Favorites } from '@/pages/Favorites';
 import { MyShares } from '@/pages/MyShares';
 import { SharePreview } from '@/pages/SharePreview';
+import { AnnouncementsPage } from '@/pages/AnnouncementsPage';
 
 export const router = createBrowserRouter([
   // /share/:token 走独立布局(免登录、无侧边栏),深链唤起后落地这里
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       { path: 'favorites', element: <Favorites /> },
       { path: 'workflows', element: <Workflows /> },
       { path: 'my-shares', element: <MyShares /> },
+      { path: 'announcements', element: <AnnouncementsPage /> },
       { path: 'statistics', element: <Statistics /> },
       { path: 'uninstall', element: <Uninstall /> },
       { path: 'settings', element: <Settings /> },

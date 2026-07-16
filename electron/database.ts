@@ -47,6 +47,12 @@ function initSchema(database: Database.Database): void {
       duration INTEGER DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS announcement_reads (
+      announcement_id TEXT PRIMARY KEY,
+      read_at INTEGER NOT NULL,
+      dismissed_at INTEGER
+    );
+
     CREATE INDEX IF NOT EXISTS idx_usage_date ON usage_records(date);
     CREATE INDEX IF NOT EXISTS idx_usage_software ON usage_records(software_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_software ON sessions(software_id);
@@ -292,6 +298,54 @@ export function getCoUsageBySegment(windowDays = 30, bucketMinutes = 30): Segmen
     result.push({ segment: seg, sessionCount: sessionCount.get(seg) ?? 0, pairs });
   }
   return result;
+}
+
+export interface AnnouncementReadRow {
+  announcementId: string;
+  readAt: number;
+  dismissedAt: number | null;
+}
+
+/** 读取全部公告的本地已读/关闭状态,供渲染层与云端列表合并计算未读数 */
+export function getAnnouncementReads(): AnnouncementReadRow[] {
+  const database = getDb();
+  const rows = database
+    .prepare(
+      `SELECT announcement_id AS announcementId, read_at AS readAt, dismissed_at AS dismissedAt
+       FROM announcement_reads`
+    )
+    .all() as AnnouncementReadRow[];
+  return rows;
+}
+
+/** 标记某条公告为已读(已存在则仅更新 read_at,保留 dismissed_at) */
+export function markAnnouncementRead(announcementId: string): void {
+  if (!announcementId || announcementId.length > 128) return;
+  const database = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  database
+    .prepare(
+      `INSERT INTO announcement_reads (announcement_id, read_at, dismissed_at)
+       VALUES (?, ?, NULL)
+       ON CONFLICT(announcement_id)
+       DO UPDATE SET read_at = excluded.read_at`
+    )
+    .run(announcementId, now);
+}
+
+/** 标记某条公告的 banner 已关闭(不改变已读状态) */
+export function markBannerDismissed(announcementId: string): void {
+  if (!announcementId || announcementId.length > 128) return;
+  const database = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  database
+    .prepare(
+      `INSERT INTO announcement_reads (announcement_id, read_at, dismissed_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(announcement_id)
+       DO UPDATE SET dismissed_at = excluded.dismissed_at`
+    )
+    .run(announcementId, now, now);
 }
 
 export function closeDb(): void {

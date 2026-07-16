@@ -131,6 +131,10 @@ npm run rebuild              # 重编译原生模块（better-sqlite3/uiohook-na
 - 跨平台逻辑通过 `src/services/software-matching.ts` 的 `matchSoftware` 统一匹配（id → bundleId fallback）
 - 新增 IPC 通道时，在 `src/types/electron.d.ts` 里补类型声明
 - 前端样式用 Tailwind CSS，不要引入其他 CSS 框架
+- 数据库/API 的枚举字段必须保存稳定的英文机器值，禁止保存中文展示文案
+- 枚举合法值、TypeScript 类型、国际化 key 和状态样式应集中在对应领域文件，禁止在页面重复定义映射
+- 页面展示文案通过 `i18next` 翻译 key 获取；用户输入的标题、正文、名称等自由文本保持原文
+- SQL `CHECK` 约束必须与 TypeScript `as const` 枚举保持一致，外部数据在 Service 边界进行运行时校验
 - Node 版本 24（CI 环境）
 
 ---

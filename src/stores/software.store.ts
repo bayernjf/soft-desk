@@ -19,6 +19,16 @@ import {
 } from '@/services/favorites.service';
 import { upsertCloudWorkflow, deleteCloudWorkflow } from '@/services/workflows.service';
 import { matchSoftware, findMetaSnapshot } from '@/services/software-matching';
+import { trackProductEvent } from '@/services/analytics.service';
+
+function bucketDuration(ms: number): string {
+  if (ms < 1000) return '0-1s';
+  if (ms < 3000) return '1-3s';
+  if (ms < 5000) return '3-5s';
+  if (ms < 10000) return '5-10s';
+  if (ms < 30000) return '10-30s';
+  return '30s+';
+}
 
 export interface WorkflowLaunchResult {
   total: number;
@@ -175,15 +185,27 @@ export const useSoftwareStore = create<SoftwareStore>()(
       return;
     }
     set({ isScanning: true, scanError: null });
+    const startedAt = Date.now();
     try {
       const smartGrouping = useSettingsStore.getState().prefs.smartGrouping;
       const apps = await window.softdesk.scanSoftware(smartGrouping);
       get().applyScannedApps(apps);
       set({ isScanning: false });
+      const durationMs = Date.now() - startedAt;
+      void trackProductEvent({
+        eventType: 'scan_completed',
+        result: 'success',
+        durationBucket: bucketDuration(durationMs),
+        meta: { software_count: apps.length },
+      });
     } catch (err) {
       set({
         isScanning: false,
         scanError: err instanceof Error ? err.message : '扫描失败',
+      });
+      void trackProductEvent({
+        eventType: 'scan_completed',
+        result: 'failed',
       });
     }
   },
@@ -192,7 +214,13 @@ export const useSoftwareStore = create<SoftwareStore>()(
     const target = matchSoftware(get().software, id);
     if (target?.uninstalled || target?.deleted) return;
     if (window.softdesk && target?.path) {
-      window.softdesk.launchSoftware(target.path, target.id);
+      void window.softdesk.launchSoftware(target.path, target.id).then((res) => {
+        void trackProductEvent({
+          eventType: 'software_launch',
+          result: res?.success ? 'success' : 'failed',
+          featureCategory: target.category,
+        });
+      });
     }
     const software = get().software.map((s) =>
       s.id === target?.id
@@ -232,6 +260,11 @@ export const useSoftwareStore = create<SoftwareStore>()(
 
     if (!window.softdesk) {
       updateStats();
+      void trackProductEvent({
+        eventType: 'workflow_launched',
+        result: 'skipped',
+        meta: { workflow_count: wf.softwareIds.length },
+      });
       return {
         total: wf.softwareIds.length,
         launched: 0,
@@ -245,6 +278,11 @@ export const useSoftwareStore = create<SoftwareStore>()(
     try {
       const { launched, failed } = await window.softdesk.launchBatch(paths);
       updateStats();
+      void trackProductEvent({
+        eventType: 'workflow_launched',
+        result: launched > 0 ? 'success' : 'failed',
+        meta: { workflow_count: wf.softwareIds.length },
+      });
       return {
         total: wf.softwareIds.length,
         launched,
@@ -253,6 +291,11 @@ export const useSoftwareStore = create<SoftwareStore>()(
         isElectron: true,
       };
     } catch (err) {
+      void trackProductEvent({
+        eventType: 'workflow_launched',
+        result: 'failed',
+        meta: { workflow_count: wf.softwareIds.length },
+      });
       return {
         total: wf.softwareIds.length,
         launched: 0,
@@ -295,6 +338,10 @@ export const useSoftwareStore = create<SoftwareStore>()(
       updatedAt: now,
     };
     set({ workflows: [...existing, workflow] });
+    void trackProductEvent({
+      eventType: 'workflow_created',
+      meta: { workflow_count: data.softwareIds.length },
+    });
 
     const userId = useAuthStore.getState().profile?.userId;
     if (userId) {
@@ -415,6 +462,10 @@ export const useSoftwareStore = create<SoftwareStore>()(
       ? get().favoriteIds.filter((x) => x !== canonicalId)
       : [...get().favoriteIds, canonicalId];
     set({ favoriteIds: nextIds });
+    void trackProductEvent({
+      eventType: 'favorite_toggled',
+      featureCategory: sw?.category,
+    });
 
     const userId = useAuthStore.getState().profile?.userId;
     if (!userId) return;

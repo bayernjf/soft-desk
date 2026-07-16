@@ -1,12 +1,13 @@
-import { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage, screen, dialog } from 'electron';
 import path from 'node:path';
+import os from 'node:os';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as childProcess from 'node:child_process';
 import { scanInstalledApps, applyAiCategories, startAppWatcher, stopAppWatcher, type ScannedApp, type ScannedCategory } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
-import { getStats, getUsageSummary, getCoUsage, getCoUsageBySegment, getHourlyUsage, getSegmentUsageByApp, recordLaunch, closeDb } from './database';
+import { getStats, getUsageSummary, getCoUsage, getCoUsageBySegment, getHourlyUsage, getSegmentUsageByApp, recordLaunch, closeDb, getAnnouncementReads, markAnnouncementRead, markBannerDismissed } from './database';
 import {
   syncProviders,
   getProviders,
@@ -25,7 +26,7 @@ import {
 } from './ai';
 import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession, getTokens as authGetTokens, updateProfile as authUpdateProfile } from './auth';
 import { getAppWindowBounds, warpCursor, focusExistingAppWindow } from './window-locator';
-import { createLogger } from './lib/logger';
+import { createLogger, getLogDirectory, getRecentLogs, isLogLevel, writeRendererLog, type RendererLogEntry } from './lib/logger';
 import { startAutoUpdater, stopAutoUpdater } from './updater';
 
 const logger = createLogger('main');
@@ -817,7 +818,42 @@ function createWindow() {
       app.quit();
     }
   });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    logger.error('renderer process gone', {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
+  });
 }
+
+function parseRendererLogEntry(raw: unknown): RendererLogEntry | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const entry = raw as Partial<RendererLogEntry>;
+  if (!isLogLevel(entry.level)) return null;
+  if (typeof entry.namespace !== 'string' || entry.namespace.length === 0 || entry.namespace.length > 64) {
+    return null;
+  }
+  if (typeof entry.message !== 'string' || entry.message.length === 0 || entry.message.length > 4000) {
+    return null;
+  }
+  if (!Array.isArray(entry.args) || entry.args.length > 20) return null;
+  try {
+    if (JSON.stringify(entry.args).length > 64 * 1024) return null;
+  } catch {
+    return null;
+  }
+  return {
+    level: entry.level,
+    namespace: entry.namespace,
+    message: entry.message,
+    args: entry.args,
+  };
+}
+
+ipcMain.on('logs:write', (_event, raw: unknown) => {
+  const entry = parseRendererLogEntry(raw);
+  if (entry) writeRendererLog(entry);
+});
 
 ipcMain.handle('software:scan', async (_event, smartGrouping?: boolean) => {
   if (typeof smartGrouping === 'boolean') {
@@ -1160,12 +1196,113 @@ ipcMain.handle('app:openUserData', async () => {
   return { success: true };
 });
 
+ipcMain.handle('app:getSystemInfo', () => ({
+  appVersion: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch,
+  osVersion: os.release(),
+  electronVersion: process.versions.electron,
+  locale: app.getLocale(),
+}));
+
+ipcMain.handle('logs:getRecent', (_event, rawMinutes?: unknown) => {
+  const minutes = rawMinutes === 15 || rawMinutes === 30 ? rawMinutes : 5;
+  try {
+    return { success: true, ...getRecentLogs(minutes) };
+  } catch (error) {
+    logger.error('get recent logs failed', error);
+    return { success: false, error: '读取诊断日志失败' };
+  }
+});
+
+ipcMain.handle('logs:openDirectory', async () => {
+  const error = await shell.openPath(getLogDirectory());
+  return error ? { success: false, error } : { success: true };
+});
+
+ipcMain.handle('logs:export', async () => {
+  try {
+    const logs = getRecentLogs(30);
+    const systemInfo = {
+      appVersion: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      osVersion: os.release(),
+      electronVersion: process.versions.electron,
+      locale: app.getLocale(),
+    };
+    const generatedAt = new Date();
+    const defaultName = `SoftDesk-Diagnostics-${generatedAt.toISOString().replace(/[:.]/g, '-').slice(0, 19)}.log`;
+    const result = await dialog.showSaveDialog(win ?? undefined, {
+      title: '导出诊断日志',
+      defaultPath: path.join(app.getPath('downloads'), defaultName),
+      filters: [{ name: '日志文件', extensions: ['log'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, canceled: true };
+
+    const header = [
+      'SoftDesk Diagnostics',
+      `Generated At: ${generatedAt.toISOString()}`,
+      `App Version: ${systemInfo.appVersion}`,
+      `Platform: ${systemInfo.platform}`,
+      `Architecture: ${systemInfo.arch}`,
+      `OS Version: ${systemInfo.osVersion}`,
+      `Electron Version: ${systemInfo.electronVersion}`,
+      `Locale: ${systemInfo.locale}`,
+      `Log Range: ${logs.startedAt ?? '-'} - ${logs.endedAt ?? '-'}`,
+      `Log Lines: ${logs.lineCount}`,
+      `Truncated: ${logs.truncated}`,
+      '',
+    ].join('\n');
+    writeFileSync(result.filePath, `${header}${logs.content}`, 'utf8');
+    return { success: true, filePath: result.filePath };
+  } catch (error) {
+    logger.error('export diagnostic logs failed', error);
+    return { success: false, error: '导出诊断日志失败' };
+  }
+});
+
 ipcMain.handle('shell:openExternal', async (_event, url: string) => {
   if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
     return { success: false, error: 'Invalid URL' };
   }
   await shell.openExternal(url);
   return { success: true };
+});
+
+// 公告系统:已读/关闭状态仅存本地 SQLite(不依赖登录,未登录也能记录),
+// 云端公告列表由渲染层 service 直接从 Supabase 拉取。
+ipcMain.handle('announcement:getReads', () => {
+  try {
+    return getAnnouncementReads();
+  } catch (err) {
+    logger.error('getAnnouncementReads failed:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('announcement:markRead', (_event, rawId: unknown) => {
+  const id = typeof rawId === 'string' ? rawId : '';
+  if (!id) return { success: false };
+  try {
+    markAnnouncementRead(id);
+    return { success: true };
+  } catch (err) {
+    logger.error('markAnnouncementRead failed:', err);
+    return { success: false };
+  }
+});
+
+ipcMain.handle('announcement:dismissBanner', (_event, rawId: unknown) => {
+  const id = typeof rawId === 'string' ? rawId : '';
+  if (!id) return { success: false };
+  try {
+    markBannerDismissed(id);
+    return { success: true };
+  } catch (err) {
+    logger.error('markBannerDismissed failed:', err);
+    return { success: false };
+  }
 });
 
 // 测试 AI provider 连通性:对 OpenAI 兼容接口发一个最小 /chat/completions 请求,

@@ -4,9 +4,17 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { QuickLauncher } from '@/components/features/QuickLauncher';
+import { AnnouncementBanner } from '@/components/features/announcement/AnnouncementBanner';
+import { AnnouncementModal } from '@/components/features/announcement/AnnouncementModal';
+import { PrivacyConsentModal } from '@/components/features/PrivacyConsentModal';
+import {
+  hasShownPrivacyConsent,
+  migrateLegacyAnalyticsConsent,
+} from '@/services/analytics.service';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useSettingsStore, syncWindowPrefs } from '@/stores/settings.store';
 import { useAuthStore } from '@/stores/auth.store';
+import { useAnnouncementStore } from '@/stores/announcement.store';
 import { cn } from '@/lib/utils';
 
 export function Layout() {
@@ -15,6 +23,7 @@ export function Layout() {
   const { isScanning, scanError, scanSoftware, applyScannedApps, setElectronReady } =
     useSoftwareStore();
   const [launcherOpen, setLauncherOpen] = useState(false);
+  const [privacyConsentOpen, setPrivacyConsentOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +86,16 @@ export function Layout() {
   // 启动时向主进程(权威)查询登录态,回填渲染层会话(仅登录态 + 脱敏资料)
   useEffect(() => {
     void useAuthStore.getState().hydrateSession();
+    migrateLegacyAnalyticsConsent();
+  }, []);
+
+  // 首次启动弹出隐私授权弹窗
+  useEffect(() => {
+    const prefs = useSettingsStore.getState().prefs;
+    if (prefs.sendAnalytics) return;
+    if (hasShownPrivacyConsent()) return;
+    const timer = setTimeout(() => setPrivacyConsentOpen(true), 800);
+    return () => clearTimeout(timer);
   }, []);
 
   // 接通快速启动器:Electron 托盘/全局快捷键事件 + 应用内键盘快捷键(⌘⇧Space)
@@ -115,6 +134,58 @@ export function Layout() {
     };
   }, [navigate]);
 
+  // 公告系统:启动拉取一次 + 每小时轮询刷新(与主进程 monitor 定时器模式一致)。
+  // banner 展示第一条未读且未关闭的 warning 公告;modal 展示第一条未读的 critical
+  // 公告(本次会话内已弹出过的 id 不再重复弹,避免打扰)。
+  const announcements = useAnnouncementStore((s) => s.announcements);
+  const fetchAnnouncements = useAnnouncementStore((s) => s.fetchAnnouncements);
+  const dismissBanner = useAnnouncementStore((s) => s.dismissBanner);
+  const markRead = useAnnouncementStore((s) => s.markRead);
+  const [dismissedModalIds, setDismissedModalIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const start = () => {
+      void fetchAnnouncements();
+      timer = setInterval(() => void fetchAnnouncements(), 60 * 60 * 1000);
+    };
+    if (window.softdesk) {
+      start();
+    } else {
+      // bridge 尚未就绪时轮询等待(与扫描逻辑同样的兜底模式)
+      let attempts = 0;
+      const retry = () => {
+        if (window.softdesk) {
+          start();
+          return;
+        }
+        if (attempts++ < 20) setTimeout(retry, 100);
+      };
+      retry();
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [fetchAnnouncements]);
+
+  const activeBanner = announcements.find(
+    (a) => a.severity === 'warning' && !a.read && !a.dismissed
+  );
+  const activeModal = announcements.find(
+    (a) => a.severity === 'critical' && !a.read && !dismissedModalIds.has(a.id)
+  );
+
+  const handleModalClose = () => {
+    if (!activeModal) return;
+    const id = activeModal.id;
+    setDismissedModalIds((prev) => new Set(prev).add(id));
+    void markRead(id);
+  };
+
+  const handleBannerDismiss = (id: string) => {
+    void dismissBanner(id);
+  };
+
   return (
     <div className="h-screen flex flex-col bg-[#161618] text-slate-100 font-sans antialiased overflow-hidden">
       {/* 顶部窗口拖拽区:固定在窗口最顶部、横跨整宽、高约 1cm,透明且不占布局。
@@ -135,6 +206,14 @@ export function Layout() {
             'bg-gradient-to-br from-[#161618] via-[#1a1a1c] to-[#161618]'
           )}
         >
+          {activeBanner && (
+            <div className="mt-10">
+              <AnnouncementBanner
+                announcement={activeBanner}
+                onDismiss={handleBannerDismiss}
+              />
+            </div>
+          )}
           {isScanning && (
             <div className="flex items-center gap-2 px-8 py-2 text-xs text-violet-300 bg-violet-500/10 border-b border-violet-500/20">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -154,6 +233,16 @@ export function Layout() {
         </main>
       </div>
       <QuickLauncher open={launcherOpen} onClose={() => setLauncherOpen(false)} />
+      {activeModal && (
+        <AnnouncementModal
+          announcement={activeModal}
+          onClose={handleModalClose}
+        />
+      )}
+      <PrivacyConsentModal
+        open={privacyConsentOpen}
+        onClose={() => setPrivacyConsentOpen(false)}
+      />
     </div>
   );
 }

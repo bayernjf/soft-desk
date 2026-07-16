@@ -17,10 +17,12 @@ import {
   Monitor,
   Share2,
   CircleDot,
+  Megaphone,
 } from 'lucide-react';
 import { useSoftwareStore } from '@/stores/software.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { useSettingsStore, type ThemeMode } from '@/stores/settings.store';
+import { useAnnouncementStore } from '@/stores/announcement.store';
 import { CATEGORIES } from '@/data/categories';
 import { cn } from '@/lib/utils';
 import { getAvatarSvg } from '@/lib/avatars';
@@ -58,6 +60,7 @@ const navItems: NavItem[] = [
   { path: '/my-shares', icon: Share2, label: '我的分享' },
   { path: '/statistics', icon: BarChart3, label: '统计分析' },
   { path: '/uninstall', icon: Trash2, label: '软件清理' },
+  { path: '/announcements', icon: Megaphone, label: '公告' },
 ];
 
 export function Sidebar() {
@@ -68,6 +71,7 @@ export function Sidebar() {
   const profile = useAuthStore((s) => s.profile);
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
+  const unreadAnnouncements = useAnnouncementStore((s) => s.unreadCount);
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const currentTab = searchParams.get('tab');
@@ -132,6 +136,11 @@ export function Sidebar() {
                 <span className="flex-1">{item.label}</span>
                 {item.path === '/favorites' && favoriteIds.length > 0 && (
                   <span className="text-[10px] text-slate-500 tabular-nums">{favoriteIds.length}</span>
+                )}
+                {item.path === '/announcements' && unreadAnnouncements > 0 && (
+                  <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-rose-500 text-white tabular-nums">
+                    {unreadAnnouncements > 99 ? '99+' : unreadAnnouncements}
+                  </span>
                 )}
                 {isActive && <ChevronRight className="w-3.5 h-3.5 text-violet-400" />}
               </NavLink>
