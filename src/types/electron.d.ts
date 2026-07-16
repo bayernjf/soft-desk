@@ -189,7 +189,58 @@ export interface UpdaterStatus {
   devMode: boolean;
 }
 
+export type ClientLogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+export interface ClientLogEntry {
+  level: ClientLogLevel;
+  namespace: string;
+  message: string;
+  args: unknown[];
+}
+
+export interface SystemInfo {
+  appVersion: string;
+  platform: string;
+  arch: string;
+  osVersion: string;
+  electronVersion: string;
+  locale: string;
+}
+
+/** 本地公告已读/关闭状态(对应主进程 SQLite announcement_reads 行) */
+export interface AnnouncementReadRow {
+  announcementId: string;
+  readAt: number;
+  dismissedAt: number | null;
+}
+
+export type RecentLogsResult =
+  | {
+      success: true;
+      content: string;
+      lineCount: number;
+      size: number;
+      startedAt: string | null;
+      endedAt: string | null;
+      truncated: boolean;
+    }
+  | { success: false; error: string };
+
+export type ExportDiagnosticLogsResult =
+  | { success: true; filePath: string }
+  | { success: false; canceled?: boolean; error?: string };
+
 export interface SoftdeskBridge {
+  /** 将渲染进程日志发送到主进程统一落盘 */
+  writeClientLog: (entry: ClientLogEntry) => void;
+  /** 获取用于诊断的应用与操作系统信息 */
+  getSystemInfo: () => Promise<SystemInfo>;
+  /** 读取最近一段时间的脱敏日志，最多 2000 行或 500 KB */
+  getRecentLogs: (minutes?: 5 | 15 | 30) => Promise<RecentLogsResult>;
+  /** 使用系统文件管理器打开日志目录 */
+  openLogsDirectory: () => Promise<{ success: boolean; error?: string }>;
+  /** 导出最近 30 分钟诊断日志 */
+  exportDiagnosticLogs: () => Promise<ExportDiagnosticLogsResult>;
   scanSoftware: (smartGrouping?: boolean) => Promise<Software[]>;
   launchSoftware: (
     appPath: string,
@@ -297,6 +348,12 @@ export interface SoftdeskBridge {
   getUpdaterStatus: () => Promise<UpdaterStatus>;
   /** 订阅更新器状态变化事件流,返回取消订阅函数 */
   onUpdaterEvent: (callback: (event: UpdaterEvent) => void) => () => void;
+  /** 读取本地全部公告的已读/关闭状态,供渲染层与云端列表合并计算未读数 */
+  getAnnouncementReads: () => Promise<AnnouncementReadRow[]>;
+  /** 标记某条公告为已读(幂等,已存在则更新 read_at) */
+  markAnnouncementRead: (announcementId: string) => Promise<{ success: boolean }>;
+  /** 标记某条公告的 banner 已关闭(不改变已读状态) */
+  markBannerDismissed: (announcementId: string) => Promise<{ success: boolean }>;
   /** 用系统默认浏览器打开外部 URL,仅允许 http/https 协议 */
   openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
 }
