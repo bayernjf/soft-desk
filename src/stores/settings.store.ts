@@ -38,6 +38,7 @@ interface SettingsStore {
   radial: RadialMenuConfig;
   setTheme: (theme: ThemeMode) => void;
   togglePref: (key: keyof AppPreferences) => void;
+  setPref: (key: keyof AppPreferences, value: boolean) => void;
   setRadialConfig: (patch: Partial<Omit<RadialMenuConfig, 'items'>>) => void;
   setRadialItem: (slot: number, item: Omit<RadialItem, 'slot'> | null) => void;
   resetRadial: () => void;
@@ -189,6 +190,13 @@ export const useSettingsStore = create<SettingsStore>()(
       },
       togglePref: (key) => {
         const prefs = { ...get().prefs, [key]: !get().prefs[key] };
+        set({ prefs });
+        if (key === 'startMinimized' || key === 'minimizeToTray') {
+          syncWindowPrefs(prefs);
+        }
+      },
+      setPref: (key, value) => {
+        const prefs = { ...get().prefs, [key]: value };
         set({ prefs });
         if (key === 'startMinimized' || key === 'minimizeToTray') {
           syncWindowPrefs(prefs);
