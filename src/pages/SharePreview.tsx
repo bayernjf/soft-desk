@@ -106,9 +106,6 @@ export function SharePreview() {
         void incrementViewCount(token);
         trackShareEvent({
           eventType: 'share_view',
-          shareId: data.id,
-          shareToken: token,
-          actorId: profile?.userId ?? null,
           kind: data.kind,
         });
         // 已登录用户: 并行检查是否曾经导入过 & 是否已举报过
@@ -161,8 +158,6 @@ export function SharePreview() {
     if (!loggedIn || !profile?.userId) {
       trackShareEvent({
         eventType: 'share_import_click',
-        shareId: share.id,
-        shareToken: share.shareToken,
         kind: share.kind,
         meta: { blocked_by: 'not_logged_in' },
       });
@@ -177,16 +172,12 @@ export function SharePreview() {
     }
     trackShareEvent({
       eventType: 'share_import_click',
-      shareId: share.id,
-      shareToken: share.shareToken,
-      actorId: profile.userId,
       kind: share.kind,
       meta: alreadyImported ? { reimport: true } : undefined,
     });
 
     setImporting(true);
     setError('');
-    const startedAt = Date.now();
     try {
       const payload = share.payload;
       let importedLabel = '';
@@ -231,11 +222,12 @@ export function SharePreview() {
           );
           trackShareEvent({
             eventType: 'share_import_conflict',
-            shareId: share.id,
-            shareToken: share.shareToken,
-            actorId: profile.userId,
             kind: share.kind,
-            meta: conflicts,
+            meta: {
+              has_conflict: true,
+              radial_slots_required: payload.radial.items.length,
+              radial_slots_available: radialFreeSlots,
+            },
           });
           return;
         }
@@ -251,29 +243,21 @@ export function SharePreview() {
       }
 
       await recordImport(share.id, profile.userId);
-      const durationMs = Date.now() - startedAt;
 
-      // 命中过重命名/冲突,同时也埋一个 conflict 事件供漏斗分析
-      if (Object.keys(conflicts).length > 0) {
+      const hasConflict = Object.keys(conflicts).length > 0;
+      if (hasConflict) {
         trackShareEvent({
           eventType: 'share_import_conflict',
-          shareId: share.id,
-          shareToken: share.shareToken,
-          actorId: profile.userId,
           kind: share.kind,
-          meta: conflicts,
+          meta: { has_conflict: true },
         });
       }
       trackShareEvent({
         eventType: 'share_import_success',
-        shareId: share.id,
-        shareToken: share.shareToken,
-        actorId: profile.userId,
         kind: share.kind,
         meta: {
-          duration_ms: durationMs,
           missing_software: missingCount,
-          ...conflicts,
+          has_conflict: hasConflict,
         },
       });
       setImportDone({ label: importedLabel, targetPath: importedPath });
@@ -306,9 +290,6 @@ export function SharePreview() {
       setAlreadyReported(true);
       trackShareEvent({
         eventType: 'share_report',
-        shareId: share.id,
-        shareToken: share.shareToken,
-        actorId: profile.userId,
         kind: share.kind,
         meta: { reason_length: trimmed.length },
       });
