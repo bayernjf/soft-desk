@@ -1,14 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog, CircleDot, Info } from 'lucide-react';
+import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog, CircleDot, Info, FileText, FolderOpen, Download, MessageSquare, Send, Eye, X, Loader2, History, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { AiModelsSection } from '@/components/features/AiModelsSection';
 import { RadialMenuSection } from '@/components/features/RadialMenuSection';
 import { UpdateSection } from '@/components/features/UpdateSection';
+import { submitFeedback, fetchFeedbackHistory, type FeedbackLogData, type FeedbackHistoryItem } from '@/services/feedback.service';
+import {
+  FEEDBACK_CATEGORIES,
+  FEEDBACK_CATEGORY_I18N_KEYS,
+  FEEDBACK_LIMITS,
+  FEEDBACK_STATUS_I18N_KEYS,
+  FEEDBACK_STATUS_STYLES,
+  type FeedbackCategory,
+} from '@/data/feedback';
+import { APP_LOCALES, setAppLocale, type AppLocale } from '@/lib/i18n';
+import {
+  resetAnalyticsIdentity,
+  giveAnalyticsConsent,
+  revokeAnalyticsConsent,
+} from '@/services/analytics.service';
 
-type TabId = 'appearance' | 'notifications' | 'radial' | 'data' | 'privacy' | 'ai' | 'help' | 'about';
+type TabId = 'appearance' | 'notifications' | 'radial' | 'data' | 'privacy' | 'ai' | 'help' | 'feedback' | 'about';
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
 
@@ -20,6 +37,7 @@ const TAB_IDS: readonly TabId[] = [
   'privacy',
   'ai',
   'help',
+  'feedback',
   'about',
 ];
 
@@ -35,6 +53,7 @@ const ALL_TABS = [
   { id: 'privacy' as TabId, icon: Shield, label: '隐私安全' },
   { id: 'ai' as TabId, icon: Sparkles, label: 'AI 功能' },
   { id: 'help' as TabId, icon: LifeBuoy, label: '帮助' },
+  { id: 'feedback' as TabId, icon: MessageSquare, label: '意见反馈' },
   { id: 'about' as TabId, icon: Info, label: '关于' },
 ];
 
@@ -75,7 +94,362 @@ function Toggle({ checked, onChange, label, description }: ToggleProps) {
   );
 }
 
+const LOG_TIME_OPTIONS = [5, 15, 30] as const;
+
+const LOCALE_LABELS = {
+  'zh-CN': '简体中文',
+  'en-US': 'English',
+} as const satisfies Record<AppLocale, string>;
+
+function FeedbackTab() {
+  const { t, i18n } = useTranslation();
+  const { loggedIn, profile } = useAuthStore();
+
+  const [category, setCategory] = useState<FeedbackCategory>('bug');
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [contact, setContact] = useState('');
+
+  const [logData, setLogData] = useState<FeedbackLogData | null>(null);
+  const [logLoading, setLogLoading] = useState(false);
+  const [logPreview, setLogPreview] = useState(false);
+  const [logMinutes, setLogMinutes] = useState<5 | 15 | 30>(5);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [resultMsg, setResultMsg] = useState('');
+  const [resultOk, setResultOk] = useState(false);
+
+  const [history, setHistory] = useState<FeedbackHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const loadHistory = async () => {
+    if (!profile) return;
+    setHistoryLoading(true);
+    try {
+      const items = await fetchFeedbackHistory(profile.userId);
+      setHistory(items);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (loggedIn && profile && showHistory) {
+      void loadHistory();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loggedIn, profile, showHistory]);
+
+  const fetchLogs = async () => {
+    if (!window.softdesk) return;
+    setLogLoading(true);
+    try {
+      const result = await window.softdesk.getRecentLogs(logMinutes);
+      if (result.success) {
+        setLogData({
+          content: result.content,
+          lineCount: result.lineCount,
+          startedAt: result.startedAt,
+          endedAt: result.endedAt,
+          truncated: result.truncated,
+        });
+        setResultMsg('');
+      } else {
+        setResultMsg(t('feedback.errors.logFetchFailed'));
+        setResultOk(false);
+      }
+    } catch {
+      setResultMsg(t('feedback.errors.logFetchFailed'));
+      setResultOk(false);
+    } finally {
+      setLogLoading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!loggedIn || !profile) {
+      setResultMsg(t('feedback.errors.authRequired'));
+      setResultOk(false);
+      return;
+    }
+    if (!title.trim() || !content.trim()) {
+      setResultMsg(t('feedback.errors.titleAndContentRequired'));
+      setResultOk(false);
+      return;
+    }
+
+    setSubmitting(true);
+    setResultMsg('');
+
+    try {
+      let systemInfo: { appVersion: string; platform: string; arch?: string; osVersion?: string } = { appVersion: 'unknown', platform: 'unknown' };
+      try {
+        const info = await window.softdesk?.getSystemInfo();
+        if (info) {
+          systemInfo = {
+            appVersion: info.appVersion,
+            platform: info.platform,
+            arch: info.arch,
+            osVersion: info.osVersion,
+          };
+        }
+      } catch {
+        // 系统信息获取失败不阻止提交
+      }
+
+      const result = await submitFeedback(
+        profile.userId,
+        { category, title, content, contact },
+        systemInfo,
+        logData
+      );
+
+      if (result.success) {
+        setResultOk(true);
+        setResultMsg(t('feedback.success'));
+        setTitle('');
+        setContent('');
+        setContact('');
+        setLogData(null);
+      } else if ('errorKey' in result) {
+        setResultOk(false);
+        setResultMsg(t(result.errorKey, result.errorOptions));
+      }
+    } catch {
+      setResultOk(false);
+      setResultMsg(t('feedback.errors.submitFailed'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!loggedIn) {
+    return (
+      <div className="space-y-6 max-w-xl">
+        <div>
+          <h2 className="text-base font-semibold text-slate-100 mb-1">{t('feedback.title')}</h2>
+          <p className="text-sm text-slate-500">{t('feedback.subtitle')}</p>
+        </div>
+        <div className="rounded-2xl bg-slate-800/40 border border-slate-800 p-6 text-center">
+          <p className="text-sm text-slate-400">{t('feedback.loginRequired')}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-w-xl">
+      <div>
+        <h2 className="text-base font-semibold text-slate-100 mb-1">{t('feedback.title')}</h2>
+        <p className="text-sm text-slate-500">{t('feedback.subtitle')}</p>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">{t('feedback.fields.category')}</label>
+          <div className="flex flex-wrap gap-2">
+            {FEEDBACK_CATEGORIES.map((categoryId) => (
+              <button
+                key={categoryId}
+                onClick={() => setCategory(categoryId)}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                  category === categoryId
+                    ? 'bg-violet-500/15 text-violet-300 border-violet-500/30'
+                    : 'text-slate-400 border-slate-700/50 hover:text-slate-200'
+                )}
+              >
+                {t(FEEDBACK_CATEGORY_I18N_KEYS[categoryId])}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">{t('feedback.fields.title')}</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={FEEDBACK_LIMITS.title}
+            placeholder={t('feedback.fields.titlePlaceholder')}
+            className="w-full px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">{t('feedback.fields.content')}</label>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            maxLength={FEEDBACK_LIMITS.content}
+            rows={5}
+            placeholder={t('feedback.fields.contentPlaceholder')}
+            className="w-full px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50 resize-none"
+          />
+          <div className="text-xs text-slate-600 mt-1 text-right">{content.length} / {FEEDBACK_LIMITS.content}</div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">{t('feedback.fields.contact')}</label>
+          <input
+            type="text"
+            value={contact}
+            onChange={(e) => setContact(e.target.value)}
+            maxLength={FEEDBACK_LIMITS.contact}
+            placeholder={t('feedback.fields.contactPlaceholder')}
+            className="w-full px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">{t('feedback.logs.title')}</label>
+          <div className="rounded-xl bg-slate-800/40 border border-slate-700/40 p-3">
+            <p className="text-xs text-slate-500 leading-relaxed mb-2">
+              {t('feedback.logs.description')}
+            </p>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-slate-500">{t('feedback.logs.range')}</span>
+              <div className="flex gap-1">
+                {LOG_TIME_OPTIONS.map((minutes) => (
+                  <button
+                    key={minutes}
+                    onClick={() => setLogMinutes(minutes)}
+                    className={cn(
+                      'px-2 py-0.5 rounded-md text-xs font-medium transition-colors border',
+                      logMinutes === minutes
+                        ? 'bg-violet-500/20 text-violet-300 border-violet-500/30'
+                        : 'text-slate-400 border-slate-700/50 hover:text-slate-200'
+                    )}
+                  >
+                    {t('feedback.logs.minutes', { count: minutes })}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {logData ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-slate-300">
+                    {t('feedback.logs.collected', { count: logData.lineCount })}
+                    {logData.truncated && t('feedback.logs.truncated')}
+                  </span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setLogPreview(!logPreview)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-slate-400 text-xs hover:text-slate-200 transition-colors"
+                    >
+                      <Eye className="w-3 h-3" />
+                      {logPreview ? t('feedback.logs.hide') : t('feedback.logs.view')}
+                    </button>
+                    <button
+                      onClick={fetchLogs}
+                      disabled={logLoading}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-slate-400 text-xs hover:text-slate-200 transition-colors"
+                    >
+                      {t('feedback.logs.refetch')}
+                    </button>
+                    <button
+                      onClick={() => setLogData(null)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-slate-400 text-xs hover:text-rose-400 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                      {t('feedback.logs.remove')}
+                    </button>
+                  </div>
+                </div>
+                {logPreview && (
+                  <pre className="max-h-48 overflow-auto rounded-lg bg-slate-900/80 border border-slate-800 p-2 text-xs text-slate-400 whitespace-pre-wrap break-all">
+                    {logData.content || t('feedback.logs.empty')}
+                  </pre>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={fetchLogs}
+                disabled={logLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/15 text-violet-300 border border-violet-500/20 text-xs font-medium hover:bg-violet-500/20 disabled:opacity-50 transition-colors"
+              >
+                {logLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                {logLoading ? t('feedback.logs.fetching') : t('feedback.logs.fetch', { count: logMinutes })}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {resultMsg && (
+          <div className={cn('text-sm', resultOk ? 'text-green-400' : 'text-rose-400')}>
+            {resultMsg}
+          </div>
+        )}
+
+        <button
+          onClick={handleSubmit}
+          disabled={submitting || !title.trim() || !content.trim()}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-medium hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          {submitting ? t('feedback.submitting') : t('feedback.submit')}
+        </button>
+      </div>
+
+      <div className="border-t border-slate-800/60 pt-6">
+        <button
+          onClick={() => setShowHistory(!showHistory)}
+          className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+        >
+          <History className="w-4 h-4" />
+          {showHistory ? t('feedback.history.hide') : t('feedback.history.show')}
+        </button>
+
+        {showHistory && (
+          <div className="mt-4 space-y-2">
+            {historyLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {t('feedback.history.loading')}
+              </div>
+            ) : history.length === 0 ? (
+              <p className="text-sm text-slate-600">{t('feedback.history.empty')}</p>
+            ) : (
+              history.map((item) => (
+                <div key={item.id} className="rounded-xl bg-slate-800/40 border border-slate-700/40 p-3">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-200">{item.title}</span>
+                      {item.has_log && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/15 text-violet-300">{t('feedback.history.hasLog')}</span>
+                      )}
+                    </div>
+                    <span className={cn(
+                      'px-2 py-0.5 rounded text-xs font-medium',
+                      FEEDBACK_STATUS_STYLES[item.status]
+                    )}>
+                      {t(FEEDBACK_STATUS_I18N_KEYS[item.status])}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 line-clamp-2 mb-1">{item.content}</p>
+                  <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <span>{t(FEEDBACK_CATEGORY_I18N_KEYS[item.category])}</span>
+                    <span>·</span>
+                    <span>{new Date(item.created_at).toLocaleString(i18n.resolvedLanguage ?? 'zh-CN')}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Settings() {
+  const { i18n } = useTranslation();
+  const currentLocale: AppLocale = APP_LOCALES.includes(i18n.resolvedLanguage as AppLocale)
+    ? (i18n.resolvedLanguage as AppLocale)
+    : 'zh-CN';
   // 支持通过 URL query 深链定位 tab (例如 /settings?tab=radial),
   // 便于从分享导入成功页 / 通知栏等外部入口直接跳到具体设置分区。
   const [searchParams, setSearchParams] = useSearchParams();
@@ -87,9 +461,14 @@ export function Settings() {
   };
   const initialTab: TabId = resolveTab(searchParams.get('tab'));
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  const isInternalChange = useRef(false);
 
   // URL query 变化 (浏览器前进/后退 / 外部再次深链) 时同步 tab
   useEffect(() => {
+    if (isInternalChange.current) {
+      isInternalChange.current = false;
+      return;
+    }
     const next = resolveTab(searchParams.get('tab'));
     if (next !== activeTab) {
       setActiveTab(next);
@@ -99,6 +478,7 @@ export function Settings() {
 
   // 侧栏点击切 tab 时,把 URL query 同步更新 (replace 不加历史条目,避免回退地狱)
   const changeTab = (id: TabId) => {
+    isInternalChange.current = true;
     setActiveTab(id);
     const next = new URLSearchParams(searchParams);
     if (id === 'appearance') {
@@ -113,8 +493,11 @@ export function Settings() {
   const setTheme = useSettingsStore((s) => s.setTheme);
   const prefs = useSettingsStore((s) => s.prefs);
   const togglePref = useSettingsStore((s) => s.togglePref);
+  const [analyticsResetMsg, setAnalyticsResetMsg] = useState('');
   const scanSoftware = useSoftwareStore((s) => s.scanSoftware);
   const [version, setVersion] = useState('1.0.0');
+  const [logAction, setLogAction] = useState<'open' | 'export' | null>(null);
+  const [logMessage, setLogMessage] = useState('');
 
   useEffect(() => {
     window.softdesk?.getUpdaterStatus().then((s) => {
@@ -130,6 +513,38 @@ export function Settings() {
 
   const openStorage = () => {
     window.softdesk?.openUserData?.();
+  };
+
+  const openLogs = async () => {
+    if (!window.softdesk) return;
+    setLogAction('open');
+    setLogMessage('');
+    try {
+      const result = await window.softdesk.openLogsDirectory();
+      setLogMessage(result.success ? '已打开日志目录' : result.error ?? '打开日志目录失败');
+    } catch {
+      setLogMessage('打开日志目录失败');
+    } finally {
+      setLogAction(null);
+    }
+  };
+
+  const exportLogs = async () => {
+    if (!window.softdesk) return;
+    setLogAction('export');
+    setLogMessage('');
+    try {
+      const result = await window.softdesk.exportDiagnosticLogs();
+      if (result.success) {
+        setLogMessage('诊断日志已导出');
+      } else if (!('canceled' in result && result.canceled)) {
+        setLogMessage(('error' in result && result.error) || '导出诊断日志失败');
+      }
+    } catch {
+      setLogMessage('导出诊断日志失败');
+    } finally {
+      setLogAction(null);
+    }
   };
 
   return (
@@ -155,7 +570,7 @@ export function Settings() {
                 )}
               >
                 <Icon className="w-4 h-4" />
-                {tab.label}
+                {tab.id === 'feedback' ? i18n.t('feedback.title') : tab.label}
               </button>
             );
           })}
@@ -186,6 +601,26 @@ export function Settings() {
                       )}
                     >
                       {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{i18n.t('settings.language')}</div>
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-800/40 rounded-xl w-fit">
+                  {APP_LOCALES.map((locale) => (
+                    <button
+                      key={locale}
+                      onClick={() => void setAppLocale(locale)}
+                      className={cn(
+                        'px-4 py-2 rounded-lg text-xs font-medium transition-all border',
+                        currentLocale === locale
+                          ? 'bg-gradient-to-r from-violet-500/15 to-fuchsia-500/10 text-violet-300 border-violet-500/20'
+                          : 'text-slate-400 border-transparent hover:text-slate-300'
+                      )}
+                    >
+                      {LOCALE_LABELS[locale]}
                     </button>
                   ))}
                 </div>
@@ -259,6 +694,39 @@ export function Settings() {
                   打开存储位置
                 </button>
               </div>
+
+              <div className="p-4 rounded-xl bg-slate-800/40 mt-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-violet-500/15 text-violet-400 flex items-center justify-center shrink-0">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-slate-300 mb-1">诊断与日志</div>
+                    <div className="text-xs text-slate-500 leading-relaxed">
+                      日志保存在本机并自动脱敏。导出内容包含系统信息和最近 30 分钟日志。
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button
+                    onClick={() => void openLogs()}
+                    disabled={logAction !== null}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/70 text-slate-300 text-xs font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    {logAction === 'open' ? '正在打开…' : '打开日志目录'}
+                  </button>
+                  <button
+                    onClick={() => void exportLogs()}
+                    disabled={logAction !== null}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/15 text-violet-300 border border-violet-500/20 text-xs font-medium hover:bg-violet-500/20 disabled:opacity-50 transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    {logAction === 'export' ? '正在导出…' : '导出诊断日志'}
+                  </button>
+                </div>
+                {logMessage && <div className="text-xs text-slate-400 mt-2">{logMessage}</div>}
+              </div>
             </div>
           )}
 
@@ -274,10 +742,51 @@ export function Settings() {
               />
               <Toggle
                 checked={prefs.sendAnalytics}
-                onChange={() => togglePref('sendAnalytics')}
+                onChange={() => {
+                  const next = !prefs.sendAnalytics;
+                  if (next) {
+                    useSettingsStore.getState().setPref('sendAnalytics', true);
+                    giveAnalyticsConsent();
+                  } else {
+                    useSettingsStore.getState().setPref('sendAnalytics', false);
+                    revokeAnalyticsConsent();
+                  }
+                }}
                 label="使用数据统计"
                 description="匿名的使用数据帮助我们改进产品"
               />
+              <div className="pt-4 border-t border-slate-800/60">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-slate-200">重置统计标识</div>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      清除本地匿名标识，后续数据将以新的匿名身份上报。已上报的数据无法关联到你。
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      resetAnalyticsIdentity();
+                      setAnalyticsResetMsg('统计标识已重置');
+                      setTimeout(() => setAnalyticsResetMsg(''), 3000);
+                    }}
+                    disabled={!prefs.sendAnalytics}
+                    className={cn(
+                      'shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                      prefs.sendAnalytics
+                        ? 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/60'
+                        : 'bg-slate-800/30 text-slate-600 cursor-not-allowed'
+                    )}
+                  >
+                    重置
+                  </button>
+                </div>
+                {analyticsResetMsg && (
+                  <div className="mt-3 text-xs text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {analyticsResetMsg}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -359,6 +868,8 @@ export function Settings() {
               </div>
             </div>
           )}
+
+          {activeTab === 'feedback' && <FeedbackTab />}
 
           {activeTab === 'about' && (
             <div className="space-y-6 max-w-xl">

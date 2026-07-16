@@ -148,6 +148,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
   html.light .bg-slate-900\/40,
   html.light .bg-slate-900\/50,
   html.light .bg-slate-900\/60,
+  html.light .bg-slate-900\/80,
   html.light .bg-slate-900 {
     background-color: var(--l-panel);
   }
