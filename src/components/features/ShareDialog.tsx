@@ -44,7 +44,6 @@ export function ShareDialog({
   const [error, setError] = useState('');
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareToken, setShareToken] = useState<string | null>(null);
-  const [shareId, setShareId] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
@@ -114,12 +113,8 @@ export function ShareDialog({
       if (result.success && result.shareToken) {
         setShareToken(result.shareToken);
         setShareUrl(result.shareUrl ?? buildShareUrl(result.shareToken));
-        setShareId(result.shareId ?? null);
         trackShareEvent({
           eventType: 'share_create',
-          shareId: result.shareId ?? null,
-          shareToken: result.shareToken,
-          actorId: profile.userId,
           kind,
           meta: { expiry },
         });
@@ -141,9 +136,6 @@ export function ShareDialog({
       setTimeout(() => setCopied(false), 2000);
       trackShareEvent({
         eventType: 'share_copy',
-        shareId,
-        shareToken,
-        actorId: profile?.userId ?? null,
         kind,
       });
     } catch {

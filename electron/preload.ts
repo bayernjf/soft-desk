@@ -1,6 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('softdesk', {
+  writeClientLog: (entry: {
+    level: 'debug' | 'info' | 'warn' | 'error';
+    namespace: string;
+    message: string;
+    args: unknown[];
+  }) => ipcRenderer.send('logs:write', entry),
+  getSystemInfo: () => ipcRenderer.invoke('app:getSystemInfo'),
+  getRecentLogs: (minutes: 5 | 15 | 30 = 5) => ipcRenderer.invoke('logs:getRecent', minutes),
+  openLogsDirectory: () => ipcRenderer.invoke('logs:openDirectory'),
+  exportDiagnosticLogs: () => ipcRenderer.invoke('logs:export'),
   scanSoftware: (smartGrouping?: boolean) => ipcRenderer.invoke('software:scan', smartGrouping),
   launchSoftware: (appPath: string, softwareId?: string) =>
     ipcRenderer.invoke('software:launch', appPath, softwareId),
@@ -124,5 +134,10 @@ contextBridge.exposeInMainWorld('softdesk', {
     ipcRenderer.on('updater:event', handler);
     return () => ipcRenderer.removeListener('updater:event', handler);
   },
+  getAnnouncementReads: () => ipcRenderer.invoke('announcement:getReads'),
+  markAnnouncementRead: (announcementId: string) =>
+    ipcRenderer.invoke('announcement:markRead', announcementId),
+  markBannerDismissed: (announcementId: string) =>
+    ipcRenderer.invoke('announcement:dismissBanner', announcementId),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 });

@@ -66,7 +66,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron',
-            rollupOptions: { external: ['electron', 'better-sqlite3', 'ws', 'uiohook-napi'] },
+            rollupOptions: { external: ['electron', 'electron-log', 'better-sqlite3', 'ws', 'uiohook-napi'] },
           },
           define: {
             'process.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),

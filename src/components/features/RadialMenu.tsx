@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RadialOpenPayload, RadialRenderItem, RadialStyle } from '@/types';
 import { getRadialStyleTokens } from './radial-styles';
+import { trackProductEvent } from '@/services/analytics.service';
 
 const INNER_R = 56;
 const OUTER_R = 140;
@@ -87,6 +88,7 @@ export function RadialMenu() {
       setPage(0);
       setAnimPhase('idle');
       requestAnimationFrame(() => requestAnimationFrame(() => setMounted(true)));
+      void trackProductEvent({ eventType: 'radial_opened' });
     });
     return () => unsub?.();
   }, []);
@@ -237,6 +239,10 @@ export function RadialMenu() {
     const item = itemBySlot.get(slot);
     if (item && !item.unavailable) {
       window.softdesk?.radialLaunch?.({ type: item.type, targetId: item.targetId });
+      void trackProductEvent({
+        eventType: 'radial_launch',
+        featureCategory: item.type,
+      });
     }
     close();
   };

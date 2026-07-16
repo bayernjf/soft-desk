@@ -94,11 +94,7 @@ export function MyShares() {
       setTimeout(() => setCopiedId(null), 2000);
       trackShareEvent({
         eventType: 'share_copy',
-        shareId: share.id,
-        shareToken: share.shareToken,
-        actorId: profile?.userId ?? null,
         kind: share.kind,
-        meta: { from: 'my_shares' },
       });
     } catch {
       // ignore
@@ -113,9 +109,6 @@ export function MyShares() {
       setConfirmRevoke(null);
       trackShareEvent({
         eventType: 'share_revoke',
-        shareId: share.id,
-        shareToken: share.shareToken,
-        actorId: profile.userId,
         kind: share.kind,
       });
     }
@@ -129,9 +122,6 @@ export function MyShares() {
       setConfirmDelete(null);
       trackShareEvent({
         eventType: 'share_delete',
-        shareId: share.id,
-        shareToken: share.shareToken,
-        actorId: profile.userId,
         kind: share.kind,
       });
     }
