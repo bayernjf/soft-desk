@@ -98,13 +98,28 @@ export function applyTheme(theme: ThemeMode) {
 }
 
 let systemThemeWatching = false;
-export function watchSystemTheme() {
+let systemThemeCleanup: (() => void) | null = null;
+
+export function watchSystemTheme(): (() => void) | void {
   if (systemThemeWatching || typeof window === 'undefined' || !window.matchMedia) return;
   systemThemeWatching = true;
   const mql = window.matchMedia('(prefers-color-scheme: dark)');
-  mql.addEventListener('change', () => {
+  const handler = () => {
     if (useSettingsStore.getState().theme === 'system') applyTheme('system');
-  });
+  };
+  mql.addEventListener('change', handler);
+  systemThemeCleanup = () => {
+    mql.removeEventListener('change', handler);
+    systemThemeWatching = false;
+  };
+  return systemThemeCleanup;
+}
+
+export function unwatchSystemTheme(): void {
+  if (systemThemeCleanup) {
+    systemThemeCleanup();
+    systemThemeCleanup = null;
+  }
 }
 
 export function syncWindowPrefs(prefs: AppPreferences) {
