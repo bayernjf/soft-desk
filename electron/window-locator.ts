@@ -268,8 +268,31 @@ export interface FocusResult {
  * - 成功切前台:{ running:true, activated:true }
  * 非 Windows 平台直接返回 { running:false, activated:false } 让调用方走默认逻辑。
  */
+// Windows 允许的应用路径前缀白名单
+const ALLOWED_WIN_PATH_PREFIXES = [
+  'C:\\Program Files',
+  'C:\\Program Files (x86)',
+  process.env.LOCALAPPDATA || '',
+  process.env.PROGRAMDATA || '',
+].filter(Boolean);
+
+function isPathAllowed(exePath: string): boolean {
+  // 规范化路径分隔符并转为小写比较
+  const normalized = exePath.replace(/\//g, '\\').toLowerCase();
+  return ALLOWED_WIN_PATH_PREFIXES.some(prefix =>
+    normalized.startsWith(prefix.toLowerCase())
+  );
+}
+
 export async function focusExistingAppWindow(exePath: string): Promise<FocusResult> {
   if (process.platform !== 'win32') return { running: false, activated: false };
+
+  // 路径白名单验证
+  if (!isPathAllowed(exePath)) {
+    logger.warn('focusExistingAppWindow: path not in whitelist:', exePath);
+    return { running: false, activated: false };
+  }
+
   try {
     const safePath = exePath.replace(/'/g, "''");
     const script = FOCUS_WIN_SCRIPT_TEMPLATE.replace('__EXE_PATH__', safePath);
