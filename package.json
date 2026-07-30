@@ -83,6 +83,7 @@
       "build/icon.*",
       "build/trayTemplate*.png"
     ],
+    "afterPack": "./scripts/ad-hoc-sign.cjs",
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**",
       "**/node_modules/uiohook-napi/**"
@@ -96,6 +97,7 @@
     ],
     "mac": {
       "icon": "build/icon.icns",
+      "identity": null,
       "target": [
         "dmg",
         "zip"
