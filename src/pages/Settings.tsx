@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog, CircleDot, Info, FileText, FolderOpen, Download, MessageSquare, Send, Eye, X, Loader2, History, CheckCircle2 } from 'lucide-react';
+import { Monitor, Bell, Database, Shield, Sparkles, LifeBuoy, Trash2, FolderCog, CircleDot, Info, FileText, FolderOpen, Download, MessageSquare, Send, Eye, X, Loader2, History, CheckCircle2, Cloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useSoftwareStore } from '@/stores/software.store';
@@ -734,6 +734,43 @@ export function Settings() {
             <div className="space-y-0 max-w-lg border-t border-slate-800/80">
               <h2 className="text-base font-semibold text-slate-100 mb-1 pt-0">隐私安全</h2>
               <p className="text-sm text-slate-500 mb-6">数据隐私由你掌控，默认不上传</p>
+
+              {/* 云同步数据说明 */}
+              <div className="p-4 rounded-xl bg-violet-500/5 border border-violet-500/20 mb-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-violet-500/15 text-violet-400 flex items-center justify-center shrink-0">
+                    <Cloud className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-slate-200 mb-2">登录后云端同步的数据</div>
+                    <p className="text-xs text-slate-400 leading-relaxed mb-3">
+                      当你登录 SoftDesk 账号后，以下数据会同步到你的账号，以便在多设备间保持一致。这些数据仅与你本人绑定，不会与其他用户共享。
+                    </p>
+                    <ul className="space-y-1.5 text-xs text-slate-400">
+                      <li className="flex items-start gap-2">
+                        <span className="text-violet-400 mt-0.5">•</span>
+                        <span><strong className="text-slate-300">收藏夹</strong> — 你收藏的软件列表和分组</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-violet-400 mt-0.5">•</span>
+                        <span><strong className="text-slate-300">AI 配置</strong> — AI Provider 名称、模型、端点（API Key 不会同步）</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-violet-400 mt-0.5">•</span>
+                        <span><strong className="text-slate-300">径向菜单</strong> — 扇区配置、快捷键绑定、已添加的软件</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-violet-400 mt-0.5">•</span>
+                        <span><strong className="text-slate-300">工作流</strong> — 软件组合的名称、描述和成员列表</span>
+                      </li>
+                    </ul>
+                    <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+                      本地数据（扫描到的软件列表、使用时长记录）始终保留在你的设备上，不会同步到云端。
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <Toggle
                 checked={prefs.anonymizeData}
                 onChange={() => togglePref('anonymizeData')}

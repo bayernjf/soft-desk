@@ -159,28 +159,73 @@ npm run rebuild              # 重编译原生模块（better-sqlite3/uiohook-na
 
 **dev snapshot 覆盖机制**：每次构建前先删除旧的 snapshot release，再重建，保证 assets 始终只有最新的一份。
 
-### 常用指令
+### Snapshot 版本管理规则（必须遵守）
 
-#### 「按 git-commit-message.md 推送代码」
+- snapshot 版本号固定为 `0.0.0-dev`，**不包含日期、commit hash 等变化后缀**
+- artifact 文件名通过 electron-builder `artifactName` 配置，必须固定（不含版本号或使用固定版本号），确保新构建能覆盖旧文件
+- publish 前必须先删除 snapshot release 上的旧 assets，防止文件堆积
+- 正式 release（vX.Y.Z）保留历史文件，不删除旧 assets
+- `scripts/set-version.cjs`（如有）是版本注入的唯一入口，snapshot 模式输出 `0.0.0-dev`
+
+### 三条核心指令（开发者说以下话时执行）
+
+#### 1. 「提交代码」——仅 commit + push 当前分支，不合并
 
 1. `git status` 检查改动
-2. 按原子规则拆分 commit（参考 `.trae/rules/git-commit-message.md`）
-3. `git pull --rebase`（push 前必须先 pull）
+2. 分析改动，按原子规则拆分 commit（参考 `.trae/rules/git-commit-message.md`）
+3. `git pull --rebase`（push 前必须先 pull，有冲突则报告后停止）
 4. `git add <具体文件> && git commit -F <msg-file>`（用 -F 避免 shell 转义问题）
 5. 重复直到所有改动提交完
 6. `git push origin <当前分支>`
 
-#### 「创建 PR」
+#### 2. 「提交代码并合并到 dev」——全自动（默认日常流程）
 
-1. 先验证（check + lint + test）
-2. 提交并推送当前分支
-3. `gh pr create` 后停止，等待 review
+1. **先验证**：跑 `npm run check` + `npm run lint` + `npm run test` + `npm run build`，**失败则停止并报告错误**
+2. 提交并推送当前分支（同上步骤 1–6）
+3. `git fetch origin dev`
+4. 冲突预检：`git merge --no-commit --no-ff origin/dev`
+   - 有冲突 → `git merge --abort`，输出冲突文件列表，**停止，不自动解决**
+   - 无冲突 → `git merge --abort` 继续
+5. 收集未合入 dev 的 commits，生成 PR 标题和描述（用下方模板）
+6. `gh pr create --base dev --head <当前分支>` 创建 PR
+7. `git checkout dev && git pull origin dev && git merge --no-ff <当前分支> && git push origin dev`
+8. 输出 PR 链接 + merge 结果，`git checkout <原分支>`
+
+#### 3. 「创建 PR」——仅建 PR 不合并（核心/安全/大改动留 review）
+
+1. 同上步骤 1（验证）+ 步骤 2（提交推送）
+2. `gh pr create` 后**停止**，不执行本地 merge
+3. 输出 PR 链接等待手动 review
+
+### PR 模板
+
+```markdown
+## 改动摘要
+- ...
+
+## 影响范围
+- [ ] Main Process / [ ] Renderer / [ ] Scanner / [ ] IPC / [ ] CI/CD / [ ] Docs
+
+## 验证
+- [x] tsc 通过
+- [x] lint 通过
+- [x] 单测通过
+- [x] 构建通过
+- [ ] 手动测试
+
+Closes #<issue号>
+```
 
 ### 冲突规则
 
 - **push 前必须先 `git pull --rebase`**
 - 发现冲突先解决再 push
 - **禁止 AI 自动解决复杂冲突**，报告文件列表和冲突类型，等待开发者处理
+- 开发者说「继续合并」后从冲突检查步骤继续
+
+### 发布到 main
+
+**不自动**。必须手动从 `dev` 提 PR 到 `main`，review 后合并，合并后自动触发 patch 版本发版。
 
 ---
 
@@ -232,3 +277,7 @@ npm run rebuild              # 重编译原生模块（better-sqlite3/uiohook-na
 - 不要用中文写 commit message
 - 不要引入 pnpm-lock.yaml 或 yarn.lock
 - 不要手动改 `release/` 目录下的打包产物
+- 不要创建假的占位图片文件（几字节的无效文本），必须用真实图片
+- 不要往 IPC 通道里传敏感数据（密码、token 等），优先用主进程本地存储
+- 不要在渲染进程直接访问 Node.js API，必须通过 preload 白名单桥接
+- 不要在用户未同意的情况下收集任何使用数据（analytics 默认关闭）
