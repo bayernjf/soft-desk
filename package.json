@@ -15,7 +15,7 @@
     "check": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "electron-builder install-app-deps && node scripts/sign-dev-electron.cjs",
     "rebuild": "electron-rebuild -f -w better-sqlite3,uiohook-napi",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && cross-env ELECTRON_BUILDER_CACHE=./.cache/electron-builder ELECTRON_CACHE=./.cache/electron ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --mac --publish never",
