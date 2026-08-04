@@ -37,12 +37,12 @@ create index if not exists idx_favorites_user_id on favorites(user_id);
 -- 启用 RLS
 alter table favorites enable row level security;
 
--- 策略：用户只能操作自己的收藏（user_id 由应用传入）
+-- 策略：用户只能操作自己的收藏
 create policy "用户可读写自己的收藏"
   on favorites
   for all
-  using (user_id = current_setting('app.current_user_id', true))
-  with check (user_id = current_setting('app.current_user_id', true));
+  using (user_id = auth.uid()::text)
+  with check (user_id = auth.uid()::text);
 ```
 
 ## 4. 创建 favorite_groups 表（收藏分组跨设备同步）
@@ -72,8 +72,8 @@ alter table favorite_groups enable row level security;
 create policy "用户可读写自己的收藏分组"
   on favorite_groups
   for all
-  using (user_id = current_setting('app.current_user_id', true))
-  with check (user_id = current_setting('app.current_user_id', true));
+  using (user_id = auth.uid()::text)
+  with check (user_id = auth.uid()::text);
 
 -- favorites 表增加 group_id 字段，用于关联分组
 alter table favorites add column if not exists group_id text;
@@ -145,12 +145,12 @@ create index if not exists idx_workflows_user_platform on workflows(user_id, pla
 -- 启用 RLS
 alter table workflows enable row level security;
 
--- 策略：用户只能操作自己的工作流（user_id 由应用传入）
+-- 策略：用户只能操作自己的工作流
 create policy "用户可读写自己的工作流"
   on workflows
   for all
-  using (user_id = current_setting('app.current_user_id', true))
-  with check (user_id = current_setting('app.current_user_id', true));
+  using (user_id = auth.uid()::text)
+  with check (user_id = auth.uid()::text);
 ```
 
 ## 7. 创建 radial_configs 表（径向菜单配置同平台设备同步）
