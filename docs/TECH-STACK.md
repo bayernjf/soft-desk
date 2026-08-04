@@ -24,7 +24,8 @@
 | **主进程入口** | main.ts | [electron/main.ts](file:///Users/jiangfeng/000mycodes/soft-desk/electron/main.ts) | 窗口管理、托盘、IPC 路由 |
 | **预加载脚本** | preload.ts | [electron/preload.ts](file:///Users/jiangfeng/000mycodes/soft-desk/electron/preload.ts) | 安全的渲染进程 ↔ 主进程桥接 |
 | **本地数据库** | better-sqlite3 | ^12.11.1 | 同步 SQLite，存储软件列表、使用记录、图标缓存 |
-| **全局快捷键** | uiohook-napi | ^1.5.5 | 系统级全局快捷键监听（径向菜单触发） |
+| **全局快捷键** | Electron globalShortcut | - | 系统级全局快捷键（径向菜单触发 / 快速启动器） |
+| **鼠标中键监听** | uiohook-napi | ^1.5.5 | 原生鼠标中键全局监听（径向菜单唤出，需 macOS 辅助功能权限） |
 | **WebSocket** | ws | ^8.21.0 | 主进程 ↔ 渲染进程实时通信（扫描进度等） |
 | **macOS 扫描** | scanner.ts | [electron/scanner.ts](file:///Users/jiangfeng/000mycodes/soft-desk/electron/scanner.ts) | Spotlight + LSApplicationCategoryType + 自定义分类 |
 | **Windows 扫描** | scanner-win.ts | [electron/scanner-win.ts](file:///Users/jiangfeng/000mycodes/soft-desk/electron/scanner-win.ts) | 注册表 + 开始菜单 + Win32 ExtractIconEx P/Invoke |
