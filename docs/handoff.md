@@ -248,7 +248,7 @@ WHERE u.id IS NULL;
 
 - **ai_configs** / **radial_configs** 创建时已用 `uuid` + `auth.uid()`，无需迁移
 - 客户端服务层已 `.eq('user_id', userId)` + Auth session，**不必为 Step 1/2 改应用代码**
-- `SUPABASE_SETUP.md` 仍写旧的 `current_setting` 策略；迁移完成后应同步改文档，避免按文档重建库再现漏洞
+- `SUPABASE_SETUP.md` 已同步为 `auth.uid()::text` 策略（2026-07-31），与生产现状一致
 - **不要**按旧 handoff 假设「三表仍是 current_setting」原样执行旧脚本；以本文 Step 1 → Step 2 为准
 
 ---
@@ -258,5 +258,5 @@ WHERE u.id IS NULL;
 | 文件 | 状态 |
 |------|------|
 | `src/pages/Settings.tsx` | ✅ 已提交（隐私声明） |
-| `SUPABASE_SETUP.md` | ⏳ 待 Step 完成后同步更新文档中的 RLS 示例 |
+| `SUPABASE_SETUP.md` | ✅ 已更新 RLS 示例为 `auth.uid()::text`（2026-07-31） |
 | `docs/handoff.md` | 本文件（2026-07-30 按生产核实结果修订） |
