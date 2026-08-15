@@ -16,7 +16,8 @@ SoftDesk 是一款跨平台本地软件管理与智能启动工具，支持 macO
 - **状态管理**：Zustand
 - **云同步/认证**：Supabase
 - **本地数据库**：better-sqlite3
-- **全局快捷键**：uiohook-napi
+- **全局快捷键**：Electron globalShortcut
+- **鼠标中键监听**：uiohook-napi（需 macOS 辅助功能权限）
 
 ### 项目结构
 
@@ -54,7 +55,7 @@ soft-desk/
 
 ### 平台注意事项
 
-- **主进程 vs 渲染进程**：`electron/` 下是主进程代码，`src/` 下是渲染进程代码。主进程通过 `preload.ts` 暴露的 `window.electronAPI` 与渲染进程通信。
+- **主进程 vs 渲染进程**：`electron/` 下是主进程代码，`src/` 下是渲染进程代码。主进程通过 `preload.ts` 暴露的 `window.softdesk` 与渲染进程通信。
 - **跨平台扫描**：`scanner.ts`（macOS）和 `scanner-win.ts`（Windows）是两套独立实现，通过 `CROSS_PLATFORM_RULES` 对齐 bundleId。
 - **原生模块**：`better-sqlite3` 和 `uiohook-napi` 需要针对 Electron 版本重编译（`npm run rebuild`）。
 - **preload CJS**：preload 用 esbuild 单独打包成纯净 CJS，不要改 vite.config.ts 里的 `preload-force-cjs` 插件逻辑。
@@ -249,7 +250,7 @@ Closes #<issue号>
 | 文件 | 用途 |
 |------|------|
 | `electron/main.ts` | 主进程入口（窗口/托盘/IPC 注册） |
-| `electron/preload.ts` | preload 脚本（`window.electronAPI` 桥接） |
+| `electron/preload.ts` | preload 脚本（`window.softdesk` 桥接） |
 | `electron/scanner.ts` | macOS 软件扫描 + 图标提取 |
 | `electron/scanner-win.ts` | Windows 软件扫描 + ExtractIconEx |
 | `electron/updater.ts` | 自动更新（electron-updater + 系统通知） |
