@@ -31,5 +31,8 @@ release
 # electron-builder local caches (electron / winCodeSign / etc.)
 .cache/
 
+# CodeGraph local index
+.codegraph/
+
 .env*
 !.env.example
