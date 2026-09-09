@@ -65,7 +65,7 @@
 
 在 Supabase SQL Editor 执行迁移文件（幂等，可反复执行；内含验证语句与回滚语句）：
 
-**[`.trae/documents/Favorite-Groups-RLS-Fix.sql`](../.trae/documents/Favorite-Groups-RLS-Fix.sql)**
+**[`supabase/migrations/20260909222343_favorite_groups_rls_fix.sql`](../supabase/migrations/20260909222343_favorite_groups_rls_fix.sql)**
 
 #### Step 1 验证
 

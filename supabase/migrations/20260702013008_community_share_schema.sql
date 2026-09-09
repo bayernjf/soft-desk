@@ -1,7 +1,7 @@
 -- ============================================================================
 -- SoftDesk 社区分享功能 - 数据库建表脚本
 -- 文档版本: v1.0
--- 关联 PRD: .trae/documents/PRD-Community-Share.md
+-- 关联 PRD: docs/PRD-Community-Share.md
 --
 -- 执行方式: 在 Supabase SQL Editor 中依次执行下列 SQL
 -- 前置依赖: 已存在 workflows / favorites / favorite_groups / radial_configs 表
