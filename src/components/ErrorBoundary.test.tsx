@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { Outlet, RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { ErrorBoundary, RouteErrorBoundary } from './ErrorBoundary';
 
@@ -31,6 +31,7 @@ function renderRoute(thrown: unknown) {
           </div>
         ),
         children: [
+          { index: true, element: <p>HOME</p> },
           { path: 'boom', element: <Boom thrown={thrown} />, errorElement: <RouteErrorBoundary /> },
         ],
       },
@@ -61,13 +62,22 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('kaboom')).toBeTruthy();
   });
 
-  it('offers a recovery action', () => {
+  it('recovers by resetting its own state, not by reloading the window', async () => {
+    let shouldThrow = true;
+    function Toggle() {
+      if (shouldThrow) throw new Error('kaboom');
+      return <p>RECOVERED</p>;
+    }
     render(
       <ErrorBoundary>
-        <Boom thrown={new Error('kaboom')} />
+        <Toggle />
       </ErrorBoundary>
     );
-    expect(screen.getByRole('button', { name: '重新加载' })).toBeTruthy();
+    expect(screen.getByText('kaboom')).toBeTruthy();
+
+    shouldThrow = false;
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('RECOVERED')).toBeTruthy();
   });
 
   it('exposes the stack behind a details toggle', () => {
@@ -124,5 +134,13 @@ describe('RouteErrorBoundary', () => {
   it('falls back to a placeholder when the message is empty', () => {
     renderRoute(new Error(''));
     expect(screen.getByText('未知错误')).toBeTruthy();
+  });
+
+  // 生产渲染层走 file://,整页重载会落到 file:///settings 这种不存在的路径上白屏,
+  // 所以恢复动作必须是路由跳转
+  it('recovers by navigating home rather than reloading', async () => {
+    renderRoute(new Error('page blew up'));
+    fireEvent.click(screen.getByRole('button', { name: '返回首页' }));
+    expect(await screen.findByText('HOME')).toBeTruthy();
   });
 });

@@ -1,6 +1,6 @@
 import { Component, useEffect } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
-import { useRouteError } from 'react-router-dom';
+import { useRouteError, useNavigate } from 'react-router-dom';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
 import { createLogger } from '@/lib/logger';
 
@@ -73,16 +73,20 @@ function ErrorFallback({
  */
 export function RouteErrorBoundary() {
   const error = useRouteError();
+  const navigate = useNavigate();
 
   useEffect(() => {
     logger.error('route render failed', error);
   }, [error]);
 
+  // 不能用 location.reload():生产环境渲染层走 file://,而 createBrowserRouter
+  // 已把 location 改写成 file:///settings 这类不存在的路径,整页重载会直接白屏。
+  // 路由跳转会清掉 React Router 的错误态,是这里唯一安全的恢复方式。
   return (
     <ErrorFallback
       error={error}
-      onRetry={() => window.location.reload()}
-      retryLabel="重新加载"
+      onRetry={() => navigate('/', { replace: true })}
+      retryLabel="返回首页"
     />
   );
 }
@@ -108,8 +112,8 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: u
         <div className="h-screen bg-[#161618] text-slate-100 font-sans antialiased">
           <ErrorFallback
             error={this.state.error}
-            onRetry={() => window.location.reload()}
-            retryLabel="重新加载"
+            onRetry={() => this.setState({ error: null })}
+            retryLabel="重试"
           />
         </div>
       );
