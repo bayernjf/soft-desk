@@ -20,7 +20,7 @@
 
 并明确说明：API Key 不会同步，本地数据（扫描到的软件、使用记录）仅保留在设备上。
 
-### 2. 生产现状核实（2026-07-30 ✅）
+### 2. 生产现状核实（2026-07-30 ✅，2026-09-09 复核仍成立 ⚠️）
 
 原 handoff 假设三表仍用 `current_setting('app.current_user_id')`。**生产库已不完全是该状态**，核实结果如下：
 
@@ -38,6 +38,22 @@
 2. `favorites` / `workflows` 的 RLS 已用 `auth.uid()::text`，**不是**文档里的 `current_setting`；安全边界基本到位。
 3. 三表 `user_id` 仍是 text、无 FK → 属于对齐 `ai_configs` 的可选加固，非紧急。
 4. 数据可安全转 uuid（orphans = 0）。
+
+#### 2026-09-09 复核（仅只读探测，未改动任何数据）
+
+用 `.env` 里的 anon key 直接打 PostgREST，未登录状态下逐表 `SELECT`：
+
+| 表 | 匿名 SELECT 结果 |
+|---|---|
+| `favorite_groups` | **返回真实行**（`content-range=0-0/2`，含他人 `user_id`）→ 漏洞仍在 |
+| `favorites` / `workflows` / `ai_configs` / `radial_configs` | 返回 0 行 → RLS 生效 |
+
+写权限用匹配不到任何行的过滤条件（`?id=eq.-1`）探测，未产生任何变更：
+`PATCH` 与 `DELETE` 均返回 **HTTP 204**，即匿名角色对 `favorite_groups` 的写操作也是被授权的。
+
+**Step 1 至今仍未执行，且客户端代码无需改动**——`favorites.service.ts` 里所有
+`favorite_groups` 查询都已显式带 `user_id` 过滤，`upsert` 也写入 `user_id`，
+与 `user_id = (auth.uid())::text` 策略同形（`favorites` 表用同一策略已在生产跑通）。
 
 ---
 
