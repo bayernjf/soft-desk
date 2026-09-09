@@ -99,23 +99,11 @@ async function extractIcon(
       }
     }
 
-    // 回退:用系统 API 取 Finder 中显示的官方图标,覆盖使用 Assets.car 资源目录、
-    // 无独立 .icns 文件的现代应用,避免退化成首字母占位图
-    return await iconFromSystem(appPath, outPng);
-  } catch {
+    // 没有可用 .icns(sips 失败或仅有 Assets.car)时直接放弃,由渲染层显示占位图。
+    // 不能回退到 app.getFileIcon:Electron 33+ 在 macOS 上该 API 会在 Chromium
+    // 线程池里命中 CHECK 直接 SIGTRAP 拖垮主进程(41.10.7 仍可稳定复现),
+    // 而实测桌面应用 99% 都带有独立 .icns,极少数无图标应用退化为占位图即可接受。
     return null;
-  }
-}
-
-/** 通过 Electron 系统 API 获取应用的官方图标,写入缓存 PNG;失败返回 null */
-async function iconFromSystem(appPath: string, outPng: string): Promise<string | null> {
-  try {
-    const image = await app.getFileIcon(appPath, { size: 'large' });
-    if (image.isEmpty()) return null;
-    const png = image.toPNG();
-    if (!png.length) return null;
-    await fs.writeFile(outPng, png);
-    return outPng;
   } catch {
     return null;
   }

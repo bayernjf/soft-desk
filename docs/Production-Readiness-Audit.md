@@ -148,7 +148,7 @@
 
 **这是最严重的问题**。PRD 和 Account 页 UI 都明确承诺"数据完全不同步、绝不上传软件清单/使用记录"，但代码实际把**收藏软件清单（名称/bundleId/分类）、工作流（含使用次数/最近使用）、AI 配置、径向菜单配置**全部上传到 Supabase。仅守住了 apiKey 和明文密码不上云。
 
-**参考**：`src/services/favorites.service.ts:74-85`、`.trae/documents/PRD.md:78-91`
+**参考**：`src/services/favorites.service.ts:74-85`、`docs/PRD.md:78-91`
 
 ---
 

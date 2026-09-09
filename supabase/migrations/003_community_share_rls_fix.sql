@@ -1,8 +1,22 @@
+-- =====================================================
+-- Migration 003: Fix community share RLS policies
+-- File: 003_community_share_rls_fix.sql
+-- Date: 2026-09-09 22:34
+-- Depends on: 001_community_share_schema.sql
+-- Run: Supabase SQL Editor, execute once
+-- =====================================================
+-- Note: Rewrites the shares / share_imports /
+--       share_reports / share_events policies from
+--       current_setting('app.current_user_id') to the
+--       native auth.uid()::text check. The session
+--       variable was always null under Supabase Auth,
+--       so inserts/updates were rejected by RLS.
+-- -----------------------------------------------------
 -- ============================================================================
 -- SoftDesk 社区分享 · RLS 修复补丁
 --
 -- 问题:
---   Community-Share-Schema.sql 里 shares / share_imports 的 RLS 策略用了
+--   20260702013008_community_share_schema.sql 里 shares / share_imports 的 RLS 策略用了
 --   current_setting('app.current_user_id', true), 但项目走 Supabase Auth
 --   JWT 通道, 会话变量始终为 null, 导致所有 insert/update 被拒绝并抛出
 --   "new row violates row-level security policy for table shares".

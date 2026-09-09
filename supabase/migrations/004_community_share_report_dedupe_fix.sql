@@ -1,3 +1,17 @@
+-- =====================================================
+-- Migration 004: Fix community share report dedupe
+-- File: 004_community_share_report_dedupe_fix.sql
+-- Date: 2026-09-09 22:34
+-- Depends on: 001_community_share_schema.sql
+-- Run: Supabase SQL Editor, execute once
+-- =====================================================
+-- Note: Hardens share_reports against spam: reporter_id
+--       becomes NOT NULL, a unique index blocks duplicate
+--       reports per (share_id, reporter_id), the trigger
+--       counts distinct reporters, historical dirty data
+--       is cleaned up and the insert policy requires
+--       reporter_id = auth.uid().
+-- -----------------------------------------------------
 -- ============================================================================
 -- SoftDesk 社区分享 · 举报去重加固补丁
 --

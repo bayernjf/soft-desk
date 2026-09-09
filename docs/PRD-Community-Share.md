@@ -349,9 +349,9 @@ reportShare(shareId: number, reason: string): Promise<void>
 ### 11.1 关联文档
 - 主 PRD：[PRD.md](./PRD.md)
 - 技术架构：[Technical-Architecture.md](./Technical-Architecture.md)
-- 建表脚本 Phase 1：`.trae/documents/Community-Share-Schema.sql`
-- 建表脚本 Phase 2：`.trae/documents/Community-Share-Phase2-Analytics.sql`
-- Dry-run 验证脚本：`.trae/documents/Community-Share-DryRun.sql`
+- 建表脚本 Phase 1：`supabase/migrations/001_community_share_schema.sql`
+- 建表脚本 Phase 2：`supabase/migrations/002_community_share_phase2_analytics.sql`
+- Dry-run 验证脚本：`docs/Community-Share-DryRun.sql`
 
 ### 11.2 术语表
 - **深链 (Deep Link)**：形如 `softdesk://` 的自定义 URL Scheme，用于唤起本应用
