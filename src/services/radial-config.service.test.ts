@@ -1,6 +1,14 @@
-import { describe, it, expect } from 'vitest';
-import { mergeRadialConfig } from './radial-config.service';
+import { describe, it, expect, vi } from 'vitest';
 import type { RadialMenuConfig } from '@/types';
+
+// supabase.ts 在模块顶层就 createClient(),本地存在 .env 时会因 Node 20 缺少原生
+// WebSocket 而在收集阶段直接崩掉整个套件。这里只测纯函数,直接替掉该模块。
+vi.mock('@/lib/supabase', () => ({
+  supabase: null,
+  isSupabaseConfigured: () => false,
+}));
+
+const { mergeRadialConfig } = await import('./radial-config.service');
 
 const base = (over: Partial<RadialMenuConfig>): RadialMenuConfig => ({
   enabled: false,
