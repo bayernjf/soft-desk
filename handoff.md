@@ -12,7 +12,8 @@ SoftDesk 桌面应用版：本地软件管理与智能启动工具，基于 Elec
 常用命令：`npm run dev`（热重载 + DevTools）、`npm run build`、`npm test`（vitest）、`npm run lint`。
 
 ## 当前状态（分支 feature/20260622）
-- **本地领先 origin/feature/20260622 共 22 个提交，尚未推送**，主题集中在一批质量与构建修复：
+- **本地领先 origin/feature/20260622 20 余个提交，尚未推送**（准确数量以
+  `git rev-list --count origin/feature/20260622..HEAD` 为准），主题集中在一批质量与构建修复：
   错误边界（`84f6708`，后续 `22709e2` 修掉 file:// 下整页 reload 白屏的次生 bug）、
   路由懒加载（`cd821fc`）、构建清理（`4bd7ad0`、`872b549`）、依赖告警修复
   （`58cd7be`、`afc1c79`）、补齐单测（搜索拼音、格式化、sync 合并、AI provider 等）、
