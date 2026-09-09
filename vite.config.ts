@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = loadEnv('', process.cwd(), 'VITE');
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   // 固定 dev 端口并禁止自动切换:Electron 的 localStorage 按 origin(含端口)隔离,
   // 端口漂移会导致换到全新的空 localStorage,引发"重启后配置丢失"的假象。
   server: {
@@ -42,13 +42,18 @@ export default defineConfig({
     },
   },
   plugins: [
-    react({
-      babel: {
-        plugins: [
-          'react-dev-locator',
-        ],
-      },
-    }),
+    // react-dev-locator 仅在 dev 启用:它会往每个元素注入 trae-inspector-* 属性,
+    // 其中包含源码绝对路径。生产构建里既白占体积(main chunk 曾有 1341 处注入),
+    // 也会把打包机的本地路径泄漏进发布产物。
+    react(
+      command === 'serve'
+        ? {
+            babel: {
+              plugins: ['react-dev-locator'],
+            },
+          }
+        : {},
+    ),
     tsconfigPaths(),
     electron([
       {
@@ -109,4 +114,4 @@ export default defineConfig({
     ]),
     renderer(),
   ],
-})
+}))

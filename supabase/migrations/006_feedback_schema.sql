@@ -1,3 +1,15 @@
+-- =====================================================
+-- Migration 006: Create feedback schema
+-- File: 006_feedback_schema.sql
+-- Date: 2026-09-09 22:34
+-- Run: Supabase SQL Editor, execute once
+-- =====================================================
+-- Note: Creates feedbacks and feedback_logs tables with
+--       category/status machine values, updated_at trigger
+--       and RLS allowing users to insert/read only their
+--       own feedback; status changes go through the
+--       service role.
+-- -----------------------------------------------------
 -- ============================================================================
 -- SoftDesk 意见反馈表 + RLS
 -- 在 Supabase Dashboard SQL Editor 中执行
