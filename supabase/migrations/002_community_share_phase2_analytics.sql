@@ -1,3 +1,15 @@
+-- =====================================================
+-- Migration 002: Add community share phase 2 analytics
+-- File: 002_community_share_phase2_analytics.sql
+-- Date: 2026-09-09 22:34
+-- Depends on: 001_community_share_schema.sql
+-- Run: Supabase SQL Editor, execute once
+-- =====================================================
+-- Note: Adds the share_events analytics event table
+--       (per-event detail feed complementing the
+--       shares.* counters) plus dashboard views
+--       share_funnel_daily and share_top_creators.
+-- -----------------------------------------------------
 -- ============================================================================
 -- SoftDesk 社区分享 · Phase 2 补丁: 埋点事件表 + 数据看板视图
 -- 关联 PRD: docs/PRD-Community-Share.md

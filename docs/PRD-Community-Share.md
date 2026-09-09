@@ -349,8 +349,8 @@ reportShare(shareId: number, reason: string): Promise<void>
 ### 11.1 关联文档
 - 主 PRD：[PRD.md](./PRD.md)
 - 技术架构：[Technical-Architecture.md](./Technical-Architecture.md)
-- 建表脚本 Phase 1：`supabase/migrations/20260702013008_community_share_schema.sql`
-- 建表脚本 Phase 2：`supabase/migrations/20260702013009_community_share_phase2_analytics.sql`
+- 建表脚本 Phase 1：`supabase/migrations/001_community_share_schema.sql`
+- 建表脚本 Phase 2：`supabase/migrations/002_community_share_phase2_analytics.sql`
 - Dry-run 验证脚本：`docs/Community-Share-DryRun.sql`
 
 ### 11.2 术语表

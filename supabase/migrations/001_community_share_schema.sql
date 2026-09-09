@@ -1,3 +1,17 @@
+-- =====================================================
+-- Migration 001: Create community share schema
+-- File: 001_community_share_schema.sql
+-- Date: 2026-09-09 22:34
+-- Run: Supabase SQL Editor, execute once
+-- =====================================================
+-- Note: Core tables for the community share feature:
+--       shares, share_imports and share_reports, with a
+--       payload size limit, auto-revoke trigger after 3
+--       distinct reports, updated_at trigger, atomic
+--       view/import counter RPCs, stale-share archiving
+--       and RLS policies. Requires existing workflows /
+--       favorites / favorite_groups / radial_configs.
+-- -----------------------------------------------------
 -- ============================================================================
 -- SoftDesk 社区分享功能 - 数据库建表脚本
 -- 文档版本: v1.0

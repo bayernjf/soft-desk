@@ -1,3 +1,15 @@
+-- =====================================================
+-- Migration 009: Fix favorite groups RLS
+-- File: 009_favorite_groups_rls_fix.sql
+-- Date: 2026-09-09 22:34
+-- Run: Supabase SQL Editor, execute once
+-- =====================================================
+-- Note: favorite_groups was created without RLS, letting
+--       any anon key holder read/write every row. Enables
+--       RLS and adds an owner policy restricting access
+--       to user_id = auth.uid()::text, matching the other
+--       auth.uid() based policies.
+-- -----------------------------------------------------
 -- ============================================================================
 -- SoftDesk 收藏分组 · RLS 修复补丁
 --

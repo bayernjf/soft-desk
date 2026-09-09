@@ -1,3 +1,15 @@
+-- =====================================================
+-- Migration 005: Add platform isolation to sync tables
+-- File: 005_platform_isolation.sql
+-- Date: 2026-09-09 22:34
+-- Run: Supabase SQL Editor, execute once
+-- =====================================================
+-- Note: Adds a platform column (default 'unknown') to
+--       workflows and radial_configs so sync is isolated
+--       per platform, adds software_meta jsonb snapshot to
+--       workflows, and switches radial_configs primary key
+--       from user_id to (user_id, platform).
+-- -----------------------------------------------------
 -- ============================================================================
 -- SoftDesk 工作流 & 径向菜单 按平台隔离同步
 -- 执行方式: 在 Supabase SQL Editor 中一次性执行全部语句

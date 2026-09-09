@@ -201,12 +201,12 @@ cp .env.example .env
 ## 10. 已有数据库迁移（v1.x -> v2.x 平台隔离）
 
 如果已经创建了上述表，需要执行迁移脚本增加 `platform` 列并修改主键。
-在 Supabase SQL Editor 中执行 `supabase/migrations/20260704085737_platform_isolation.sql` 全部内容即可。
+在 Supabase SQL Editor 中执行 `supabase/migrations/005_platform_isolation.sql` 全部内容即可。
 
 ## 11. 创建 announcements 表（公告系统）
 
 公告系统：云端下发公告，客户端按平台/时间窗口过滤展示，已读状态存本地 SQLite（不依赖登录）。
-在 Supabase SQL Editor 中执行 `supabase/migrations/20260717072201_announcements_schema.sql` 全部内容即可。
+在 Supabase SQL Editor 中执行 `supabase/migrations/008_announcements_schema.sql` 全部内容即可。
 
 公告由管理员通过 Supabase Studio 手写记录（无需应用内 admin 界面）。字段说明：
 

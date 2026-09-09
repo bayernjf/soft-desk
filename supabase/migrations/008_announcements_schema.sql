@@ -1,3 +1,15 @@
+-- =====================================================
+-- Migration 008: Create announcements schema
+-- File: 008_announcements_schema.sql
+-- Date: 2026-09-09 22:34
+-- Run: Supabase SQL Editor, execute once
+-- =====================================================
+-- Note: Creates the announcements table (severity and
+--       target_platform machine values, publish/expire
+--       times, pinning) with RLS read-only for all roles;
+--       writes are done by admins through Supabase Studio
+--       via the service role.
+-- -----------------------------------------------------
 -- ============================================================================
 -- SoftDesk 公告系统 announcements 表 + RLS
 -- 在 Supabase Dashboard SQL Editor 中执行

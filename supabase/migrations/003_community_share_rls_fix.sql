@@ -1,3 +1,17 @@
+-- =====================================================
+-- Migration 003: Fix community share RLS policies
+-- File: 003_community_share_rls_fix.sql
+-- Date: 2026-09-09 22:34
+-- Depends on: 001_community_share_schema.sql
+-- Run: Supabase SQL Editor, execute once
+-- =====================================================
+-- Note: Rewrites the shares / share_imports /
+--       share_reports / share_events policies from
+--       current_setting('app.current_user_id') to the
+--       native auth.uid()::text check. The session
+--       variable was always null under Supabase Auth,
+--       so inserts/updates were rejected by RLS.
+-- -----------------------------------------------------
 -- ============================================================================
 -- SoftDesk 社区分享 · RLS 修复补丁
 --

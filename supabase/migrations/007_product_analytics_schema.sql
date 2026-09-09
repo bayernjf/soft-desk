@@ -1,3 +1,16 @@
+-- =====================================================
+-- Migration 007: Create product analytics schema
+-- File: 007_product_analytics_schema.sql
+-- Date: 2026-09-09 22:34
+-- Run: Supabase SQL Editor, execute once
+-- =====================================================
+-- Note: Creates the product_events analytics table for
+--       feature usage/success/version analysis. Privacy
+--       by design: anonymous install_id only, no account
+--       IDs or free text, whitelisted event types and
+--       meta keys. RLS allows anon/authenticated inserts
+--       only; reads are blocked for clients.
+-- -----------------------------------------------------
 -- ============================================================================
 -- SoftDesk 产品分析事件表
 -- 用途: 记录最小化的产品使用行为, 仅用于功能使用率 / 成功率 / 版本分布分析
