@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "restart": "pkill -f 'soft-desk.*Electron' 2>/dev/null || true; sleep 1; npm run dev",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/clean-dist-electron.mjs && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
