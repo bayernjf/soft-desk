@@ -39,3 +39,6 @@ coverage/
 
 .env*
 !.env.example
+
+# Claude Code local tooling config
+.claude/
