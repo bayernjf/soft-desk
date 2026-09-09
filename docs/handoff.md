@@ -63,46 +63,15 @@
 
 不改列类型、不删数据，只开 RLS 并补与另外两表同形的策略。现有 2 行可保留。
 
-在 Supabase SQL Editor 执行：
+在 Supabase SQL Editor 执行迁移文件（幂等，可反复执行；内含验证语句与回滚语句）：
 
-```sql
-BEGIN;
-
-ALTER TABLE favorite_groups ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "用户可读写自己的收藏分组" ON favorite_groups;
-
-CREATE POLICY "用户可读写自己的收藏分组"
-  ON favorite_groups FOR ALL
-  USING (user_id = (auth.uid())::text)
-  WITH CHECK (user_id = (auth.uid())::text);
-
-COMMIT;
-```
+**[`.trae/documents/Favorite-Groups-RLS-Fix.sql`](../.trae/documents/Favorite-Groups-RLS-Fix.sql)**
 
 #### Step 1 验证
 
-```sql
-SELECT c.relname, c.relrowsecurity
-FROM pg_class c
-JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = 'public' AND c.relname = 'favorite_groups';
-
-SELECT tablename, policyname, qual, with_check
-FROM pg_policies
-WHERE tablename = 'favorite_groups';
-```
-
-期望：`relrowsecurity = true`，策略为 `user_id = (auth.uid())::text`。
+迁移文件末尾已附验证查询。期望：`relrowsecurity = true`，策略为 `user_id = (auth.uid())::text`。
 
 客户端：登录后确认收藏分组同步/展示正常。
-
-#### Step 1 回滚（如需要）
-
-```sql
-ALTER TABLE favorite_groups DISABLE ROW LEVEL SECURITY;
--- 可选：DROP POLICY IF EXISTS "用户可读写自己的收藏分组" ON favorite_groups;
-```
 
 ---
 
