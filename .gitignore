@@ -34,5 +34,8 @@ release
 # CodeGraph local index
 .codegraph/
 
+# vitest coverage output
+coverage/
+
 .env*
 !.env.example
