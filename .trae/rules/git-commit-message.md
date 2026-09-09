@@ -30,3 +30,7 @@ Each group must generate its own independent complete conventional commit messag
 Do not merge unrelated file changes together. Prioritize small, single-purpose commits for clean git history.
 
 Commit messages must be in English.
+
+Additional Rules:
+- Keep the commit author as the user; do NOT add an AI co-author.
+- Do NOT push commits unless the user explicitly requests it.
