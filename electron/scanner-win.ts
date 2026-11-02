@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { app, nativeImage } from 'electron';
 import { createLogger } from './lib/logger';
+import { exePathToSoftwareId } from './lib/exe-id';
 import type { CategorySource, ScannedApp, ScannedCategory } from './scanner';
 
 const logger = createLogger('scanner-win');
@@ -773,9 +774,8 @@ async function iconFileToDataUrl(iconCacheFile: string | null): Promise<string |
   }
 }
 
-function hashId(exePath: string): string {
-  return crypto.createHash('sha1').update(exePath.toLowerCase()).digest('hex').slice(0, 24);
-}
+// 软件 id 公式收口到 lib/exe-id(monitor 使用统计的 softwareId 必须产出同一 id)
+const hashId = exePathToSoftwareId;
 
 async function safeStat(p: string): Promise<{ mtimeMs: number; atime: Date; size: number } | null> {
   try {
