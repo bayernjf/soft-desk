@@ -7,26 +7,6 @@ const logger = createLogger('shares');
 
 export type ShareExpiry = 'permanent' | '7d' | '30d';
 
-export interface CloudShare {
-  id: number;
-  share_token: string;
-  owner_id: string;
-  owner_nickname: string | null;
-  kind: ShareKind;
-  title: string;
-  description: string | null;
-  payload: SharePayload;
-  view_count: number;
-  import_count: number;
-  report_count: number;
-  is_public: boolean;
-  is_revoked: boolean;
-  is_archived: boolean;
-  expires_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface PublicShare {
   id: number;
   shareToken: string;
@@ -175,25 +155,35 @@ export async function createShare(
   return { success: false, error: '生成分享码冲突,请重试' };
 }
 
+/** get_share_by_token RPC 的行形状（迁移 010 的 returns table 子句）。 */
+interface SharePreviewRow {
+  id: number;
+  share_token: string;
+  owner_nickname: string | null;
+  kind: ShareKind;
+  title: string;
+  description: string | null;
+  payload: SharePayload;
+  view_count: number;
+  import_count: number;
+  created_at: string;
+}
+
 export async function getShareByToken(token: string): Promise<PublicShare | null> {
   if (!isSupabaseConfigured() || !supabase) return null;
   if (!token || typeof token !== 'string') return null;
   try {
+    // P1-3: shares 表对 anon 不再开放直接 SELECT（公开读策略已撤），
+    // 预览走 security-definer RPC：凭不可猜测的 10 位 token 至多返回一行。
     const { data, error } = await supabase
-      .from('shares')
-      .select(
-        'id, share_token, owner_nickname, kind, title, description, payload, view_count, import_count, created_at, is_revoked, is_archived, expires_at'
-      )
-      .eq('share_token', token)
+      .rpc('get_share_by_token', { p_token: token })
       .maybeSingle();
     if (error) {
       logger.error('fetch share error:', error);
       return null;
     }
-    if (!data) return null;
-    const row = data as unknown as CloudShare;
-    if (row.is_revoked || row.is_archived) return null;
-    if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) return null;
+    const row = data as SharePreviewRow | null;
+    if (!row) return null;
     return {
       id: row.id,
       shareToken: row.share_token,
