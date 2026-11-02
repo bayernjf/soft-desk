@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import * as childProcess from 'node:child_process';
 import { scanInstalledApps, applyAiCategories, startAppWatcher, stopAppWatcher, type ScannedApp, type ScannedCategory } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
+import { getForegroundExePathWin } from './lib/foreground-win';
 import { getStats, getUsageSummary, getCoUsage, getCoUsageBySegment, getHourlyUsage, getSegmentUsageByApp, recordLaunch, closeDb, getAnnouncementReads, markAnnouncementRead, markBannerDismissed } from './database';
 import {
   syncProviders,
@@ -427,8 +428,13 @@ let lastForegroundPath: string | null = null;
 /** LRU 队列:队首=刚切到/正在用的应用,队尾=最久未使用 */
 let recentLru: string[] = [];
 
-/** 调用 macOS lsappinfo 取得当前前台应用的 .app bundle 路径。失败返回 null。 */
+/** 取得当前前台应用路径。macOS 走 lsappinfo 拿 .app bundle 路径;Windows 走
+ * PowerShell 前台窗口探测拿 exe 路径(与 monitor 同源,见 lib/foreground-win)。
+ * 失败统一返回 null(LRU 场景不区分失败与无前台)。 */
 function getForegroundAppPath(): Promise<string | null> {
+  if (process.platform === 'win32') {
+    return getForegroundExePathWin().then((p) => p ?? null);
+  }
   return new Promise((resolve) => {
     // 一步到位:取出 front ASN 的 LSBundlePath 字段
     const child = childProcess.spawn(
