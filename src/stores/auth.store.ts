@@ -128,7 +128,7 @@ export const useAuthStore = create<AuthStore>()(
         if (typeof window === 'undefined' || !window.softdesk?.loginAccount) {
           return { ok: false, error: '当前环境不支持登录' };
         }
-        const res = await window.softdesk.loginAccount({ email, password });
+        const res = await window.softdesk.loginAccount({ email, password, rememberMe: get().rememberMe });
         if (!res.success) {
           return { ok: false, error: 'error' in res ? res.error : '登录失败' };
         }
@@ -187,7 +187,7 @@ export const useAuthStore = create<AuthStore>()(
         if (typeof window === 'undefined' || !window.softdesk?.registerAccount) {
           return { ok: false, error: '当前环境不支持注册' };
         }
-        const res = await window.softdesk.registerAccount({ email, password, nickname });
+        const res = await window.softdesk.registerAccount({ email, password, nickname, rememberMe: get().rememberMe });
         if (!res.success) {
           return { ok: false, error: 'error' in res ? res.error : '注册失败' };
         }

@@ -1326,6 +1326,7 @@ function joinChatCompletionsUrl(endpoint: string): string {
   return `${base}/chat/completions`;
 }
 
+
 ipcMain.handle('ai:test', async (_event, raw: unknown) => {
   const input = (raw && typeof raw === 'object' ? raw : {}) as AiTestInput;
   const endpoint = typeof input.endpoint === 'string' ? input.endpoint.trim() : '';
@@ -1358,17 +1359,7 @@ ipcMain.handle('ai:test', async (_event, raw: unknown) => {
       return { success: true };
     }
 
-    let detail = '';
-    try {
-      const data = (await res.json()) as { error?: { message?: string }; message?: string };
-      detail = data?.error?.message || data?.message || '';
-    } catch {
-      detail = await res.text().catch(() => '');
-    }
-    return {
-      success: false,
-      error: `HTTP ${res.status}${detail ? `：${String(detail).slice(0, 200)}` : ''}`,
-    };
+    return { success: false, error: `HTTP ${res.status}` };
   } catch (err) {
     const message =
       err instanceof Error
@@ -1548,16 +1539,18 @@ ipcMain.handle('auth:register', (_event, raw: unknown) => {
     email?: string;
     password?: string;
     nickname?: string;
+    rememberMe?: boolean;
   };
-  return authRegister(input.email, input.password, input.nickname);
+  return authRegister(input.email, input.password, input.nickname, input.rememberMe);
 });
 
 ipcMain.handle('auth:login', (_event, raw: unknown) => {
   const input = (raw && typeof raw === 'object' ? raw : {}) as {
     email?: string;
     password?: string;
+    rememberMe?: boolean;
   };
-  return authLogin(input.email, input.password);
+  return authLogin(input.email, input.password, input.rememberMe);
 });
 
 ipcMain.handle('auth:logout', async () => {
