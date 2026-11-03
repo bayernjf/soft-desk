@@ -4,7 +4,7 @@ vi.mock('electron', () => ({
   app: { getPath: () => '/tmp' },
 }));
 
-import { classifyApps, syncProviders, type ClassifyInput } from './ai';
+import { classifyApps, getActiveProvider, getProviders, syncProviders, type ClassifyInput } from './ai';
 
 const APPS: ClassifyInput[] = [
   { id: 'app-a', name: 'Some IDE' },
@@ -110,3 +110,24 @@ describe('classifyApps', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('provider apiKey 脱敏（P2-2 回归）', () => {
+  it('getProviders 不返回明文 apiKey，仅保留 hint', () => {
+    setActiveProvider();
+    const providers = getProviders() as Record<string, unknown>[];
+    expect(providers).toHaveLength(1);
+    expect(providers[0].apiKey).toBeUndefined();
+    expect(String(providers[0].apiKeyHint)).not.toContain('sk-test');
+    expect(String(providers[0].apiKeyHint)).toContain('••••');
+  });
+
+  it('渲染层回填的空 apiKey 不清掉主进程已存的 key（留空=保持不变）', () => {
+    setActiveProvider();
+    const masked = getProviders();
+    // 模拟渲染层把脱敏列表原样同步回主进程（设置页编辑但未改 key）
+    syncProviders(masked);
+    const active = getActiveProvider();
+    expect(active?.apiKey).toBe('sk-test');
+  });
+});
+

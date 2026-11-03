@@ -141,16 +141,48 @@ function persistProviders(): void {
  *  之后所有推理在主进程发起,apiKey 不再依赖渲染层 localStorage 持久化。
  *  主进程的 ai-providers.bin 是 provider 配置的唯一权威数据源。 */
 export function syncProviders(raw: unknown): void {
-  rawProviders = Array.isArray(raw) ? raw : [];
+  // 渲染层不持有明文 key：同步列表中 apiKey 为空的条目按 id 沿用主进程已存的 key
+  // （与设置页"留空=保持不变"的编辑语义对齐）。
+  const incoming = Array.isArray(raw) ? raw : [];
+  const existingById = new Map(
+    (Array.isArray(rawProviders) ? rawProviders : [])
+      .map((p) => (p && typeof p === 'object' ? (p as Record<string, unknown>) : null))
+      .filter((p): p is Record<string, unknown> => p !== null && typeof p.id === 'string')
+      .map((p) => [p.id as string, p] as const),
+  );
+  rawProviders = incoming.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+    const obj = item as Record<string, unknown>;
+    const key = typeof obj.apiKey === 'string' ? obj.apiKey.trim() : '';
+    if (key || typeof obj.id !== 'string') return item;
+    const existing = existingById.get(obj.id);
+    const existingKey = existing && typeof existing.apiKey === 'string' ? existing.apiKey : '';
+    return existingKey ? { ...obj, apiKey: existingKey } : item;
+  });
   providers = sanitizeProviders(rawProviders);
   providersLoaded = true;
   persistProviders();
 }
 
-/** 返回落盘的原始 provider 列表(完整字段),供渲染层启动时回填 store。 */
+/** 返回脱敏的 provider 列表(apiKey 剥离,仅保留 hint),供渲染层启动时回填 store。 */
 export function getProviders(): unknown[] {
   loadProviders();
-  return rawProviders;
+  return rawProviders.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+    const obj = item as Record<string, unknown>;
+    const key = typeof obj.apiKey === 'string' ? obj.apiKey : '';
+    const { apiKey: _ignored, ...rest } = obj;
+    void _ignored;
+    return {
+      ...rest,
+      apiKeyHint:
+        typeof obj.apiKeyHint === 'string' && obj.apiKeyHint
+          ? obj.apiKeyHint
+          : key
+            ? `${key.slice(0, 4)}••••${key.slice(-4)}`
+            : '',
+    };
+  });
 }
 
 /** 取当前启用且配置完整(有 key + model)的 provider;无则返回 null。 */
@@ -875,3 +907,4 @@ export async function semanticSearchStream(
   }
   return result.slice(0, 10);
 }
+
