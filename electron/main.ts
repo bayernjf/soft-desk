@@ -24,6 +24,7 @@ import {
   type SearchCandidate,
   type RecommendAppInput,
   type UserProfileInput,
+  validateAiTestEndpoint,
 } from './ai';
 import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession, getTokens as authGetTokens, updateProfile as authUpdateProfile } from './auth';
 import { getAppWindowBounds, warpCursor, focusExistingAppWindow } from './window-locator';
@@ -1336,12 +1337,15 @@ ipcMain.handle('ai:test', async (_event, raw: unknown) => {
   if (!endpoint) return { success: false, error: '请填写 Endpoint' };
   if (!apiKey) return { success: false, error: '请填写 API Key' };
   if (!model) return { success: false, error: '请填写模型 ID' };
+  const safeEndpoint = validateAiTestEndpoint(endpoint);
+  if (!safeEndpoint) return { success: false, error: 'Endpoint 只允许公网 HTTPS 或本机回环地址' };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    const res = await fetch(joinChatCompletionsUrl(endpoint), {
+    const res = await fetch(joinChatCompletionsUrl(safeEndpoint), {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,

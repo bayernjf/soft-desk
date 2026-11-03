@@ -908,3 +908,78 @@ export async function semanticSearchStream(
   return result.slice(0, 10);
 }
 
+// ai:test 由主进程带凭证发请求：endpoint 必须 https，http 仅允许本机回环（本地模型如 Ollama）；
+// 其余私网/链路本地/保留段一律拒绝，防止被注入的渲染层借主进程探测内网或云元数据地址。
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+function isBlockedIpv4(host: string): boolean {
+  const parts = host.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  const [a, b] = parts;
+  return (
+    a === 0 || a === 10 || a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 192 && b === 0) ||
+    (a === 198 && (b === 18 || b === 19 || b === 51)) ||
+    (a === 203 && b === 0) ||
+    a >= 224
+  );
+}
+
+/** 展开 IPv6 为 8 个 16 位组（URL 会把 IPv4-mapped 地址归一化成 hex 形式，必须先展开再判定）。 */
+function parseIpv6Groups(ip: string): number[] | null {
+  const normalized = ip.toLowerCase();
+  if (normalized.includes('.')) {
+    const lastColon = normalized.lastIndexOf(':');
+    const parts = normalized.slice(lastColon + 1).split('.').map(Number);
+    if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+    const hi = ((parts[0] << 8) | parts[1]).toString(16);
+    const lo = ((parts[2] << 8) | parts[3]).toString(16);
+    return parseIpv6Groups(`${normalized.slice(0, lastColon)}:${hi}:${lo}`);
+  }
+  const halves = normalized.split('::');
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  if (left.length + right.length > 8) return null;
+  if (halves.length === 1 && left.length !== 8) return null;
+  const groups = [...left, ...Array<string>(8 - left.length - right.length).fill('0'), ...right];
+  const parsed = groups.map((g) => parseInt(g, 16));
+  return parsed.some((n) => Number.isNaN(n) || n < 0 || n > 0xffff) ? null : parsed;
+}
+
+function isBlockedIpv6(host: string): boolean {
+  const groups = parseIpv6Groups(host);
+  if (!groups) return true; // 解析不了的一律拒绝
+  const isMapped = groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff;
+  const isNat64 = groups[0] === 0x64 && groups[1] === 0xff9b && groups.slice(2, 6).every((g) => g === 0);
+  if (isMapped || isNat64) return isBlockedIpv4([(groups[6] >> 8) & 0xff, groups[6] & 0xff, (groups[7] >> 8) & 0xff, groups[7] & 0xff].join('.'));
+  if (groups.every((g) => g === 0)) return true; // ::
+  if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true; // ::1
+  if ((groups[0] & 0xffc0) === 0xfe80) return true; // fe80::/10
+  if ((groups[0] & 0xfe00) === 0xfc00) return true; // fc00::/7
+  if ((groups[0] & 0xff00) === 0xff00) return true; // ff00::/8
+  if (groups[0] === 0x2001 && groups[1] === 0x0db8) return true; // 文档段
+  return false;
+}
+
+export function validateAiTestEndpoint(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (url.protocol === 'http:') return isLoopbackHost(host) ? url.toString() : null;
+  if (url.protocol !== 'https:') return null;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) && isBlockedIpv4(host)) return null;
+  if (host.includes(':') && isBlockedIpv6(host)) return null;
+  return url.toString();
+}
