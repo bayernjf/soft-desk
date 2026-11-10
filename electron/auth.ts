@@ -88,6 +88,14 @@ function persistSession(session: StoredSession): void {
   }
 }
 
+function clearPersistedSession(): void {
+  try {
+    if (existsSync(sessionPath())) unlinkSync(sessionPath());
+  } catch {
+    // 清理失败不阻塞登录流程
+  }
+}
+
 function readStoredSession(): StoredSession | null {
   try {
     if (!existsSync(sessionPath()) || !safeStorage.isEncryptionAvailable()) return null;
@@ -118,7 +126,7 @@ function ensureSessionLoaded(): void {
   currentSession = readStoredSession();
 }
 
-export async function register(rawEmail: unknown, rawPassword: unknown, rawNickname?: unknown): Promise<AuthResult> {
+export async function register(rawEmail: unknown, rawPassword: unknown, rawNickname?: unknown, rawRememberMe?: unknown): Promise<AuthResult> {
   const email = normalizeEmail(rawEmail);
   const password = typeof rawPassword === 'string' ? rawPassword : '';
   const nickname =
@@ -154,7 +162,11 @@ export async function register(rawEmail: unknown, rawPassword: unknown, rawNickn
         refreshToken: data.session.refresh_token,
         expiresAt: Date.now() + (data.session.expires_in || 3600) * 1000,
       };
-      persistSession(currentSession);
+      if (rawRememberMe === false) {
+        clearPersistedSession();
+      } else {
+        persistSession(currentSession);
+      }
       sessionLoaded = true;
     }
 
@@ -165,7 +177,7 @@ export async function register(rawEmail: unknown, rawPassword: unknown, rawNickn
   }
 }
 
-export async function login(rawEmail: unknown, rawPassword: unknown): Promise<AuthResult> {
+export async function login(rawEmail: unknown, rawPassword: unknown, rawRememberMe?: unknown): Promise<AuthResult> {
   const email = normalizeEmail(rawEmail);
   const password = typeof rawPassword === 'string' ? rawPassword : '';
 
@@ -186,7 +198,12 @@ export async function login(rawEmail: unknown, rawPassword: unknown): Promise<Au
       refreshToken: data.session.refresh_token,
       expiresAt: Date.now() + (data.session.expires_in || 3600) * 1000,
     };
-    persistSession(currentSession);
+    // "记住我"语义：关闭时只保留内存会话并清掉已落盘的会话文件，重启后不再自动登录。
+    if (rawRememberMe === false) {
+      clearPersistedSession();
+    } else {
+      persistSession(currentSession);
+    }
     sessionLoaded = true;
 
     return { success: true, profile: userToProfile(data.user) };
@@ -230,7 +247,8 @@ export async function getSession(): Promise<AuthSession> {
       refreshToken: data.session.refresh_token,
       expiresAt: Date.now() + (data.session.expires_in || 3600) * 1000,
     };
-    persistSession(currentSession);
+    // Token 可能已被刷新；仅当会话原本已落盘（"记住我"开启）时才续写，避免关闭"记住我"的会话被悄悄持久化。
+    if (existsSync(sessionPath())) persistSession(currentSession);
 
     return { loggedIn: true, profile: userToProfile(data.user) };
   } catch (err) {

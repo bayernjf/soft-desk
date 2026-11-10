@@ -111,16 +111,7 @@ export async function syncWorkflowsOnLogin(
   try {
     logger.info(`syncWorkflowsOnLogin: local=${localWorkflows.length}, userId=${userId}`);
 
-    if (localWorkflows.length > 0) {
-      const rows = localWorkflows.map((wf) => localToCloud(userId, wf));
-      const { error: upsertError } = await supabase
-        .from('workflows')
-        .upsert(rows, { onConflict: 'user_id,workflow_id' });
-      if (upsertError) {
-        logger.error('upsert local workflows error:', upsertError);
-      }
-    }
-
+    // 先拉云端再合并，仅把本地较新/独有的行上行：旧设备登录不得用过期副本覆盖云端较新数据。
     const { data, error } = await supabase
       .from('workflows')
       .select('*')
@@ -135,7 +126,24 @@ export async function syncWorkflowsOnLogin(
     logger.info(`syncWorkflowsOnLogin: fetched ${data?.length ?? 0} remote workflows`);
     const remote = (data ?? []).map(cloudToLocal);
     const merged = mergeWorkflows(localWorkflows, remote);
-    logger.info(`syncWorkflowsOnLogin: merged result has ${merged.length} workflows`);
+
+    const remoteById = new Map(remote.map((wf) => [wf.id, wf]));
+    const toUpload = localWorkflows.filter((wf) => {
+      const cloud = remoteById.get(wf.id);
+      if (!cloud) return true;
+      return new Date(wf.updatedAt).getTime() > new Date(cloud.updatedAt).getTime();
+    });
+    if (toUpload.length > 0) {
+      const rows = toUpload.map((wf) => localToCloud(userId, wf));
+      const { error: upsertError } = await supabase
+        .from('workflows')
+        .upsert(rows, { onConflict: 'user_id,workflow_id' });
+      if (upsertError) {
+        logger.error('upsert local workflows error:', upsertError);
+      }
+    }
+
+    logger.info(`syncWorkflowsOnLogin: merged result has ${merged.length} workflows, uploaded ${toUpload.length} newer local rows`);
     return merged;
   } catch (err) {
     logger.error('sync workflows error:', err);

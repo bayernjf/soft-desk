@@ -69,9 +69,9 @@ contextBridge.exposeInMainWorld('softdesk', {
     apps: { id: string; name: string; category: string; aiDescription?: string; usageMinutes: number }[];
     profile: { topApps: string[]; frequentPairs: { a: string; b: string; count: number }[]; activeApps: string[] };
   }) => ipcRenderer.invoke('ai:recommend', input),
-  registerAccount: (input: { email: string; password: string; nickname?: string }) =>
+  registerAccount: (input: { email: string; password: string; nickname?: string; rememberMe?: boolean }) =>
     ipcRenderer.invoke('auth:register', input),
-  loginAccount: (input: { email: string; password: string }) =>
+  loginAccount: (input: { email: string; password: string; rememberMe?: boolean }) =>
     ipcRenderer.invoke('auth:login', input),
   logoutAccount: () => ipcRenderer.invoke('auth:logout'),
   getAuthSession: () => ipcRenderer.invoke('auth:getSession'),

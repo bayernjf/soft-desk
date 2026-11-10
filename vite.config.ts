@@ -10,6 +10,33 @@ import { buildSync } from 'esbuild';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = loadEnv('', process.cwd(), 'VITE');
 
+// 仅生产构建注入 CSP（dev 的 HMR/react-refresh preamble 需要 inline script，不做限制）。
+// Electron 以 file:// 加载 dist，onHeadersReceived 对 file:// 无效，meta 是唯一通道。
+const CSP_CONTENT = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join('; ');
+
+function cspMetaPlugin() {
+  return {
+    name: 'softdesk-csp-meta',
+    apply: 'build' as const,
+    transformIndexHtml(html: string) {
+      return html.replace(
+        /<meta charset="UTF-8" \/>/,
+        `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${CSP_CONTENT}" />`,
+      );
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
   // 固定 dev 端口并禁止自动切换:Electron 的 localStorage 按 origin(含端口)隔离,
@@ -55,6 +82,7 @@ export default defineConfig(({ command }) => ({
         : {},
     ),
     tsconfigPaths(),
+    cspMetaPlugin(),
     electron([
       {
         entry: 'electron/main.ts',

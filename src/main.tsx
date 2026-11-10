@@ -6,6 +6,15 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useSettingsStore, applyTheme, watchSystemTheme } from './stores/settings.store';
 import { createLogger } from './lib/logger';
 import './lib/i18n';
+
+// dev-only：把 vite 构建错误打到控制台（原 inline script 移入模块以兼容生产 CSP script-src 'self'）
+if (import.meta.hot?.on) {
+  import.meta.hot.on('vite:error', (error: { err?: { message?: string; frame?: string } }) => {
+    if (error.err) {
+      console.error([error.err.message, error.err.frame].filter(Boolean).join('\n'));
+    }
+  });
+}
 import './index.css';
 
 const logger = createLogger('renderer');

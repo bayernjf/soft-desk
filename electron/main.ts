@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import * as childProcess from 'node:child_process';
 import { scanInstalledApps, applyAiCategories, startAppWatcher, stopAppWatcher, type ScannedApp, type ScannedCategory } from './scanner';
 import { startMonitor, stopMonitor } from './monitor';
+import { getForegroundExePathWin } from './lib/foreground-win';
 import { getStats, getUsageSummary, getCoUsage, getCoUsageBySegment, getHourlyUsage, getSegmentUsageByApp, recordLaunch, closeDb, getAnnouncementReads, markAnnouncementRead, markBannerDismissed } from './database';
 import {
   syncProviders,
@@ -23,6 +24,7 @@ import {
   type SearchCandidate,
   type RecommendAppInput,
   type UserProfileInput,
+  validateAiTestEndpoint,
 } from './ai';
 import { register as authRegister, login as authLogin, logout as authLogout, getSession as authGetSession, getTokens as authGetTokens, updateProfile as authUpdateProfile } from './auth';
 import { getAppWindowBounds, warpCursor, focusExistingAppWindow } from './window-locator';
@@ -427,8 +429,13 @@ let lastForegroundPath: string | null = null;
 /** LRU 队列:队首=刚切到/正在用的应用,队尾=最久未使用 */
 let recentLru: string[] = [];
 
-/** 调用 macOS lsappinfo 取得当前前台应用的 .app bundle 路径。失败返回 null。 */
+/** 取得当前前台应用路径。macOS 走 lsappinfo 拿 .app bundle 路径;Windows 走
+ * PowerShell 前台窗口探测拿 exe 路径(与 monitor 同源,见 lib/foreground-win)。
+ * 失败统一返回 null(LRU 场景不区分失败与无前台)。 */
 function getForegroundAppPath(): Promise<string | null> {
+  if (process.platform === 'win32') {
+    return getForegroundExePathWin().then((p) => p ?? null);
+  }
   return new Promise((resolve) => {
     // 一步到位:取出 front ASN 的 LSBundlePath 字段
     const child = childProcess.spawn(
@@ -1320,6 +1327,7 @@ function joinChatCompletionsUrl(endpoint: string): string {
   return `${base}/chat/completions`;
 }
 
+
 ipcMain.handle('ai:test', async (_event, raw: unknown) => {
   const input = (raw && typeof raw === 'object' ? raw : {}) as AiTestInput;
   const endpoint = typeof input.endpoint === 'string' ? input.endpoint.trim() : '';
@@ -1329,12 +1337,15 @@ ipcMain.handle('ai:test', async (_event, raw: unknown) => {
   if (!endpoint) return { success: false, error: '请填写 Endpoint' };
   if (!apiKey) return { success: false, error: '请填写 API Key' };
   if (!model) return { success: false, error: '请填写模型 ID' };
+  const safeEndpoint = validateAiTestEndpoint(endpoint);
+  if (!safeEndpoint) return { success: false, error: 'Endpoint 只允许公网 HTTPS 或本机回环地址' };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    const res = await fetch(joinChatCompletionsUrl(endpoint), {
+    const res = await fetch(joinChatCompletionsUrl(safeEndpoint), {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
@@ -1352,17 +1363,7 @@ ipcMain.handle('ai:test', async (_event, raw: unknown) => {
       return { success: true };
     }
 
-    let detail = '';
-    try {
-      const data = (await res.json()) as { error?: { message?: string }; message?: string };
-      detail = data?.error?.message || data?.message || '';
-    } catch {
-      detail = await res.text().catch(() => '');
-    }
-    return {
-      success: false,
-      error: `HTTP ${res.status}${detail ? `：${String(detail).slice(0, 200)}` : ''}`,
-    };
+    return { success: false, error: `HTTP ${res.status}` };
   } catch (err) {
     const message =
       err instanceof Error
@@ -1542,16 +1543,18 @@ ipcMain.handle('auth:register', (_event, raw: unknown) => {
     email?: string;
     password?: string;
     nickname?: string;
+    rememberMe?: boolean;
   };
-  return authRegister(input.email, input.password, input.nickname);
+  return authRegister(input.email, input.password, input.nickname, input.rememberMe);
 });
 
 ipcMain.handle('auth:login', (_event, raw: unknown) => {
   const input = (raw && typeof raw === 'object' ? raw : {}) as {
     email?: string;
     password?: string;
+    rememberMe?: boolean;
   };
-  return authLogin(input.email, input.password);
+  return authLogin(input.email, input.password, input.rememberMe);
 });
 
 ipcMain.handle('auth:logout', async () => {

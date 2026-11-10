@@ -301,9 +301,10 @@ export interface SoftdeskBridge {
     email: string;
     password: string;
     nickname?: string;
+    rememberMe?: boolean;
   }) => Promise<AuthResult>;
   /** 邮箱+密码登录;成功返回脱敏资料 */
-  loginAccount: (input: { email: string; password: string }) => Promise<AuthResult>;
+  loginAccount: (input: { email: string; password: string; rememberMe?: boolean }) => Promise<AuthResult>;
   /** 退出登录,清除本机加密 Token */
   logoutAccount: () => Promise<{ success: boolean }>;
   /** 查询当前登录态与脱敏资料(渲染层无法拿到明文 Token) */
