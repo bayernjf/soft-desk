@@ -2,6 +2,18 @@
 
 更新时间：2026-09-10
 
+## 待办登记（标准）
+
+> 本段是本产品唯一活跃待办入口；详细背景见下方原有章节。
+> 最近同步：2026-09-10
+
+<!-- tier:todos v1 -->
+| id | title | status | priority | owner | next | evidence | updated |
+|---|---|---|---|---|---|---|---|
+| SD-01 | push `feature/20260622` 并合入主干 | open | p1 | owner | `git push` 后合并 | `handoff.md` 下一步 #4 | 2026-09-10 |
+| SD-02 | electron-builder v27 稳定后评估 | planned | p3 | self | v27 稳定后评估 native ESM / Node≥22.12 / `migrate-schema` | `handoff.md` 下一步 #3 | 2026-09-10 |
+<!-- /tier:todos -->
+
 ## 项目概况
 SoftDesk 桌面应用版：本地软件管理与智能启动工具，基于 Electron + electron-builder 打包
 （`electron/` + `electron-builder`），与纯网页版共享同一套 React 源码。
